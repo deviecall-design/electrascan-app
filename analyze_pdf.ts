@@ -1,19 +1,23 @@
 /**
- * ElectraScan — PDF Detection Engine v2
+ * ElectraScan — PDF Detection Engine v3
  * =======================================
- * Two-pass detection:
- *   Pass 1 — Legend extraction: reads the drawing legend/key/schedule
- *   Pass 2 — Plan detection: scans the floor plan using legend as ground truth
+ * KEY CHANGE FROM v2:
+ * The legend is now the PRIMARY source of quantities.
+ * The floor plan scan is used for room distribution only.
  *
- * Based on DetectionSpec v1.0 — 31 March 2026
+ * Logic:
+ *   Pass 1 — Read legend → get item types + total quantities + Vesh pricing
+ *   Pass 2 — Scan floor plan → distribute legend quantities by room
+ *   Result — Legend quantities × Vesh catalogue prices = accurate estimate
  */
 
 import Anthropic from "@anthropic-ai/sdk";
 import * as pdfjsLib from "pdfjs-dist";
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
-import { mapLegendItem } from "./vesh_catalogue";
+import { mapLegendItem, VESH_CATALOGUE, type CatalogueItem } from "./vesh_catalogue";
+
 // ─────────────────────────────────────────────
-// 1. TYPES
+// TYPES
 // ─────────────────────────────────────────────
 
 export type ComponentType =
@@ -31,14 +35,17 @@ export type DetectionFlag =
   | "HEIGHT_RISK" | "AUTOMATION_DEPENDENCY" | "MISSING_CIRCUIT"
   | "SCOPE_CONFIRM" | "OUTDOOR_LOCATION" | "OFF_FORM_PREMIUM"
   | "CABLE_RUN_LONG" | "LOW_CONFIDENCE" | "SYMBOL_AMBIGUOUS"
-  | "LEGEND_MISMATCH" | "NOT_ELECTRICAL_SCOPE";
+  | "LEGEND_MISMATCH" | "NOT_ELECTRICAL_SCOPE" | "FROM_LEGEND";
 
 export interface LegendItem {
-  symbol_description: string;  // e.g. "Recessed pair of Down Lights"
-  quantity: number;            // As stated in legend
-  unit: string;                // e.g. "EA"
-  mapped_type: ComponentType | null; // Our best match, null if not electrical
+  symbol_description: string;
+  quantity: number;
+  unit: string;
+  mapped_type: ComponentType | null;
+  catalogue_id: string | null;      // Matched Vesh catalogue item ID
+  catalogue_price: number | null;   // Exact Vesh price from catalogue
   in_electrical_scope: boolean;
+  automation_flag: boolean;
   notes: string;
 }
 
@@ -53,8 +60,9 @@ export interface DetectedComponent {
   notes: string;
   unit_price: number;
   line_total: number;
-  legend_quantity?: number;    // What the legend says — for cross-reference
-  legend_match?: boolean;      // Does our count match the legend?
+  legend_quantity?: number;
+  legend_match?: boolean;
+  catalogue_item_name?: string;     // The matched Vesh item name
 }
 
 export interface DetectionResult {
@@ -79,44 +87,110 @@ export interface RiskFlag {
 }
 
 // ─────────────────────────────────────────────
-// 2. VESH PRICING MAP
+// FALLBACK PRICING (when catalogue has no match)
 // ─────────────────────────────────────────────
 
-const VESH_PRICING: Record<ComponentType, number> = {
-  GPO_STANDARD: 260, GPO_DOUBLE: 310, GPO_WEATHERPROOF: 410, GPO_USB: 380,
-  DOWNLIGHT_RECESSED: 220, PENDANT_FEATURE: 260, EXHAUST_FAN: 195,
-  SWITCHING_STANDARD: 120, SWITCHING_DIMMER: 285, SWITCHING_2WAY: 165,
+const FALLBACK_PRICING: Record<ComponentType, number> = {
+  GPO_STANDARD: 260, GPO_DOUBLE: 260, GPO_WEATHERPROOF: 290, GPO_USB: 360,
+  DOWNLIGHT_RECESSED: 200, PENDANT_FEATURE: 600, EXHAUST_FAN: 215,
+  SWITCHING_STANDARD: 120, SWITCHING_DIMMER: 220, SWITCHING_2WAY: 200,
   SWITCHBOARD_MAIN: 1800, SWITCHBOARD_SUB: 950,
   AC_SPLIT: 480, AC_DUCTED: 620,
-  DATA_CAT6: 185, DATA_TV: 145,
-  SECURITY_CCTV: 380, SECURITY_INTERCOM: 650, SECURITY_ALARM: 220,
-  EV_CHARGER: 850, POOL_OUTDOOR: 420, GATE_ACCESS: 680,
+  DATA_CAT6: 360, DATA_TV: 550,
+  SECURITY_CCTV: 300, SECURITY_INTERCOM: 250, SECURITY_ALARM: 360,
+  EV_CHARGER: 1000, POOL_OUTDOOR: 380, GATE_ACCESS: 400,
   AUTOMATION_HUB: 1200,
 };
 
-const OFF_FORM_PREMIUM = 150;
-
 const FLAG_RISK_LEVELS: Record<DetectionFlag, RiskFlag["level"]> = {
-  HEIGHT_RISK: "high", AUTOMATION_DEPENDENCY: "medium", MISSING_CIRCUIT: "high",
-  SCOPE_CONFIRM: "medium", OUTDOOR_LOCATION: "info", OFF_FORM_PREMIUM: "info",
-  CABLE_RUN_LONG: "medium", LOW_CONFIDENCE: "info", SYMBOL_AMBIGUOUS: "medium",
-  LEGEND_MISMATCH: "medium", NOT_ELECTRICAL_SCOPE: "info",
+  HEIGHT_RISK: "high", AUTOMATION_DEPENDENCY: "medium",
+  MISSING_CIRCUIT: "high", SCOPE_CONFIRM: "medium",
+  OUTDOOR_LOCATION: "info", OFF_FORM_PREMIUM: "info",
+  CABLE_RUN_LONG: "medium", LOW_CONFIDENCE: "info",
+  SYMBOL_AMBIGUOUS: "medium", LEGEND_MISMATCH: "medium",
+  NOT_ELECTRICAL_SCOPE: "info", FROM_LEGEND: "info",
 };
 
 // ─────────────────────────────────────────────
-// 3. PASS 1 — LEGEND EXTRACTION PROMPT
+// PASS 1 — LEGEND EXTRACTION PROMPT
 // ─────────────────────────────────────────────
 
-const LEGEND_SYSTEM_PROMPT = `You are ElectraScan, reading the legend or key from an Australian electrical/architectural drawing.
+const LEGEND_SYSTEM_PROMPT = `You are ElectraScan reading the legend/key/schedule from an Australian electrical or architectural drawing.
 
-Your job is to find the LEGEND, SCHEDULE, or KEY block on this drawing — usually a table in a corner listing symbols and quantities — and extract every item from it.
+Find the LEGEND, KEY, or SCHEDULE table — usually in a corner listing symbols and quantities.
 
-For each item in the legend, determine:
-1. What it is (plain English description)
-2. The quantity shown (number, e.g. 18 EA)
-3. Whether it is an electrical item in scope for an electrician
+For EVERY item in the legend extract:
+1. Exact description as written (e.g. "Recessed pair of Down Lights", "ZETR 13 series light switch")
+2. Quantity shown (number)
+3. Unit (usually EA)
+4. Whether it is in electrical scope for an electrician
 
-Map each item to one of these electrical types if applicable:
+IMPORTANT scope rules:
+- Power points (GPO, double power point, Hager, Zetr) → IN SCOPE
+- All lighting (downlights, LED strip, wall lights, track lights, pendants) → IN SCOPE
+- Switches (ZETR, Dynalite, conventional) → IN SCOPE
+- Motorised blinds → IN SCOPE (electrical motor connection required)
+- Ceiling fans → IN SCOPE
+- Exhaust fans → IN SCOPE
+- Heated towel rails → IN SCOPE (hardwired circuit)
+- Underfloor heating → IN SCOPE (dedicated circuit)
+- Automation touchscreens → IN SCOPE
+- Door bell / intercom → IN SCOPE
+- Car charger / EV → IN SCOPE
+- Smoke detectors → IN SCOPE
+- Sensors → IN SCOPE
+- Furniture, blinds fabric, decorative items (non-electrical) → NOT in scope
+
+Also read the scale from the title block or scale bar.
+
+Return ONLY valid JSON:
+{
+  "legend_found": true,
+  "scale_detected": "1:50",
+  "items": [
+    {
+      "symbol_description": "Recessed pair of Down Lights",
+      "quantity": 18,
+      "unit": "EA",
+      "in_electrical_scope": true,
+      "notes": "Red dot symbol on ceiling plan"
+    },
+    {
+      "symbol_description": "Motorised Blind",
+      "quantity": 14,
+      "unit": "EA",
+      "in_electrical_scope": true,
+      "notes": "Motor connection and wiring required"
+    }
+  ]
+}`;
+
+// ─────────────────────────────────────────────
+// PASS 2 — ROOM DISTRIBUTION PROMPT
+// ─────────────────────────────────────────────
+
+const buildRoomDistributionPrompt = (legendItems: LegendItem[]): string => {
+  const inScopeItems = legendItems.filter(l => l.in_electrical_scope);
+  const legendSummary = inScopeItems
+    .map(l => `- "${l.symbol_description}": ${l.quantity} ${l.unit} total`)
+    .join("\n");
+
+  return `You are ElectraScan distributing electrical components by room from an Australian floor plan.
+
+THE LEGEND (total quantities already confirmed — DO NOT change totals):
+${legendSummary}
+
+YOUR JOB:
+Scan the floor plan and distribute the above legend items by room.
+The TOTAL across all rooms must equal the legend quantity for each item.
+
+Rules:
+1. Use exact room names from the drawing (Kitchen, Living/Dining, Master Bedroom, Bedroom 2, etc.)
+2. Every quantity in the legend must be accounted for across rooms
+3. If you cannot determine which room an item is in, group into "General" room
+4. Map each legend description to a component type
+
+COMPONENT TYPES (pick the closest match):
 GPO_STANDARD, GPO_DOUBLE, GPO_WEATHERPROOF, GPO_USB,
 DOWNLIGHT_RECESSED, PENDANT_FEATURE, EXHAUST_FAN,
 SWITCHING_STANDARD, SWITCHING_DIMMER, SWITCHING_2WAY,
@@ -124,86 +198,10 @@ SWITCHBOARD_MAIN, SWITCHBOARD_SUB, AC_SPLIT, AC_DUCTED,
 DATA_CAT6, DATA_TV, SECURITY_CCTV, SECURITY_INTERCOM, SECURITY_ALARM,
 EV_CHARGER, POOL_OUTDOOR, GATE_ACCESS, AUTOMATION_HUB
 
-Items NOT in electrical scope (e.g. motorised blinds, furniture, plumbing) should have mapped_type: null and in_electrical_scope: false.
-
-If no legend is found, return legend_found: false with an empty items array.
-
-Return ONLY valid JSON, no markdown, no explanation:
-{
-  "legend_found": true,
-  "scale_detected": "1:100",
-  "items": [
-    {
-      "symbol_description": "Recessed pair of Down Lights",
-      "quantity": 18,
-      "unit": "EA",
-      "mapped_type": "DOWNLIGHT_RECESSED",
-      "in_electrical_scope": true,
-      "notes": "Paired recessed LED downlights"
-    },
-    {
-      "symbol_description": "Motorised Blind",
-      "quantity": 14,
-      "unit": "EA",
-      "mapped_type": null,
-      "in_electrical_scope": false,
-      "notes": "Blind motor — not electrical scope unless wiring shown"
-    }
-  ]
-}`;
-
-// ─────────────────────────────────────────────
-// 4. PASS 2 — DETECTION PROMPT (legend-informed)
-// ─────────────────────────────────────────────
-
-const buildDetectionPrompt = (legendItems: LegendItem[]): string => {
-  const legendContext = legendItems.length > 0
-    ? `\n\nLEGEND FROM THIS DRAWING (use this as ground truth):\n${legendItems
-        .filter(l => l.in_electrical_scope && l.mapped_type)
-        .map(l => `- ${l.symbol_description}: ${l.quantity} ${l.unit} → type: ${l.mapped_type}`)
-        .join("\n")}`
-    : "";
-
-  return `You are ElectraScan, detecting electrical components on an Australian residential/commercial electrical drawing.${legendContext}
-
-IMPORTANT: The legend above is the ground truth. Use it to:
-1. Correctly identify symbols you see on the plan (match them to legend descriptions)
-2. Count components room by room — totals should match legend quantities
-3. Flag LEGEND_MISMATCH if your room-by-room count doesn't add up to the legend total
-
-For each component group (one entry per room per type):
-- type: exact type key from the list below
-- quantity: count in that specific room
-- room: exact room name from the drawing (e.g. "Master Bedroom", "Kitchen", "Living/Dining")
-- drawing_ref: page and zone reference if visible
-- confidence: 0-100
-- flags: array of applicable flags
-- notes: what you see, including legend symbol match
-
-COMPONENT TYPES (use exact keys only):
-Power: GPO_STANDARD, GPO_DOUBLE, GPO_WEATHERPROOF, GPO_USB
-Lighting: DOWNLIGHT_RECESSED, PENDANT_FEATURE, EXHAUST_FAN
-Switching: SWITCHING_STANDARD, SWITCHING_DIMMER, SWITCHING_2WAY
-Switchboard: SWITCHBOARD_MAIN, SWITCHBOARD_SUB
-AC: AC_SPLIT, AC_DUCTED
-Data: DATA_CAT6, DATA_TV
-Security: SECURITY_CCTV, SECURITY_INTERCOM, SECURITY_ALARM
-EV/Pool/Access: EV_CHARGER, POOL_OUTDOOR, GATE_ACCESS
-Automation: AUTOMATION_HUB
-
-FLAGS:
-- HEIGHT_RISK: fitting above 3.5m
-- AUTOMATION_DEPENDENCY: C-Bus/KNX/Dali/smart system
-- MISSING_CIRCUIT: equipment shown, no circuit
-- SCOPE_CONFIRM: unclear scope
-- OUTDOOR_LOCATION: external install
-- OFF_FORM_PREMIUM: off-form concrete
-- CABLE_RUN_LONG: cable run > 20m
-- LOW_CONFIDENCE: confidence 50-69
-- SYMBOL_AMBIGUOUS: confidence < 50
-- LEGEND_MISMATCH: your count differs from legend quantity
-
-CONFIDENCE: 90-100 auto-confirm, 70-89 needs_review, 50-69 LOW_CONFIDENCE flag, <50 SYMBOL_AMBIGUOUS
+FLAGS to apply:
+- AUTOMATION_DEPENDENCY: Dynalite, Dali, C-Bus, KNX, motorised items
+- HEIGHT_RISK: items above 3.5m (voids, double-height ceilings)
+- OUTDOOR_LOCATION: external walls or outdoor areas
 
 Return ONLY valid JSON:
 {
@@ -213,18 +211,18 @@ Return ONLY valid JSON:
       "type": "DOWNLIGHT_RECESSED",
       "quantity": 6,
       "room": "Kitchen",
-      "drawing_ref": "E-01",
-      "confidence": 95,
-      "needs_review": false,
+      "drawing_ref": "Sheet 1",
+      "confidence": 90,
       "flags": [],
-      "notes": "Recessed downlights matching legend symbol. Legend total 18 across all rooms."
+      "notes": "Recessed pair of Down Lights in kitchen area. Legend total: 18 EA across all rooms.",
+      "legend_description": "Recessed pair of Down Lights"
     }
   ]
 }`;
 };
 
 // ─────────────────────────────────────────────
-// 5. PDF → IMAGES
+// PDF → IMAGES
 // ─────────────────────────────────────────────
 
 async function pdfToImages(file: File): Promise<string[]> {
@@ -248,80 +246,247 @@ function extractJSON(raw: string): string {
 }
 
 // ─────────────────────────────────────────────
-// 6. ENRICHMENT
+// CATALOGUE MATCHING — Map legend item to Vesh price
 // ─────────────────────────────────────────────
 
-function enrichComponents(
-  rawComponents: any[],
-  legendItems: LegendItem[]
+function matchLegendToVesh(description: string): {
+  catalogueItem: CatalogueItem | null;
+  price: number;
+  componentType: ComponentType;
+  automationFlag: boolean;
+} {
+  const match = mapLegendItem(description);
+
+  if (match) {
+    return {
+      catalogueItem: match,
+      price: match.price,
+      componentType: match.componentType as ComponentType,
+      automationFlag: match.automationFlag ?? false,
+    };
+  }
+
+  // Fallback — try keyword matching
+  const desc = description.toLowerCase();
+  if (desc.includes("downlight") || desc.includes("down light") || desc.includes("recessed")) {
+    return { catalogueItem: null, price: 200, componentType: "DOWNLIGHT_RECESSED", automationFlag: false };
+  }
+  if (desc.includes("led strip") || desc.includes("strip light")) {
+    const dali = desc.includes("dali") || desc.includes("dynalite");
+    return { catalogueItem: null, price: dali ? 450 : 400, componentType: "DOWNLIGHT_RECESSED", automationFlag: dali };
+  }
+  if (desc.includes("track light") || desc.includes("track lighting")) {
+    return { catalogueItem: null, price: 1000, componentType: "DOWNLIGHT_RECESSED", automationFlag: false };
+  }
+  if (desc.includes("wall light") || desc.includes("art light")) {
+    return { catalogueItem: null, price: 250, componentType: "DOWNLIGHT_RECESSED", automationFlag: false };
+  }
+  if (desc.includes("pendant") || desc.includes("feature light") || desc.includes("chandelier")) {
+    return { catalogueItem: null, price: 600, componentType: "PENDANT_FEATURE", automationFlag: false };
+  }
+  if (desc.includes("motorised blind") || desc.includes("blind motor")) {
+    return { catalogueItem: null, price: 380, componentType: "AUTOMATION_HUB", automationFlag: true };
+  }
+  if (desc.includes("ceiling fan") || desc.includes("fan")) {
+    return { catalogueItem: null, price: 450, componentType: "EXHAUST_FAN", automationFlag: false };
+  }
+  if (desc.includes("exhaust fan") || desc.includes("exhaust")) {
+    return { catalogueItem: null, price: 215, componentType: "EXHAUST_FAN", automationFlag: false };
+  }
+  if (desc.includes("zetr 13") && (desc.includes("gpo") || desc.includes("power"))) {
+    return { catalogueItem: null, price: 525, componentType: "GPO_DOUBLE", automationFlag: false };
+  }
+  if (desc.includes("zetr 12") && (desc.includes("gpo") || desc.includes("power"))) {
+    return { catalogueItem: null, price: 425, componentType: "GPO_DOUBLE", automationFlag: false };
+  }
+  if (desc.includes("gpo") || desc.includes("power point") || desc.includes("powerpoint")) {
+    const weatherproof = desc.includes("weatherproof") || desc.includes("wp");
+    const usb = desc.includes("usb");
+    if (weatherproof) return { catalogueItem: null, price: 290, componentType: "GPO_WEATHERPROOF", automationFlag: false };
+    if (usb) return { catalogueItem: null, price: 360, componentType: "GPO_USB", automationFlag: false };
+    return { catalogueItem: null, price: 260, componentType: "GPO_DOUBLE", automationFlag: false };
+  }
+  if (desc.includes("dynalite") || desc.includes("dali") || desc.includes("automation touchscreen")) {
+    return { catalogueItem: null, price: 180, componentType: "SWITCHING_STANDARD", automationFlag: true };
+  }
+  if (desc.includes("switch") || desc.includes("zetr")) {
+    return { catalogueItem: null, price: 120, componentType: "SWITCHING_STANDARD", automationFlag: false };
+  }
+  if (desc.includes("sensor") || desc.includes("light sensor") || desc.includes("pir")) {
+    return { catalogueItem: null, price: 200, componentType: "SWITCHING_STANDARD", automationFlag: false };
+  }
+  if (desc.includes("towel rail") || desc.includes("heated towel")) {
+    return { catalogueItem: null, price: 450, componentType: "GPO_STANDARD", automationFlag: false };
+  }
+  if (desc.includes("underfloor") || desc.includes("floor heat")) {
+    return { catalogueItem: null, price: 450, componentType: "GPO_STANDARD", automationFlag: false };
+  }
+  if (desc.includes("intercom") || desc.includes("door bell") || desc.includes("doorbell")) {
+    return { catalogueItem: null, price: 250, componentType: "SECURITY_INTERCOM", automationFlag: false };
+  }
+  if (desc.includes("smoke") || desc.includes("fire alarm")) {
+    return { catalogueItem: null, price: 360, componentType: "SECURITY_ALARM", automationFlag: false };
+  }
+  if (desc.includes("tv") || desc.includes("data") || desc.includes("cat6") || desc.includes("ethernet")) {
+    return { catalogueItem: null, price: 360, componentType: "DATA_CAT6", automationFlag: false };
+  }
+
+  return { catalogueItem: null, price: 200, componentType: "DOWNLIGHT_RECESSED", automationFlag: false };
+}
+
+// ─────────────────────────────────────────────
+// ENRICH LEGEND ITEMS WITH VESH PRICING
+// ─────────────────────────────────────────────
+
+function enrichLegendItems(rawItems: any[]): LegendItem[] {
+  return rawItems.map(item => {
+    const { catalogueItem, price, componentType, automationFlag } =
+      matchLegendToVesh(item.symbol_description ?? "");
+
+    return {
+      symbol_description: item.symbol_description ?? "",
+      quantity: item.quantity ?? 0,
+      unit: item.unit ?? "EA",
+      mapped_type: componentType,
+      catalogue_id: catalogueItem?.id ?? null,
+      catalogue_price: price,
+      in_electrical_scope: item.in_electrical_scope !== false,
+      automation_flag: automationFlag,
+      notes: item.notes ?? "",
+    };
+  });
+}
+
+// ─────────────────────────────────────────────
+// BUILD COMPONENTS FROM LEGEND + ROOM DISTRIBUTION
+// ─────────────────────────────────────────────
+
+function buildComponents(
+  legendItems: LegendItem[],
+  roomDistribution: any[]
 ): DetectedComponent[] {
-  // Build legend lookup by type
-  const legendByType: Record<string, number> = {};
+  const components: DetectedComponent[] = [];
+
+  // Build a lookup of legend items by description keyword
+  const legendByDescription = new Map<string, LegendItem>();
   legendItems.forEach(l => {
-    if (l.mapped_type && l.in_electrical_scope) {
-      legendByType[l.mapped_type] = (legendByType[l.mapped_type] ?? 0) + l.quantity;
+    legendByDescription.set(l.symbol_description.toLowerCase(), l);
+  });
+
+  // Process room distribution — match each room component back to legend pricing
+  for (const c of roomDistribution) {
+    // Find the legend item this component came from
+    const legendDesc = (c.legend_description ?? "").toLowerCase();
+    let legendItem: LegendItem | undefined;
+
+    // Try exact match first
+    legendItem = legendByDescription.get(legendDesc);
+
+    // Try partial match
+    if (!legendItem) {
+      for (const [key, item] of legendByDescription) {
+        if (key.includes(legendDesc) || legendDesc.includes(key)) {
+          legendItem = item;
+          break;
+        }
+      }
     }
-  });
 
-  // Build detected totals per type
-  const detectedTotals: Record<string, number> = {};
-  rawComponents.forEach(c => {
-    detectedTotals[c.type] = (detectedTotals[c.type] ?? 0) + (c.quantity ?? 1);
-  });
+    // Fall back to type matching
+    if (!legendItem) {
+      legendItem = legendItems.find(l =>
+        l.mapped_type === c.type && l.in_electrical_scope
+      );
+    }
 
-  return rawComponents
-    .filter(c => (c.confidence ?? 50) >= 50)
-    .map(c => {
-      const flags: DetectionFlag[] = [...(c.flags ?? [])];
+    const price = legendItem?.catalogue_price ?? FALLBACK_PRICING[c.type as ComponentType] ?? 200;
+    const qty = c.quantity ?? 1;
+    const flags: DetectionFlag[] = [...(c.flags ?? [])];
 
-      // Force LOW_CONFIDENCE
-      if ((c.confidence ?? 100) < 70 && !flags.includes("LOW_CONFIDENCE")) {
-        flags.push("LOW_CONFIDENCE");
-      }
+    if (legendItem?.automation_flag && !flags.includes("AUTOMATION_DEPENDENCY")) {
+      flags.push("AUTOMATION_DEPENDENCY");
+    }
 
-      // Check legend mismatch (only flag on first component of that type)
-      const legendQty = legendByType[c.type];
-      const detectedQty = detectedTotals[c.type];
-      const legendMatch = legendQty === undefined || Math.abs(detectedQty - legendQty) <= 1;
-      if (!legendMatch && legendQty !== undefined && !flags.includes("LEGEND_MISMATCH")) {
-        flags.push("LEGEND_MISMATCH");
-      }
-
-     const catalogueMatch = mapLegendItem((c.notes ?? "") + " " + (c.type ?? ""));
-const unitPrice = catalogueMatch?.price ?? VESH_PRICING[c.type as ComponentType] ?? 0;
-      const offForm = flags.includes("OFF_FORM_PREMIUM") ? OFF_FORM_PREMIUM : 0;
-      const effectivePrice = unitPrice + offForm;
-
-      return {
-        type: c.type as ComponentType,
-        quantity: c.quantity ?? 1,
-        room: c.room ?? "Unspecified",
-        drawing_ref: c.drawing_ref ?? "",
-        confidence: c.confidence ?? 75,
-        needs_review: (c.confidence ?? 100) < 90,
-        flags,
-        notes: c.notes ?? "",
-        unit_price: effectivePrice,
-        line_total: effectivePrice * (c.quantity ?? 1),
-        legend_quantity: legendQty,
-        legend_match: legendMatch,
-      };
+    components.push({
+      type: (c.type ?? "DOWNLIGHT_RECESSED") as ComponentType,
+      quantity: qty,
+      room: c.room ?? "General",
+      drawing_ref: c.drawing_ref ?? "",
+      confidence: c.confidence ?? 80,
+      needs_review: (c.confidence ?? 80) < 90,
+      flags,
+      notes: c.notes ?? "",
+      unit_price: price,
+      line_total: price * qty,
+      legend_quantity: legendItem?.quantity,
+      legend_match: true,
+      catalogue_item_name: legendItem
+        ? `${legendItem.symbol_description} ($${legendItem.catalogue_price})`
+        : undefined,
     });
+  }
+
+  // Add any in-scope legend items that were completely missed by room scan
+  const coveredDescriptions = new Set(
+    roomDistribution.map(c => (c.legend_description ?? "").toLowerCase())
+  );
+
+  for (const legendItem of legendItems) {
+    if (!legendItem.in_electrical_scope || !legendItem.catalogue_price) continue;
+    if (legendItem.quantity === 0) continue;
+
+    const desc = legendItem.symbol_description.toLowerCase();
+    const isCovered = [...coveredDescriptions].some(
+      d => d.includes(desc) || desc.includes(d)
+    );
+
+    // Check by type coverage
+    const typeIsCovered = components.some(
+      c => c.legend_quantity === legendItem.quantity &&
+           legendItem.mapped_type === c.type
+    );
+
+    if (!isCovered && !typeIsCovered) {
+      console.log(`[ElectraScan v3] Legend item not found in room scan — adding directly: ${legendItem.symbol_description} ×${legendItem.quantity}`);
+      const price = legendItem.catalogue_price;
+      const flags: DetectionFlag[] = ["FROM_LEGEND"];
+      if (legendItem.automation_flag) flags.push("AUTOMATION_DEPENDENCY");
+
+      components.push({
+        type: (legendItem.mapped_type ?? "DOWNLIGHT_RECESSED") as ComponentType,
+        quantity: legendItem.quantity,
+        room: "General",
+        drawing_ref: "From legend",
+        confidence: 85,
+        needs_review: false,
+        flags,
+        notes: `${legendItem.symbol_description} — ${legendItem.quantity} ${legendItem.unit} as per legend`,
+        unit_price: price,
+        line_total: price * legendItem.quantity,
+        legend_quantity: legendItem.quantity,
+        legend_match: true,
+        catalogue_item_name: legendItem.symbol_description,
+      });
+    }
+  }
+
+  return components;
 }
 
 function generateRiskFlags(components: DetectedComponent[]): RiskFlag[] {
   const descriptions: Record<DetectionFlag, string> = {
-    HEIGHT_RISK: "Fitting above 3.5m — scaffold or EWP required. Add height allowance.",
-    AUTOMATION_DEPENDENCY: "Smart system detected — requires licensed programmer.",
+    HEIGHT_RISK: "Fitting above 3.5m — scaffold or EWP required.",
+    AUTOMATION_DEPENDENCY: "Smart/automation system — requires licensed programmer. Budget separately.",
     MISSING_CIRCUIT: "Equipment shown but no dedicated circuit on electrical drawing.",
-    SCOPE_CONFIRM: "Confirm with architect whether this item is in electrical scope.",
-    OUTDOOR_LOCATION: "External install — confirm IP rating and weatherproofing.",
-    OFF_FORM_PREMIUM: "Off-form concrete — premium of $100–$200 per point applies.",
-    CABLE_RUN_LONG: "Estimated cable run exceeds 20m. Verify and add cable allowance.",
-    LOW_CONFIDENCE: "Symbol unclear — verify quantity and type on drawing before quoting.",
-    SYMBOL_AMBIGUOUS: "Symbol unidentifiable — manual check required.",
-    LEGEND_MISMATCH: "Your detected count differs from the legend quantity. Verify on drawing.",
-    NOT_ELECTRICAL_SCOPE: "Item in legend but not in electrical scope — excluded from estimate.",
+    SCOPE_CONFIRM: "Confirm scope with architect.",
+    OUTDOOR_LOCATION: "External install — confirm IP rating.",
+    OFF_FORM_PREMIUM: "Off-form concrete — premium applies.",
+    CABLE_RUN_LONG: "Cable run exceeds 20m — verify and add allowance.",
+    LOW_CONFIDENCE: "Verify quantity on drawing before quoting.",
+    SYMBOL_AMBIGUOUS: "Symbol unclear — manual check required.",
+    LEGEND_MISMATCH: "Detected count differs from legend — verify on drawing.",
+    NOT_ELECTRICAL_SCOPE: "Item in legend but excluded from electrical scope.",
+    FROM_LEGEND: "Quantity taken directly from legend — room location unconfirmed.",
   };
 
   const flags: RiskFlag[] = [];
@@ -329,6 +494,7 @@ function generateRiskFlags(components: DetectedComponent[]): RiskFlag[] {
 
   for (const c of components) {
     for (const flag of c.flags) {
+      if (flag === "FROM_LEGEND") continue; // Don't show as risk
       const key = `${flag}:${c.type}`;
       if (!seen.has(key)) {
         seen.add(key);
@@ -346,7 +512,7 @@ function generateRiskFlags(components: DetectedComponent[]): RiskFlag[] {
 }
 
 // ─────────────────────────────────────────────
-// 7. MAIN FUNCTION — TWO-PASS DETECTION
+// MAIN FUNCTION — THREE-PASS DETECTION
 // ─────────────────────────────────────────────
 
 export async function detectElectricalComponents(
@@ -359,18 +525,17 @@ export async function detectElectricalComponents(
     dangerouslyAllowBrowser: true,
   });
 
-  console.log(`[ElectraScan v2] Converting PDF: ${file.name}`);
+  console.log(`[ElectraScan v3] Converting: ${file.name}`);
   const pageImages = await pdfToImages(file);
   const pageCount = pageImages.length;
-  console.log(`[ElectraScan v2] ${pageCount} pages converted`);
 
   const imageBlocks: Anthropic.ImageBlockParam[] = pageImages.map(base64 => ({
     type: "image" as const,
     source: { type: "base64" as const, media_type: "image/png" as const, data: base64 },
   }));
 
-  // ── PASS 1: Extract legend ──────────────────────────────────
-  console.log("[ElectraScan v2] Pass 1: Extracting legend...");
+  // ── PASS 1: Legend extraction ─────────────────
+  console.log("[ElectraScan v3] Pass 1: Reading legend...");
   let rawLegendResponse = "";
   let legendItems: LegendItem[] = [];
   let legendFound = false;
@@ -385,66 +550,74 @@ export async function detectElectricalComponents(
         role: "user",
         content: [
           ...imageBlocks,
-          { type: "text", text: `Drawing: ${file.name}. Find and extract the complete legend/key/schedule from this drawing.` },
+          { type: "text", text: `Drawing: ${file.name}. Extract every item from the legend/schedule including motorised blinds, LED strips, ceiling fans, and all items even if not obviously electrical. They are all in scope if they need wiring or a motor connection.` },
         ],
       }],
     });
 
     rawLegendResponse = legendResponse.content[0].type === "text" ? legendResponse.content[0].text : "";
-    const legendParsed = JSON.parse(extractJSON(rawLegendResponse));
-    legendFound = legendParsed.legend_found ?? false;
-    legendItems = legendParsed.items ?? [];
-    scaleDetected = legendParsed.scale_detected ?? "unknown";
+    const parsed = JSON.parse(extractJSON(rawLegendResponse));
+    legendFound = parsed.legend_found ?? false;
+    scaleDetected = parsed.scale_detected ?? "unknown";
 
-    console.log(`[ElectraScan v2] Legend found: ${legendFound}, ${legendItems.length} items`);
-    legendItems.forEach(item => {
-      console.log(`  ${item.symbol_description}: ${item.quantity} ${item.unit} → ${item.mapped_type ?? "not electrical"}`);
+    // Enrich with Vesh catalogue pricing
+    legendItems = enrichLegendItems(parsed.items ?? []);
+
+    console.log(`[ElectraScan v3] Legend: ${legendItems.length} items found`);
+    legendItems.forEach(l => {
+      if (l.in_electrical_scope) {
+        console.log(`  ✓ ${l.symbol_description}: ${l.quantity} EA @ $${l.catalogue_price}`);
+      }
     });
+
+    // Calculate legend-based subtotal for reference
+    const legendSubtotal = legendItems
+      .filter(l => l.in_electrical_scope && l.catalogue_price)
+      .reduce((s, l) => s + (l.catalogue_price! * l.quantity), 0);
+    console.log(`[ElectraScan v3] Legend-based subtotal: $${legendSubtotal.toLocaleString()}`);
+
   } catch (err) {
-    console.warn("[ElectraScan v2] Legend extraction failed, proceeding without legend:", err);
+    console.warn("[ElectraScan v3] Legend extraction failed:", err);
   }
 
-  // ── PASS 2: Detect components on plan ─────────────────────
-  console.log("[ElectraScan v2] Pass 2: Detecting components on plan...");
+  // ── PASS 2: Room distribution ──────────────────
+  console.log("[ElectraScan v3] Pass 2: Distributing by room...");
   let rawResponse = "";
+  let roomComponents: any[] = [];
 
-  const detectionSystemPrompt = buildDetectionPrompt(legendItems);
-
-  const detectionResponse = await client.messages.create({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 4096,
-    system: detectionSystemPrompt,
-    messages: [{
-      role: "user",
-      content: [
-        ...imageBlocks,
-        {
-          type: "text",
-          text: `Drawing: ${file.name}. Version: ${drawingVersion}. ${pageCount} page(s). Detect all electrical components room by room. Use the legend quantities as your verification target.`,
-        },
-      ],
-    }],
-  });
-
-  rawResponse = detectionResponse.content[0].type === "text" ? detectionResponse.content[0].text : "";
-
-  let parsedDetection: { scale_detected?: string; components: any[] };
   try {
-    parsedDetection = JSON.parse(extractJSON(rawResponse));
-    if (scaleDetected === "unknown" && parsedDetection.scale_detected) {
-      scaleDetected = parsedDetection.scale_detected;
+    const distributionPrompt = buildRoomDistributionPrompt(legendItems);
+    const distributionResponse = await client.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 4096,
+      system: distributionPrompt,
+      messages: [{
+        role: "user",
+        content: [
+          ...imageBlocks,
+          { type: "text", text: `Drawing: ${file.name}. Distribute the legend quantities by room. Reference the legend_description field back to the original legend item for each component.` },
+        ],
+      }],
+    });
+
+    rawResponse = distributionResponse.content[0].type === "text" ? distributionResponse.content[0].text : "";
+    const parsed = JSON.parse(extractJSON(rawResponse));
+    if (parsed.scale_detected && scaleDetected === "unknown") {
+      scaleDetected = parsed.scale_detected;
     }
+    roomComponents = parsed.components ?? [];
+    console.log(`[ElectraScan v3] Room distribution: ${roomComponents.length} entries`);
+
   } catch (err) {
-    console.error("[ElectraScan v2] Failed to parse detection JSON:", rawResponse);
-    throw new Error("Failed to parse component detection response.");
+    console.warn("[ElectraScan v3] Room distribution failed:", err);
   }
 
-  // ── Enrich + risk flags ──────────────────────────────────
-  const components = enrichComponents(parsedDetection.components ?? [], legendItems);
+  // ── Build final components ─────────────────────
+  const components = buildComponents(legendItems, roomComponents);
   const riskFlags = generateRiskFlags(components);
   const estimateSubtotal = components.reduce((s, c) => s + c.line_total, 0);
 
-  console.log(`[ElectraScan v2] Complete: ${components.length} components, $${estimateSubtotal.toLocaleString()} subtotal`);
+  console.log(`[ElectraScan v3] Final: ${components.length} line items, $${estimateSubtotal.toLocaleString()} subtotal`);
 
   return {
     drawing_version: drawingVersion,
@@ -461,13 +634,11 @@ export async function detectElectricalComponents(
   };
 }
 
-// ─────────────────────────────────────────────
-// 8. HELPERS
-// ─────────────────────────────────────────────
+// ── HELPERS ────────────────────────────────────
 
 export function groupByRoom(components: DetectedComponent[]): Record<string, DetectedComponent[]> {
   return components.reduce((acc, c) => {
-    const room = c.room || "Unknown";
+    const room = c.room || "General";
     if (!acc[room]) acc[room] = [];
     acc[room].push(c);
     return acc;
@@ -480,11 +651,4 @@ export function getReviewItems(components: DetectedComponent[]): DetectedCompone
 
 export function getLegendMismatches(components: DetectedComponent[]): DetectedComponent[] {
   return components.filter(c => c.legend_match === false);
-}
-
-export function getComponentSummary(components: DetectedComponent[]): Record<string, number> {
-  return components.reduce((acc, c) => {
-    acc[c.type] = (acc[c.type] ?? 0) + c.quantity;
-    return acc;
-  }, {} as Record<string, number>);
 }
