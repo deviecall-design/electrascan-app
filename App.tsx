@@ -153,7 +153,7 @@ function ResultsScreen({ result, fileName, onReset, onBuildEstimate }: {
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", flexDirection: "column", paddingBottom: 80 }}>
+    <div style={{ height: "100vh", background: C.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}>
       {/* Sticky header */}
       <div style={{ position: "sticky", top: 0, zIndex: 100, background: C.navy, borderBottom: `1px solid ${C.border}`, padding: "14px 18px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
@@ -179,7 +179,7 @@ function ResultsScreen({ result, fileName, onReset, onBuildEstimate }: {
         </div>
       </div>
 
-      <div style={{ flex: 1, padding: "16px 16px 0", overflowY: "auto" as const, height: "calc(100vh - 180px)" }}>
+      <div style={{ flex: 1, padding: "16px 16px 0", overflowY: "auto" as any, WebkitOverflowScrolling: "touch" as any }}>
         {tab === "schedule" && (
           <div>
             {rooms.map(room => {
@@ -383,7 +383,7 @@ function EstimateEditor({ result, fileName, onBack, onReset }: {
   const MARGINS = [10, 15, 20, 25];
 
   return (
-    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", flexDirection: "column", paddingBottom: 90 }}>
+    <div style={{ height: "100vh", background: C.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
       {/* Lock confirm modal */}
       {showLockConfirm && (
@@ -433,7 +433,7 @@ function EstimateEditor({ result, fileName, onBack, onReset }: {
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, padding: "16px 16px 0", overflowY: "auto" as const, height: "calc(100vh - 180px)" }}>
+      <div style={{ flex: 1, padding: "16px 16px 0", overflowY: "auto" as any, WebkitOverflowScrolling: "touch" as any, paddingBottom: 80 }}>
 
         {/* Margin selector */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "14px 16px", marginBottom: 12 }}>
