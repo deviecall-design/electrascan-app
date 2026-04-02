@@ -11,7 +11,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import * as pdfjsLib from "pdfjs-dist";
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
-
+import { mapLegendItem } from "./vesh_catalogue";
 // ─────────────────────────────────────────────
 // 1. TYPES
 // ─────────────────────────────────────────────
@@ -287,7 +287,8 @@ function enrichComponents(
         flags.push("LEGEND_MISMATCH");
       }
 
-      const unitPrice = VESH_PRICING[c.type as ComponentType] ?? 0;
+     const catalogueMatch = mapLegendItem((c.notes ?? "") + " " + (c.type ?? ""));
+const unitPrice = catalogueMatch?.price ?? VESH_PRICING[c.type as ComponentType] ?? 0;
       const offForm = flags.includes("OFF_FORM_PREMIUM") ? OFF_FORM_PREMIUM : 0;
       const effectivePrice = unitPrice + offForm;
 
