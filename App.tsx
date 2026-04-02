@@ -179,7 +179,7 @@ function ResultsScreen({ result, fileName, onReset, onBuildEstimate }: {
         </div>
       </div>
 
-      <div style={{ flex: 1, padding: "16px 16px 0" }}>
+      <div style={{ flex: 1, padding: "16px 16px 0", overflowY: "auto" as const, height: "calc(100vh - 180px)" }}>
         {tab === "schedule" && (
           <div>
             {rooms.map(room => {
@@ -433,7 +433,7 @@ function EstimateEditor({ result, fileName, onBack, onReset }: {
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, padding: "16px 16px 0" }}>
+      <div style={{ flex: 1, padding: "16px 16px 0", overflowY: "auto" as const, height: "calc(100vh - 180px)" }}>
 
         {/* Margin selector */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "14px 16px", marginBottom: 12 }}>
