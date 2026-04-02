@@ -12,7 +12,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
-import * as pdfjsLib from "pdfjs-dist";
+import * as pdfjsLib from "pdfjs-dist";pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 // ─────────────────────────────────────────────
 // 1. COMPONENT TYPES  (must match DetectionSpec §2 exactly)
