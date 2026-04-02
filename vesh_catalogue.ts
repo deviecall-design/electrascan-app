@@ -107,7 +107,7 @@ export const VESH_CATALOGUE: CatalogueItem[] = [
     aliases: [
       "zetr 13 gpo", "zetr 13 double power point", "zetr 13 powerpoint",
       "zetr 13 series double gpo", "zetr13 gpo", "zetr 13 double gpo white",
-      "zetr 13 series double powerpoint", "zetr 13 double powerpoint",
+      "zetr 13 series double powerpoint","zetr 13 double powerpoint","zetr t3 series double powerpoint","zetr t3 double powerpoint","zetr t3 series double gpo","zetr t3 double gpo",
       "zetr double power point", "zetr gpo",
     ],
   },
@@ -122,7 +122,7 @@ export const VESH_CATALOGUE: CatalogueItem[] = [
     aliases: [
       "zetr 12 gpo", "zetr 12 double power point", "zetr 12 powerpoint",
       "zetr 12 series double gpo", "zetr12 gpo",
-      "zetr 12 series double powerpoint", "zetr 12 double gpo white",
+      "zetr 12 series double powerpoint","zetr 12 double gpo white","zetr t2 series double powerpoint","zetr t2 double powerpoint","zetr t2 series double gpo","zetr t2 double gpo",
     ],
   },
   {
@@ -459,9 +459,14 @@ export const VESH_CATALOGUE: CatalogueItem[] = [
     aliases: [
       "switch", "light switch", "conventional switch",
       "standard switch", "single switch", "switch point",
-      "single pole switch", "zetr 13 light switch",
-      "zetr 12 light switch", "zetr 13 series light switch",
-      "zetr 12 series light switch", "switch point conventional",
+      "single pole switch",
+      "zetr 13 light switch", "zetr 12 light switch",
+      "zetr 13 series light switch", "zetr 12 series light switch",
+      "zetr t3 light switch", "zetr t2 light switch",
+      "zetr t3 series light switch", "zetr t2 series light switch",
+      "zetr t3 switch", "zetr t2 switch",
+      "zetr 13 switch", "zetr 12 switch",
+      "switch point conventional",
     ],
   },
   {
