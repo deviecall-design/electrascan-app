@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { saveEstimate } from '../services/estimateService';
 import { PlanSet, ProjectData } from '../types';
 import { FileDown, Loader2, Check } from 'lucide-react';
 import {
@@ -54,7 +54,7 @@ const ExportModal: React.FC<ExportModalProps> = ({
         return indices.sort((a, b) => a - b);
     };
 
-    const handleExport = () => {
+   const handleExport = async () => {
         let indices: number[] = [];
         if (mode === 'current') {
             indices = [currentPageIndex];
@@ -63,6 +63,13 @@ const ExportModal: React.FC<ExportModalProps> = ({
         } else {
             indices = Array.from<number>(selectedPages).sort((a, b) => a - b);
         }
+await saveEstimate({
+          project_name: projectData.name,
+          contractor: projectData.contractor ?? '',
+          total: projectData.totalCost ?? 0,
+          items: planSets.flatMap(p => p.items ?? []),
+          status: 'exported'
+        });
 
         onExport(indices, includeLegend, includeNotes);
     };
