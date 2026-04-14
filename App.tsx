@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import {
   detectElectricalComponents,
   DetectionResult,
@@ -628,9 +628,8 @@ function ResultsScreen({ result, fileName, onBack, onBuildEstimate }: {
 }
 
 // ─── Estimate Editor ────────────────────────────
-function EstimateEditor({ result, fileName, onBack, existingEstimate, onPersist }: {
+function EstimateEditor({ result, fileName, onBack, existingEstimate }: {
   result?: DetectionResult; fileName: string; onBack: () => void; existingEstimate?: Estimate;
-  onPersist?: (updates: Pick<Estimate, "lineItems" | "margin" | "subtotal" | "total" | "status">) => void;
 }) {
   const [items, setItems] = useState<LineItem[]>(() =>
     existingEstimate?.lineItems ?? (result ? toLineItems(result.components) : [])
@@ -647,25 +646,6 @@ function EstimateEditor({ result, fileName, onBack, existingEstimate, onPersist 
   const subtotalM = subtotal + marginAmt;
   const gst = subtotalM * 0.1;
   const total = subtotalM + gst;
-
-  // Persist edits back to App state. Intentionally excluding `existingEstimate` and
-  // `onPersist` from deps: this effect should fire when the USER edits local state
-  // (items / margin / locked), not when the prop flows back in as a fresh object
-  // after our own persist — which would create an infinite render loop.
-  const initialStatus = existingEstimate?.status;
-  useEffect(() => {
-    if (!onPersist || !initialStatus) return;
-    const nextStatus: Estimate["status"] =
-      locked && initialStatus === "draft" ? "locked" : initialStatus;
-    onPersist({
-      lineItems: items,
-      margin,
-      subtotal: Math.round(subtotal),
-      total: Math.round(total),
-      status: nextStatus,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, margin, locked]);
 
   const updateQty = (id: string, qty: number) => !locked && setItems(prev => prev.map(i => i.id === id ? { ...i, qty: Math.max(0, qty) } : i));
   const updatePrice = (id: string, price: number) => !locked && setItems(prev => prev.map(i => i.id === id ? { ...i, unitPrice: price } : i));
@@ -795,25 +775,6 @@ export default function App() {
     setScreen("estimate");
   };
 
-  const handlePersistEstimate = useCallback(
-    (estId: string, updates: Pick<Estimate, "lineItems" | "margin" | "subtotal" | "total" | "status">) => {
-      setProjects(prev => prev.map(p => {
-        if (!p.estimates.some(e => e.id === estId)) return p;
-        const newEstimates = p.estimates.map(e => e.id === estId ? { ...e, ...updates } : e);
-        const latest = newEstimates[newEstimates.length - 1];
-        return { ...p, estimates: newEstimates, contractValue: latest?.total ?? p.contractValue };
-      }));
-      setSelectedEstimate(prev => prev && prev.id === estId ? { ...prev, ...updates } : prev);
-      setSelectedProject(prev => {
-        if (!prev || !prev.estimates.some(e => e.id === estId)) return prev;
-        const newEstimates = prev.estimates.map(e => e.id === estId ? { ...e, ...updates } : e);
-        const latest = newEstimates[newEstimates.length - 1];
-        return { ...prev, estimates: newEstimates, contractValue: latest?.total ?? prev.contractValue };
-      });
-    },
-    []
-  );
-
   const handleFile = async (f: File) => {
     setFile(f); setError(null); setScreen("scanning");
     try {
@@ -828,39 +789,32 @@ export default function App() {
 
   const handleNewEstimate = () => {
     if (!result || !file) return;
-    const newLineItems = toLineItems(result.components);
-    const newSubtotal = newLineItems.reduce((s, i) => s + i.qty * i.unitPrice, 0);
-    const newMargin = 15;
-    const subtotalWithMargin = newSubtotal * (1 + newMargin / 100);
-    const newTotal = Math.round(subtotalWithMargin * 1.1);
-    const today = new Date().toLocaleDateString("en-AU");
-    const newEstimate: Estimate = {
-      id: `e-${Date.now()}`,
-      number: `EST-${new Date().getFullYear()}-${String(Math.floor(Math.random()*900)+100)}-001`,
-      date: today,
-      subtotal: Math.round(newSubtotal),
-      margin: newMargin,
-      total: newTotal,
-      status: "draft",
-      drawingFile: file.name,
-      lineItems: newLineItems,
-    };
+    const gst = result.estimate_subtotal * 0.1;
+    const total = result.estimate_subtotal + gst;
     const newProject: Project = {
       id: `p-${Date.now()}`,
       name: file.name.replace(".pdf", "").replace(/[_-]/g, " "),
       address: "Address TBC",
       client: "Client TBC",
       status: "estimating",
-      contractValue: newTotal,
-      createdAt: today,
-      updatedAt: today,
+      contractValue: Math.round(total),
+      createdAt: new Date().toLocaleDateString("en-AU"),
+      updatedAt: new Date().toLocaleDateString("en-AU"),
       drawingVersion: result.scale_detected,
       daysActive: 0,
-      estimates: [newEstimate],
+      estimates: [{
+        id: `e-${Date.now()}`,
+        number: `EST-${new Date().getFullYear()}-${String(Math.floor(Math.random()*900)+100)}-001`,
+        date: new Date().toLocaleDateString("en-AU"),
+        subtotal: result.estimate_subtotal,
+        margin: 15,
+        total: Math.round(total),
+        status: "draft",
+        drawingFile: file.name,
+        lineItems: [],
+      }],
     };
     setProjects(prev => [newProject, ...prev]);
-    setSelectedProject(newProject);
-    setSelectedEstimate(newEstimate);
     setScreen("estimate");
   };
 
@@ -877,7 +831,6 @@ export default function App() {
           result={result ?? undefined}
           fileName={selectedEstimate?.drawingFile ?? file?.name ?? ""}
           existingEstimate={selectedEstimate ?? undefined}
-          onPersist={selectedEstimate ? (updates) => handlePersistEstimate(selectedEstimate.id, updates) : undefined}
           onBack={() => {
             const returnTo = selectedEstimate && selectedProject ? "project" : "dashboard";
             setSelectedEstimate(null);
