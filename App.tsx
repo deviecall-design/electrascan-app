@@ -287,8 +287,8 @@ function DashboardScreen({ projects, onNewScan, onOpenProject }: {
 }
 
 // ─── Project Detail Screen ──────────────────────
-function ProjectScreen({ project, onBack, onNewScan }: {
-  project: Project; onBack: () => void; onNewScan: () => void;
+function ProjectScreen({ project, onBack, onNewScan, onOpenEstimate }: {
+  project: Project; onBack: () => void; onNewScan: () => void; onOpenEstimate: (est: Estimate) => void;
 }) {
   const status = STATUS_CONFIG[project.status];
   const latestEst = project.estimates[project.estimates.length - 1];
@@ -379,7 +379,12 @@ function ProjectScreen({ project, onBack, onNewScan }: {
           };
           const es = estStatus[est.status];
           return (
-            <div key={est.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: "16px 18px", marginBottom: 10 }}>
+            <button
+              key={est.id}
+              type="button"
+              onClick={() => onOpenEstimate(est)}
+              style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: "16px 18px", marginBottom: 10, cursor: "pointer", display: "block", width: "100%", textAlign: "left" as const, font: "inherit", color: "inherit" }}
+            >
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{est.number}</div>
                 <div style={{ fontSize: 11, fontWeight: 700, color: es.color }}>{es.label}</div>
@@ -395,7 +400,7 @@ function ProjectScreen({ project, onBack, onNewScan }: {
                   <div style={{ fontSize: 18, fontWeight: 800, color: C.green }}>{fmtK(est.total)}</div>
                 </div>
               </div>
-            </div>
+            </button>
           );
         })}
 
@@ -623,14 +628,18 @@ function ResultsScreen({ result, fileName, onBack, onBuildEstimate }: {
 }
 
 // ─── Estimate Editor ────────────────────────────
-function EstimateEditor({ result, fileName, onBack }: {
-  result: DetectionResult; fileName: string; onBack: () => void;
+function EstimateEditor({ result, fileName, onBack, existingEstimate }: {
+  result?: DetectionResult; fileName: string; onBack: () => void; existingEstimate?: Estimate;
 }) {
-  const [items, setItems] = useState<LineItem[]>(() => toLineItems(result.components));
-  const [margin, setMargin] = useState(15);
-  const [locked, setLocked] = useState(false);
+  const [items, setItems] = useState<LineItem[]>(() =>
+    existingEstimate?.lineItems ?? (result ? toLineItems(result.components) : [])
+  );
+  const [margin, setMargin] = useState(existingEstimate?.margin ?? 15);
+  const [locked, setLocked] = useState(existingEstimate ? existingEstimate.status !== "draft" : false);
   const [showLock, setShowLock] = useState(false);
-  const [estNumber] = useState(() => `EST-${new Date().getFullYear()}-${String(Math.floor(Math.random()*900)+100)}-001`);
+  const [estNumber] = useState(() =>
+    existingEstimate?.number ?? `EST-${new Date().getFullYear()}-${String(Math.floor(Math.random()*900)+100)}-001`
+  );
 
   const subtotal = items.reduce((s, i) => s + i.qty * i.unitPrice, 0);
   const marginAmt = subtotal * (margin / 100);
@@ -759,6 +768,12 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>(MOCK_PROJECTS);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [selectedEstimate, setSelectedEstimate] = useState<Estimate | null>(null);
+
+  const handleOpenEstimate = (est: Estimate) => {
+    setSelectedEstimate(est);
+    setScreen("estimate");
+  };
 
   const handleFile = async (f: File) => {
     setFile(f); setError(null); setScreen("scanning");
@@ -807,11 +822,22 @@ export default function App() {
     <>
       <style>{CSS}</style>
       {screen === "dashboard" && <DashboardScreen projects={projects} onNewScan={goToScan} onOpenProject={p => { setSelectedProject(p); setScreen("project"); }} />}
-      {screen === "project" && selectedProject && <ProjectScreen project={selectedProject} onBack={() => setScreen("dashboard")} onNewScan={goToScan} />}
+      {screen === "project" && selectedProject && <ProjectScreen project={selectedProject} onBack={() => setScreen("dashboard")} onNewScan={goToScan} onOpenEstimate={handleOpenEstimate} />}
       {screen === "upload" && <UploadScreen onFile={handleFile} onBack={() => setScreen("dashboard")} error={error} />}
       {screen === "scanning" && file && <ScanningScreen fileName={file.name} />}
       {screen === "results" && result && file && <ResultsScreen result={result} fileName={file.name} onBack={goToScan} onBuildEstimate={handleNewEstimate} />}
-      {screen === "estimate" && result && file && <EstimateEditor result={result} fileName={file.name} onBack={() => setScreen("dashboard")} />}
+      {screen === "estimate" && (selectedEstimate || (result && file)) && (
+        <EstimateEditor
+          result={result ?? undefined}
+          fileName={selectedEstimate?.drawingFile ?? file?.name ?? ""}
+          existingEstimate={selectedEstimate ?? undefined}
+          onBack={() => {
+            const returnTo = selectedEstimate && selectedProject ? "project" : "dashboard";
+            setSelectedEstimate(null);
+            setScreen(returnTo);
+          }}
+        />
+      )}
     </>
   );
 }
