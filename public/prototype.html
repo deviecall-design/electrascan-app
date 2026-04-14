@@ -1,0 +1,2819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ElectraScan — Prototype</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg-dark: #0D1B2A;
+  --bg-light: #F0F4F8;
+  --navy: #1A3A5C;
+  --blue: #1D6EFD;
+  --blue-lt: #60A5FA;
+  --amber: #F59E0B;
+  --green: #10B981;
+  --red: #EF4444;
+  --purple: #8B5CF6;
+  --teal: #0EA5E9;
+  --white: #FFFFFF;
+  --gray-lt: #94A3B8;
+  --gray-md: #64748B;
+  --dark-text: #1E293B;
+  --card: #FFFFFF;
+  --border: #E2E8F0;
+  --sidebar-w: 220px;
+  --topbar-h: 56px;
+  --bottomnav-h: 60px;
+}
+html, body, #root { height: 100%; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg-light); color: var(--dark-text); overflow-x: hidden; }
+@keyframes scan-progress { from { width:0% } to { width:100% } }
+
+/* ── Layout ── */
+.app { display: flex; height: 100vh; overflow: hidden; }
+.sidebar {
+  width: var(--sidebar-w); background: var(--bg-dark);
+  display: flex; flex-direction: column; flex-shrink: 0;
+  z-index: 100;
+}
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.topbar {
+  height: var(--topbar-h); background: var(--white);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; padding: 0 20px; gap: 12px;
+  flex-shrink: 0;
+}
+.page-content { flex: 1; overflow-y: auto; padding: 24px; }
+.bottom-nav { display: none; }
+
+/* ── Sidebar ── */
+.sidebar-logo {
+  padding: 18px 16px 12px;
+  display: flex; align-items: center; gap: 10px;
+  border-bottom: 1px solid #1e3a5c;
+}
+.logo-icon {
+  width: 34px; height: 34px; border-radius: 8px;
+  background: linear-gradient(135deg, var(--blue), var(--teal));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 800; color: white;
+}
+.logo-text { font-size: 15px; font-weight: 700; color: white; }
+.logo-sub  { font-size: 10px; color: var(--gray-lt); }
+.nav-section { padding: 16px 10px 4px; font-size: 9px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: #4B5563; }
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; margin: 1px 6px; border-radius: 7px;
+  font-size: 13px; font-weight: 500; color: var(--gray-lt);
+  cursor: pointer; transition: all 0.15s; user-select: none;
+}
+.nav-item:hover { background: #1e3a5c; color: white; }
+.nav-item.active { background: var(--blue); color: white; }
+.nav-icon { font-size: 15px; width: 18px; text-align: center; }
+.sidebar-footer { margin-top: auto; padding: 12px 16px; border-top: 1px solid #1e3a5c; }
+.user-chip { display: flex; align-items: center; gap: 8px; }
+.user-avatar {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--blue); color: white;
+  font-size: 11px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+.user-name { font-size: 12px; color: var(--gray-lt); }
+
+/* ── Topbar ── */
+.topbar-title { font-size: 16px; font-weight: 700; color: var(--dark-text); }
+.topbar-sub { font-size: 12px; color: var(--gray-md); margin-top: 1px; }
+.topbar-actions { margin-left: auto; display: flex; gap: 8px; }
+.btn {
+  padding: 7px 14px; border-radius: 7px; font-size: 12px; font-weight: 600;
+  cursor: pointer; border: none; transition: all 0.15s; display: flex; align-items: center; gap: 6px;
+}
+.btn-primary { background: var(--blue); color: white; }
+.btn-primary:hover { background: #1557d4; }
+.btn-secondary { background: var(--border); color: var(--dark-text); }
+.btn-secondary:hover { background: #d1dbe8; }
+.btn-ghost { background: transparent; color: var(--gray-md); border: 1px solid var(--border); }
+.btn-ghost:hover { background: var(--bg-light); }
+.btn-danger { background: #fef2f2; color: var(--red); border: 1px solid #fecaca; }
+.btn-danger:hover { background: #fee2e2; }
+.btn-sm { padding: 5px 10px; font-size: 11px; }
+.btn-amber { background: var(--amber); color: white; }
+
+/* ── Cards & Grids ── */
+.grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 12px; padding: 20px;
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+.card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
+.card-clickable { cursor: pointer; }
+.card-clickable:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.1); }
+.card-dark { background: var(--bg-dark); border-color: #1e3a5c; }
+.stat-card { text-align: center; }
+.stat-value { font-size: 28px; font-weight: 800; }
+.stat-label { font-size: 11px; color: var(--gray-md); margin-top: 4px; font-weight: 500; }
+
+/* ── Badges ── */
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600;
+}
+.badge-blue   { background: rgba(29,110,253,0.1); color: var(--blue); }
+.badge-green  { background: rgba(16,185,129,0.1); color: var(--green); }
+.badge-amber  { background: rgba(245,158,11,0.1);  color: var(--amber); }
+.badge-red    { background: rgba(239,68,68,0.1);   color: var(--red); }
+.badge-gray   { background: rgba(100,116,139,0.1); color: var(--gray-md); }
+.badge-purple { background: rgba(139,92,246,0.1);  color: var(--purple); }
+
+/* ── Section headings ── */
+.section-title { font-size: 18px; font-weight: 700; color: var(--dark-text); margin-bottom: 4px; }
+.section-sub   { font-size: 13px; color: var(--gray-md); margin-bottom: 20px; }
+.label { font-size: 11px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; color: var(--gray-md); margin-bottom: 8px; }
+
+/* ── Tables ── */
+.table-wrap { background: white; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+thead { background: var(--bg-light); }
+th { padding: 10px 14px; text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--gray-md); border-bottom: 1px solid var(--border); }
+td { padding: 11px 14px; border-bottom: 1px solid #f1f5f9; color: var(--dark-text); }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: #f8fafc; }
+tr.row-added   td { background: rgba(16,185,129,0.05); }
+tr.row-removed td { background: rgba(239,68,68,0.05); }
+tr.row-changed td { background: rgba(245,158,11,0.05); }
+.row-added   td:first-child { border-left: 3px solid var(--green); }
+.row-removed td:first-child { border-left: 3px solid var(--red); }
+.row-changed td:first-child { border-left: 3px solid var(--amber); }
+
+/* ── Upload zone ── */
+.upload-zone {
+  border: 2px dashed var(--border); border-radius: 12px;
+  padding: 40px 20px; text-align: center; cursor: pointer;
+  transition: all 0.2s; background: white;
+}
+.upload-zone:hover, .upload-zone.drag-over {
+  border-color: var(--blue); background: rgba(29,110,253,0.03);
+}
+.upload-icon { font-size: 36px; margin-bottom: 12px; }
+.upload-title { font-size: 15px; font-weight: 600; color: var(--dark-text); margin-bottom: 4px; }
+.upload-sub { font-size: 12px; color: var(--gray-md); }
+.upload-formats { display: flex; gap: 6px; justify-content: center; margin-top: 12px; flex-wrap: wrap; }
+
+/* ── Progress bar ── */
+.progress-bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin-top: 8px; }
+.progress-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+
+/* ── Tabs ── */
+.tabs { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 20px; }
+.tab-btn {
+  padding: 10px 18px; font-size: 13px; font-weight: 600;
+  color: var(--gray-md); cursor: pointer; border: none; background: none;
+  border-bottom: 2px solid transparent; margin-bottom: -2px;
+  transition: all 0.15s;
+}
+.tab-btn:hover { color: var(--dark-text); }
+.tab-btn.active { color: var(--blue); border-bottom-color: var(--blue); }
+
+/* ── Version timeline ── */
+.version-timeline { display: flex; flex-direction: column; gap: 10px; }
+.version-card {
+  background: white; border: 1px solid var(--border); border-radius: 10px;
+  padding: 14px 16px; display: flex; align-items: center; gap: 14px; cursor: pointer;
+  transition: all 0.15s;
+}
+.version-card:hover { border-color: var(--blue); box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.version-card.active-version { border-color: var(--blue); background: rgba(29,110,253,0.03); }
+.version-num {
+  width: 40px; height: 40px; border-radius: 8px;
+  background: var(--navy); color: white;
+  font-size: 12px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+
+/* ── Risk flags ── */
+.risk-flag {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 11px 14px; border-radius: 8px; margin-bottom: 8px;
+}
+.risk-flag.high   { background: rgba(239,68,68,0.07); border-left: 3px solid var(--red); }
+.risk-flag.medium { background: rgba(245,158,11,0.07); border-left: 3px solid var(--amber); }
+.risk-flag.info   { background: rgba(14,165,233,0.07); border-left: 3px solid var(--teal); }
+.risk-icon { font-size: 16px; margin-top: 1px; }
+.risk-title { font-size: 12px; font-weight: 700; color: var(--dark-text); }
+.risk-desc  { font-size: 11px; color: var(--gray-md); margin-top: 2px; }
+
+/* ── Estimate summary ── */
+.estimate-summary {
+  background: var(--bg-dark); border-radius: 12px; padding: 20px;
+  color: white;
+}
+.summary-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; font-size: 13px; }
+.summary-row.total { border-top: 1px solid #1e3a5c; margin-top: 8px; padding-top: 12px; font-size: 16px; font-weight: 700; }
+.summary-label { color: var(--gray-lt); }
+.summary-value { font-weight: 600; }
+.summary-value.green { color: var(--green); }
+
+/* ── Variation delta ── */
+.delta-positive { color: var(--red); font-weight: 600; }
+.delta-negative { color: var(--green); font-weight: 600; }
+.delta-neutral  { color: var(--gray-md); }
+
+/* ── Project card ── */
+.project-card {
+  background: white; border: 1px solid var(--border); border-radius: 12px;
+  overflow: hidden; cursor: pointer; transition: all 0.15s;
+}
+.project-card:hover { box-shadow: 0 6px 24px rgba(0,0,0,0.1); transform: translateY(-2px); }
+.project-card-accent { height: 4px; }
+.project-card-body { padding: 16px; }
+.project-name { font-size: 14px; font-weight: 700; color: var(--dark-text); margin-bottom: 4px; }
+.project-meta { font-size: 11px; color: var(--gray-md); }
+.project-stats { display: flex; gap: 12px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+.project-stat { text-align: center; flex: 1; }
+.project-stat-val { font-size: 15px; font-weight: 700; }
+.project-stat-lbl { font-size: 10px; color: var(--gray-md); }
+
+/* ── Input styles ── */
+input[type="text"], input[type="number"], select {
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 6px 10px; font-size: 13px; width: 100%;
+  background: white; color: var(--dark-text);
+  outline: none; transition: border-color 0.15s;
+}
+input:focus, select:focus { border-color: var(--blue); box-shadow: 0 0 0 2px rgba(29,110,253,0.1); }
+
+/* ── Pill nav (mobile project tabs) ── */
+.pill-nav { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+.pill {
+  padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600;
+  cursor: pointer; border: 1.5px solid var(--border); background: white; color: var(--gray-md);
+  transition: all 0.15s;
+}
+.pill.active { background: var(--blue); border-color: var(--blue); color: white; }
+
+/* ── Variation banner ── */
+.variation-banner {
+  background: linear-gradient(135deg, var(--bg-dark), var(--navy));
+  border-radius: 12px; padding: 20px 24px; margin-bottom: 20px;
+  display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
+}
+.variation-badge { text-align: center; }
+.variation-badge-val { font-size: 22px; font-weight: 800; }
+.variation-badge-lbl { font-size: 10px; color: var(--gray-lt); text-transform: uppercase; letter-spacing: 0.5px; }
+.variation-divider { width: 1px; height: 40px; background: #1e3a5c; }
+
+/* ── Upload progress animation ── */
+@keyframes shimmer {
+  0% { background-position: -1000px 0; }
+  100% { background-position: 1000px 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, #f0f4f8 25%, #e2e8f0 50%, #f0f4f8 75%);
+  background-size: 1000px 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 4px;
+}
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+  .sidebar { display: none; }
+  .bottom-nav {
+    display: flex; position: fixed; bottom: 0; left: 0; right: 0;
+    height: var(--bottomnav-h); background: var(--bg-dark);
+    border-top: 1px solid #1e3a5c; z-index: 200;
+    justify-content: space-around; align-items: center;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .bottom-nav-item {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    cursor: pointer; padding: 6px 10px; border-radius: 8px;
+    color: var(--gray-lt); font-size: 10px; font-weight: 600;
+    transition: all 0.15s;
+  }
+  .bottom-nav-item.active { color: var(--blue); }
+  .bottom-nav-icon { font-size: 20px; }
+  .page-content { padding: 16px; padding-bottom: calc(var(--bottomnav-h) + 16px); }
+  .grid-4 { grid-template-columns: repeat(2, 1fr); }
+  .grid-3 { grid-template-columns: repeat(1, 1fr); }
+  .grid-2 { grid-template-columns: repeat(1, 1fr); }
+  .topbar { padding: 0 16px; }
+  .topbar-title { font-size: 14px; }
+}
+@media (max-width: 480px) {
+  .grid-4 { grid-template-columns: repeat(2, 1fr); }
+  .variation-banner { flex-direction: column; }
+}
+
+/* ── Misc ── */
+.flex { display: flex; }
+.flex-center { display: flex; align-items: center; }
+.gap-8 { gap: 8px; }
+.gap-12 { gap: 12px; }
+.gap-16 { gap: 16px; }
+.mt-4  { margin-top: 4px; }
+.mt-8  { margin-top: 8px; }
+.mt-12 { margin-top: 12px; }
+.mt-16 { margin-top: 16px; }
+.mt-20 { margin-top: 20px; }
+.mb-16 { margin-bottom: 16px; }
+.text-sm   { font-size: 12px; }
+.text-xs   { font-size: 11px; }
+.text-gray { color: var(--gray-md); }
+.text-right { text-align: right; }
+.font-bold  { font-weight: 700; }
+.w-full { width: 100%; }
+.divider { height: 1px; background: var(--border); margin: 16px 0; }
+.empty-state { text-align: center; padding: 48px 20px; color: var(--gray-md); }
+.empty-icon  { font-size: 40px; margin-bottom: 12px; }
+.empty-text  { font-size: 14px; font-weight: 600; }
+.empty-sub   { font-size: 12px; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+// ── Mock Data ──────────────────────────────────────────────────────────────
+const MOCK_PROJECTS = [
+  {
+    id: 1, name: 'Riverside Apartments', address: '42 Riverside Dr, Richmond VIC',
+    client: 'Meriton Group', builder: 'Lendlease Construction',
+    status: 'active', color: '#1D6EFD',
+    versions: 2, lastEstimate: 148500, lastUpdated: '18 Mar 2026',
+    description: '12-storey residential apartment complex, 84 units',
+  },
+  {
+    id: 2, name: 'Harbour View Office', address: '11 Harbour St, Docklands VIC',
+    client: 'Charter Hall', builder: 'Multiplex',
+    status: 'active', color: '#10B981',
+    versions: 1, lastEstimate: 312000, lastUpdated: '15 Mar 2026',
+    description: 'Commercial office fitout, Level 3–8',
+  },
+  {
+    id: 3, name: 'Brighton Residence', address: '7 Marine Pde, Brighton VIC',
+    client: 'Private Client', builder: 'Metricon Homes',
+    status: 'pending', color: '#F59E0B',
+    versions: 1, lastEstimate: 28400, lastUpdated: '10 Mar 2026',
+    description: 'Custom luxury residential build',
+  },
+  {
+    id: 4, name: 'Southbank Hotel', address: '88 Southbank Blvd, Southbank VIC',
+    client: 'Marriott International', builder: 'Built Environs',
+    status: 'complete', color: '#8B5CF6',
+    versions: 4, lastEstimate: 890000, lastUpdated: '2 Feb 2026',
+    description: '5-star hotel, 22 floors, 340 rooms',
+  },
+];
+
+const MOCK_VERSIONS = [
+  {
+    id: 1, label: 'Version 001', tag: 'V001', date: '1 Mar 2026', source: 'Email from architect',
+    components: 47, estimateValue: 136200, estimate: 'EST-2026-001-001', status: 'superseded',
+  },
+  {
+    id: 2, label: 'Version 002', tag: 'V002', date: '18 Mar 2026', source: 'Direct upload — Rev B',
+    components: 52, estimateValue: 148500, estimate: 'EST-2026-001-002', status: 'active',
+  },
+];
+
+const MOCK_COMPONENTS = [
+  { id:1, room:'Living / Dining',  type:'Double Power Point (GPO)',     qty:8, ref:'E-01', confidence:97 },
+  { id:2, room:'Living / Dining',  type:'LED Downlight Circuit',        qty:12, ref:'L-01', confidence:94 },
+  { id:3, room:'Kitchen',          type:'Double Power Point (GPO)',     qty:6, ref:'E-02', confidence:97 },
+  { id:4, room:'Kitchen',          type:'Rangehood Circuit',            qty:1, ref:'E-03', confidence:91 },
+  { id:5, room:'Kitchen',          type:'Dishwasher Dedicated Circuit', qty:1, ref:'E-04', confidence:95 },
+  { id:6, room:'Bedrooms x3',      type:'Double Power Point (GPO)',     qty:9, ref:'E-05', confidence:97 },
+  { id:7, room:'Bedrooms x3',      type:'LED Downlight Circuit',        qty:9, ref:'L-02', confidence:94 },
+  { id:8, room:'Bathrooms x2',     type:'Exhaust Fan Circuit',          qty:2, ref:'M-01', confidence:88 },
+  { id:9, room:'Bathrooms x2',     type:'Shaver Point / LED Mirror',   qty:2, ref:'L-03', confidence:86 },
+  { id:10,room:'Garage',           type:'EV Charger Point (32A)',       qty:1, ref:'E-06', confidence:93 },
+  { id:11,room:'Garage',           type:'Garage Door Opener Circuit',   qty:1, ref:'E-07', confidence:96 },
+  { id:12,room:'Outdoor',          type:'External GPO (Weatherproof)',  qty:4, ref:'E-08', confidence:90 },
+  { id:13,room:'Main Switchboard', type:'MSB — 3-Phase 63A',           qty:1, ref:'S-01', confidence:99 },
+];
+
+const MOCK_LINE_ITEMS = [
+  { id:1, desc:'Double Power Point (GPO) — Installed', unit:'EA', qty:23, rate:85,  labour:45, mat:40 },
+  { id:2, desc:'LED Downlight — Installed & Connected', unit:'EA', qty:21, rate:95,  labour:55, mat:40 },
+  { id:3, desc:'Rangehood Circuit — Dedicated Run',    unit:'EA', qty:1,  rate:320, labour:180,mat:140},
+  { id:4, desc:'Dishwasher — Dedicated Circuit',       unit:'EA', qty:1,  rate:280, labour:160,mat:120},
+  { id:5, desc:'Exhaust Fan — Supply & Install',       unit:'EA', qty:2,  rate:220, labour:120,mat:100},
+  { id:6, desc:'Shaver Point / LED Mirror Circuit',    unit:'EA', qty:2,  rate:190, labour:110,mat:80 },
+  { id:7, desc:'EV Charger Point 32A — Installed',     unit:'EA', qty:1,  rate:1850,labour:950,mat:900},
+  { id:8, desc:'Garage Door Opener Circuit',           unit:'EA', qty:1,  rate:180, labour:100,mat:80 },
+  { id:9, desc:'External GPO Weatherproof IP56',       unit:'EA', qty:4,  rate:160, labour:90, mat:70 },
+  { id:10,desc:'MSB 3-Phase 63A — Supply & Install',   unit:'EA', qty:1,  rate:4200,labour:2200,mat:2000},
+  { id:11,desc:'Cable Runs — Main Board to Circuits',  unit:'LM', qty:420,rate:8,   labour:5,  mat:3 },
+  { id:12,desc:'Conduit & Accessories',                unit:'LM', qty:180,rate:6,   labour:3,  mat:3 },
+];
+
+const MOCK_VARIATION = [
+  { type:'added',   room:'Outdoor',   component:'Pool Equipment Circuit (500W)',  qty001:0, qty002:1,  delta:+680  },
+  { type:'added',   room:'Outdoor',   component:'Spa Blower Circuit',             qty001:0, qty002:1,  delta:+420  },
+  { type:'added',   room:'Outdoor',   component:'External Security Camera Circuit',qty001:0, qty002:2,  delta:+560  },
+  { type:'changed', room:'Kitchen',   component:'Double GPO — upgraded to USB-A/C',qty001:6,qty002:6,  delta:+240  },
+  { type:'changed', room:'Bedrooms',  component:'LED Downlight — upgraded to dimmable',qty001:9,qty002:9,delta:+495},
+  { type:'removed', room:'Garage',    component:'Single GPO (standard)',           qty001:2, qty002:0,  delta:-170  },
+];
+
+const MOCK_RISKS = [
+  { level:'high',   icon:'⚡', title:'Missing Power Allocation — Pool Equipment',
+    desc:'Pool pump and spa equipment shown on landscape plan. No dedicated sub-board or circuit shown on electrical drawings.' },
+  { level:'medium', icon:'⚠️', title:'Height Hazard — Void Lighting > 3.5m',
+    desc:'Feature lighting in double-height void (est. 5.2m). WHS scaffold requirement applies. Add crane/scaffold allowance to estimate.' },
+  { level:'info',   icon:'🏠', title:'Automation Dependency — Dali Lighting',
+    desc:'Dimmable downlights specified in Bedrooms. Dali protocol requires separate programming contractor. Confirm scope split with client.' },
+];
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+const fmt = (n) => '$' + Number(n).toLocaleString('en-AU', { minimumFractionDigits: 0 });
+const pct = (n) => (n >= 0 ? '+' : '') + n.toFixed(1) + '%';
+
+const statusBadge = (s) => {
+  const map = { active:'badge-blue', pending:'badge-amber', complete:'badge-green', superseded:'badge-gray' };
+  return <span className={`badge ${map[s] || 'badge-gray'}`}>{s.charAt(0).toUpperCase()+s.slice(1)}</span>;
+};
+
+const confidenceBar = (v) => (
+  <div style={{display:'flex',alignItems:'center',gap:6}}>
+    <div className="progress-bar" style={{width:50,height:5,display:'inline-block',background:'#e2e8f0',borderRadius:3,overflow:'hidden'}}>
+      <div className="progress-fill" style={{width:`${v}%`,background:v>90?'#10b981':v>75?'#f59e0b':'#ef4444'}}/>
+    </div>
+    <span style={{fontSize:10,color:'#64748b'}}>{v}%</span>
+  </div>
+);
+
+// ── Nav config ─────────────────────────────────────────────────────────────
+const NAV = [
+  { id:'dashboard',    icon:'🏠', label:'Dashboard'   },
+  { id:'projects',     icon:'📁', label:'Projects'    },
+  { id:'estimate',     icon:'💰', label:'Estimate'    },
+  { id:'variation',    icon:'📊', label:'Variations'  },
+  { id:'approvals',    icon:'✅', label:'Approvals'   },
+  { id:'reports',      icon:'📈', label:'Reports'     },
+  { id:'pricing',      icon:'🏪', label:'Rate Library'},
+  { id:'email-upload', icon:'📧', label:'Email Upload'},
+];
+
+// ── TLE Wholesaler mock data (trade rates) ──────────────────────────────────
+const TLE_CATEGORIES = ['All','Power Points','Lighting','Switchboard','Cabling','Data & Communications'];
+const TLE_PRODUCTS = [
+  // Power Points
+  { id:1, code:'2025WE',      brand:'Clipsal', name:'2000 Series GPO Double Powerpoint',     category:'Power Points',        trade:12.50, rrp:28.90,  unit:'EA', synced:true  },
+  { id:2, code:'2015WE',      brand:'Clipsal', name:'2000 Series GPO Single Powerpoint',      category:'Power Points',        trade:8.20,  rrp:18.50,  unit:'EA', synced:true  },
+  { id:3, code:'2025USB-WE',  brand:'Clipsal', name:'2025 GPO Double + 2x USB-A Charger',    category:'Power Points',        trade:28.50, rrp:62.00,  unit:'EA', synced:false },
+  { id:4, code:'HF310B',      brand:'HPM',     name:'Futura GPO Double Powerpoint White',     category:'Power Points',        trade:11.80, rrp:26.00,  unit:'EA', synced:false },
+  { id:5, code:'3031WE',      brand:'Clipsal', name:'2000 Series 10A Switch Single',          category:'Power Points',        trade:6.80,  rrp:15.20,  unit:'EA', synced:true  },
+  { id:6, code:'3032WE',      brand:'Clipsal', name:'2000 Series 10A Switch Double',          category:'Power Points',        trade:9.50,  rrp:21.40,  unit:'EA', synced:true  },
+  // Lighting
+  { id:7, code:'BL-DL10WH',   brand:'Brilliant',name:'Lighting 10W LED Downlight Dimmable',  category:'Lighting',            trade:18.50, rrp:42.00,  unit:'EA', synced:true  },
+  { id:8, code:'BL-DL13WH',   brand:'Brilliant',name:'Lighting 13W LED Downlight Dimmable',  category:'Lighting',            trade:22.80, rrp:49.00,  unit:'EA', synced:false },
+  { id:9, code:'MPEF290W',    brand:'Martec',  name:'Profile 2-in-1 LED Exhaust Fan 290mm',  category:'Lighting',            trade:62.00, rrp:138.00, unit:'EA', synced:true  },
+  { id:10,code:'3041WE',      brand:'Clipsal', name:'2000 Series Dimmer Switch 250W',         category:'Lighting',            trade:32.50, rrp:72.00,  unit:'EA', synced:false },
+  // Switchboard
+  { id:11,code:'8215CV20',    brand:'Clipsal', name:'Resi9 MCB 20A 1 Pole 6kA',              category:'Switchboard',         trade:14.50, rrp:32.00,  unit:'EA', synced:true  },
+  { id:12,code:'8215CV32',    brand:'Clipsal', name:'Resi9 MCB 32A 1 Pole 6kA',              category:'Switchboard',         trade:16.80, rrp:38.00,  unit:'EA', synced:true  },
+  { id:13,code:'RCBO440-30',  brand:'Clipsal', name:'RCD/MCB Safety Switch 40A 30mA',        category:'Switchboard',         trade:45.00, rrp:98.00,  unit:'EA', synced:true  },
+  { id:14,code:'3015SM',      brand:'Clipsal', name:'20A Resi9 RCBO Type A 10mA',            category:'Switchboard',         trade:52.00, rrp:115.00, unit:'EA', synced:false },
+  // Cabling
+  { id:15,code:'TPS25-100',   brand:'Olex',    name:'TPS Cable 2.5mm 2+E 100m Coil',         category:'Cabling',             trade:128.00,rrp:285.00, unit:'COIL',synced:true  },
+  { id:16,code:'TPS15-100',   brand:'Olex',    name:'TPS Cable 1.5mm 2+E 100m Coil',         category:'Cabling',             trade:88.00, rrp:195.00, unit:'COIL',synced:true  },
+  { id:17,code:'20GRY4M',     brand:'Clipsal', name:'PVC Conduit 20mm Grey 4m Length',        category:'Cabling',             trade:8.50,  rrp:18.00,  unit:'EA', synced:false },
+  { id:18,code:'SWA25-50',    brand:'Olex',    name:'SWA Armoured Cable 2.5mm 3C+E 50m',     category:'Cabling',             trade:185.00,rrp:390.00, unit:'COIL',synced:false },
+  // Data
+  { id:19,code:'MX3CAT6W',    brand:'HPM',     name:'Iconic Cat6 Data Plate Single White',    category:'Data & Communications',trade:11.20,rrp:24.50,  unit:'EA', synced:true  },
+  { id:20,code:'MX3TVFW',     brand:'HPM',     name:'Iconic TV/Antenna Plate F-Type White',   category:'Data & Communications',trade:9.80, rrp:21.50,  unit:'EA', synced:true  },
+  { id:21,code:'MX3HDMIW',    brand:'HPM',     name:'Iconic HDMI Plate Single White',         category:'Data & Communications',trade:18.50,rrp:42.00,  unit:'EA', synced:false },
+];
+
+// ── Email Upload mock data ─────────────────────────────────────────────────
+const MOCK_EMAILS = [
+  { id:1, from:'sarah.moore@allenbuild.com.au',   subject:'Riverside Apts – Arch Rev C E-Drawings',   file:'Arch-RevC-Electrical.pdf',  pages:8,  received:'Today 9:14am',   status:'scanned',  project:'Riverside Apartments'  },
+  { id:2, from:'tim.walsh@walshdrafting.com.au',   subject:'Brighton Residence – Revised Plans v3',    file:'Brighton-Rev3-Elec.pdf',    pages:5,  received:'Yesterday 4:32pm',status:'scanned',  project:'Brighton Residence'    },
+  { id:3, from:'drafting@constructco.com.au',      subject:'Southbank Office – Electrical Layouts',   file:'Southbank-E01-E04.pdf',     pages:12, received:'18 Mar 2026',     status:'queued',   project:'Unassigned'            },
+  { id:4, from:'damien@veshelectrical.com.au',     subject:'Site photo – pool area conduit run',       file:'IMG_4823.jpg',               pages:1,  received:'17 Mar 2026',     status:'scanned',  project:'Brighton Residence'    },
+];
+
+// ══════════════════════════════════════════════════════════════════════════
+// SCREENS
+// ══════════════════════════════════════════════════════════════════════════
+
+// ── Dashboard ──────────────────────────────────────────────────────────────
+function Dashboard({ onNavigate }) {
+  return (
+    <div>
+      <div className="section-title">Good morning, Damien</div>
+      <div className="section-sub">Here is what is happening across your projects today.</div>
+
+      {/* Summary stats */}
+      <div className="grid-4 mb-16">
+        {[
+          { val:'4',      label:'Active Projects',    color:'#1D6EFD' },
+          { val:'8',      label:'Estimates This Month',color:'#10B981' },
+          { val:'$1.5M',  label:'Total Quoted (Mar)',  color:'#F59E0B' },
+          { val:'3',      label:'Pending Revisions',   color:'#EF4444' },
+        ].map((s, i) => (
+          <div className="card stat-card" key={i}>
+            <div className="stat-value" style={{color:s.color}}>{s.val}</div>
+            <div className="stat-label">{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Recent projects */}
+      <div className="flex-center gap-8 mb-16" style={{justifyContent:'space-between'}}>
+        <div className="label" style={{margin:0}}>Recent Projects</div>
+        <button className="btn btn-ghost btn-sm" onClick={() => onNavigate('projects')}>View all</button>
+      </div>
+      <div className="grid-2">
+        {MOCK_PROJECTS.slice(0,4).map(p => (
+          <div className="project-card" key={p.id} onClick={() => onNavigate('project-detail', p)}>
+            <div className="project-card-accent" style={{background:p.color}}/>
+            <div className="project-card-body">
+              <div className="flex-center gap-8" style={{justifyContent:'space-between',marginBottom:4}}>
+                <div className="project-name">{p.name}</div>
+                {statusBadge(p.status)}
+              </div>
+              <div className="project-meta">{p.address}</div>
+              <div className="project-meta mt-4" style={{fontSize:10}}>{p.description}</div>
+              <div className="project-stats">
+                <div className="project-stat">
+                  <div className="project-stat-val" style={{color:p.color}}>{p.versions}</div>
+                  <div className="project-stat-lbl">Versions</div>
+                </div>
+                <div className="project-stat">
+                  <div className="project-stat-val">{fmt(p.lastEstimate)}</div>
+                  <div className="project-stat-lbl">Last Estimate</div>
+                </div>
+                <div className="project-stat">
+                  <div className="project-stat-val" style={{fontSize:11}}>{p.lastUpdated}</div>
+                  <div className="project-stat-lbl">Updated</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Quick actions */}
+      <div className="label mt-20">Quick Actions</div>
+      <div className="grid-3">
+        {[
+          { icon:'📤', label:'Upload New Drawings',  sub:'Add drawings to an existing project',    color:'#1D6EFD', page:'projects' },
+          { icon:'💰', label:'Open Estimate Editor', sub:'Continue working on your last estimate', color:'#10B981', page:'estimate' },
+          { icon:'📊', label:'View Variation Report',sub:'Compare Version 001 vs 002',             color:'#EF4444', page:'variation' },
+        ].map((a, i) => (
+          <div className="card card-clickable" key={i} onClick={() => onNavigate(a.page)} style={{display:'flex',gap:12,alignItems:'flex-start'}}>
+            <div style={{fontSize:22,width:36,height:36,borderRadius:8,background:`${a.color}18`,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>{a.icon}</div>
+            <div>
+              <div style={{fontSize:13,fontWeight:700,color:'#1E293B'}}>{a.label}</div>
+              <div style={{fontSize:11,color:'#64748B',marginTop:2}}>{a.sub}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Projects ───────────────────────────────────────────────────────────────
+function Projects({ onNavigate }) {
+  const [filter, setFilter] = useState('all');
+  const filtered = filter === 'all' ? MOCK_PROJECTS : MOCK_PROJECTS.filter(p => p.status === filter);
+  return (
+    <div>
+      <div className="flex-center gap-8" style={{justifyContent:'space-between',marginBottom:16}}>
+        <div>
+          <div className="section-title">Projects</div>
+          <div className="section-sub">{MOCK_PROJECTS.length} projects total</div>
+        </div>
+        <button className="btn btn-primary">+ New Project</button>
+      </div>
+      <div className="pill-nav">
+        {['all','active','pending','complete'].map(f => (
+          <div key={f} className={`pill ${filter===f?'active':''}`} onClick={() => setFilter(f)}>
+            {f.charAt(0).toUpperCase()+f.slice(1)}
+          </div>
+        ))}
+      </div>
+      <div className="grid-2">
+        {filtered.map(p => (
+          <div className="project-card" key={p.id} onClick={() => onNavigate('project-detail', p)}>
+            <div className="project-card-accent" style={{background:p.color}}/>
+            <div className="project-card-body">
+              <div className="flex-center gap-8" style={{justifyContent:'space-between',marginBottom:4}}>
+                <div className="project-name">{p.name}</div>
+                {statusBadge(p.status)}
+              </div>
+              <div className="project-meta">{p.address}</div>
+              <div className="project-meta mt-4" style={{fontSize:10}}>{p.description}</div>
+              <div className="project-meta mt-4">👷 {p.builder}  ·  🏢 {p.client}</div>
+              <div className="project-stats">
+                <div className="project-stat">
+                  <div className="project-stat-val" style={{color:p.color}}>{p.versions}</div>
+                  <div className="project-stat-lbl">Versions</div>
+                </div>
+                <div className="project-stat">
+                  <div className="project-stat-val">{fmt(p.lastEstimate)}</div>
+                  <div className="project-stat-lbl">Last Estimate</div>
+                </div>
+                <div className="project-stat">
+                  <div className="project-stat-val" style={{fontSize:11}}>{p.lastUpdated}</div>
+                  <div className="project-stat-lbl">Updated</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Project Detail ─────────────────────────────────────────────────────────
+function ProjectDetail({ project, onNavigate }) {
+  const [tab, setTab] = useState('overview');
+  const [uploading, setUploading] = useState(false);
+  const [uploadPct, setUploadPct] = useState(0);
+  const [uploadDone, setUploadDone] = useState(false);
+  const [dragging, setDragging] = useState(false);
+
+  const simulateUpload = () => {
+    setUploading(true); setUploadPct(0); setUploadDone(false);
+    let p = 0;
+    const iv = setInterval(() => {
+      p += Math.random() * 18 + 5;
+      if (p >= 100) { p = 100; clearInterval(iv); setTimeout(() => { setUploading(false); setUploadDone(true); setTab('schedule'); }, 600); }
+      setUploadPct(Math.min(p, 100));
+    }, 220);
+  };
+
+  return (
+    <div>
+      {/* Breadcrumb */}
+      <div className="flex-center gap-8 mb-16" style={{fontSize:12,color:'#64748b'}}>
+        <span style={{cursor:'pointer',color:'#1D6EFD'}} onClick={() => onNavigate('projects')}>Projects</span>
+        <span>/</span>
+        <span style={{fontWeight:600,color:'#1E293B'}}>{project.name}</span>
+      </div>
+
+      {/* Header */}
+      <div className="card mb-16" style={{borderLeft:`4px solid ${project.color}`}}>
+        <div className="flex-center gap-12" style={{flexWrap:'wrap',justifyContent:'space-between'}}>
+          <div>
+            <div style={{fontSize:18,fontWeight:700}}>{project.name}</div>
+            <div style={{fontSize:12,color:'#64748b',marginTop:2}}>{project.address}</div>
+            <div style={{display:'flex',gap:8,marginTop:8,flexWrap:'wrap'}}>
+              {statusBadge(project.status)}
+              <span className="badge badge-gray">👷 {project.builder}</span>
+              <span className="badge badge-gray">🏢 {project.client}</span>
+            </div>
+          </div>
+          <div style={{display:'flex',gap:8}}>
+            <button className="btn btn-primary" onClick={() => setTab('upload')}>+ Upload Drawings</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => onNavigate('estimate')}>Open Estimate</button>
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="tabs">
+        {[['overview','Overview'],['schedule','Component Schedule'],['upload','Upload Drawings']].map(([id,label]) => (
+          <button key={id} className={`tab-btn ${tab===id?'active':''}`} onClick={() => setTab(id)}>{label}</button>
+        ))}
+      </div>
+
+      {/* Overview tab */}
+      {tab === 'overview' && (
+        <div>
+          <div className="grid-3">
+            {[
+              {label:'Drawing Versions',val:MOCK_VERSIONS.length,color:'#1D6EFD'},
+              {label:'Detected Components',val:'52',color:'#10B981'},
+              {label:'Current Estimate',val:fmt(project.lastEstimate),color:'#F59E0B'},
+            ].map((s,i) => (
+              <div className="card stat-card" key={i}>
+                <div className="stat-value" style={{color:s.color,fontSize:22}}>{s.val}</div>
+                <div className="stat-label">{s.label}</div>
+              </div>
+            ))}
+          </div>
+          <div className="label mt-20">Drawing Version History</div>
+          <div className="version-timeline">
+            {MOCK_VERSIONS.map(v => (
+              <div key={v.id} className={`version-card ${v.status==='active'?'active-version':''}`}
+                onClick={() => setTab('schedule')}>
+                <div className="version-num" style={v.status==='active'?{background:'#1D6EFD'}:{}}>{v.tag}</div>
+                <div style={{flex:1}}>
+                  <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:3}}>
+                    <span style={{fontSize:13,fontWeight:700}}>{v.label}</span>
+                    {statusBadge(v.status)}
+                  </div>
+                  <div style={{fontSize:11,color:'#64748b'}}>{v.date} · {v.source}</div>
+                  <div style={{fontSize:11,color:'#64748b',marginTop:2}}>
+                    {v.components} components detected · Estimate {v.estimate} · {fmt(v.estimateValue)}
+                  </div>
+                </div>
+                {v.id === 2 && (
+                  <button className="btn btn-ghost btn-sm" onClick={e => { e.stopPropagation(); onNavigate('variation'); }}>View Variation</button>
+                )}
+              </div>
+            ))}
+          </div>
+          {MOCK_RISKS.length > 0 && (
+            <>
+              <div className="label mt-20">Active Risk Flags</div>
+              {MOCK_RISKS.map((r,i) => (
+                <div key={i} className={`risk-flag ${r.level}`}>
+                  <div className="risk-icon">{r.icon}</div>
+                  <div>
+                    <div className="risk-title">{r.title}</div>
+                    <div className="risk-desc">{r.desc}</div>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Schedule tab */}
+      {tab === 'schedule' && (
+        <div>
+          <div className="flex-center gap-8 mb-16" style={{justifyContent:'space-between',flexWrap:'wrap'}}>
+            <div>
+              <div style={{fontSize:14,fontWeight:700}}>Component Schedule — Version 002</div>
+              <div style={{fontSize:11,color:'#64748b',marginTop:2}}>{MOCK_COMPONENTS.length} components detected · AI confidence shown per item</div>
+            </div>
+            <button className="btn btn-primary" onClick={() => onNavigate('estimate')}>Build Estimate →</button>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Room / Zone</th>
+                  <th>Component Type</th>
+                  <th style={{textAlign:'center'}}>Qty</th>
+                  <th>Ref</th>
+                  <th>Confidence</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {MOCK_COMPONENTS.map(c => (
+                  <tr key={c.id}>
+                    <td style={{fontWeight:500}}>{c.room}</td>
+                    <td>{c.type}</td>
+                    <td style={{textAlign:'center',fontWeight:700}}>{c.qty}</td>
+                    <td><span className="badge badge-gray">{c.ref}</span></td>
+                    <td>{confidenceBar(c.confidence)}</td>
+                    <td><button className="btn btn-ghost btn-sm">Edit</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{marginTop:12,padding:'10px 14px',background:'#f0f9ff',border:'1px solid #bae6fd',borderRadius:8,fontSize:12,color:'#0369a1'}}>
+            💡 <strong>3 risk flags detected</strong> — pool equipment circuit, void height hazard, and Dali automation dependency. Review before finalising estimate.
+          </div>
+        </div>
+      )}
+
+      {/* Upload tab */}
+      {tab === 'upload' && (
+        <div>
+          <div style={{fontSize:14,fontWeight:700,marginBottom:4}}>Upload New Drawing Version</div>
+          <div style={{fontSize:12,color:'#64748b',marginBottom:16}}>This will create Version 003 and automatically run component detection.</div>
+          {!uploading && !uploadDone && (
+            <div
+              className={`upload-zone ${dragging?'drag-over':''}`}
+              onDragOver={e => { e.preventDefault(); setDragging(true); }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={e => { e.preventDefault(); setDragging(false); simulateUpload(); }}
+              onClick={simulateUpload}
+            >
+              <div className="upload-icon">📤</div>
+              <div className="upload-title">Drop drawings here or tap to select</div>
+              <div className="upload-sub">Drag and drop, or click to browse files</div>
+              <div className="upload-formats">
+                {['PDF','JPG','PNG','HEIC','TIFF'].map(f => (
+                  <span key={f} className="badge badge-gray">{f}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          {uploading && (
+            <div className="card" style={{textAlign:'center'}}>
+              <div style={{fontSize:24,marginBottom:8}}>⚙️</div>
+              <div style={{fontWeight:700,marginBottom:4}}>Processing drawings…</div>
+              <div style={{fontSize:12,color:'#64748b',marginBottom:12}}>
+                {uploadPct < 30 ? 'Uploading file…' : uploadPct < 60 ? 'Deskewing and enhancing…' : uploadPct < 85 ? 'Running AI component detection…' : 'Generating component schedule…'}
+              </div>
+              <div className="progress-bar">
+                <div className="progress-fill" style={{width:`${uploadPct}%`,background:'#1D6EFD'}}/>
+              </div>
+              <div style={{fontSize:11,color:'#94a3b8',marginTop:6}}>{Math.round(uploadPct)}%</div>
+            </div>
+          )}
+          {uploadDone && (
+            <div className="card" style={{textAlign:'center',borderColor:'#10b981'}}>
+              <div style={{fontSize:28,marginBottom:8}}>✅</div>
+              <div style={{fontWeight:700,color:'#10b981',marginBottom:4}}>Analysis complete!</div>
+              <div style={{fontSize:12,color:'#64748b'}}>52 components detected. Viewing component schedule.</div>
+            </div>
+          )}
+          {!uploading && !uploadDone && (
+            <div className="card mt-16" style={{background:'#f8fafc'}}>
+              <div className="label">Or capture with iPhone</div>
+              <div style={{display:'flex',gap:10,alignItems:'center',marginTop:8}}>
+                <div style={{fontSize:24}}>📱</div>
+                <div>
+                  <div style={{fontSize:13,fontWeight:600}}>Open Mobile App</div>
+                  <div style={{fontSize:11,color:'#64748b'}}>Use the ElectraScan iPhone app to photograph drawings on-site and upload directly.</div>
+                </div>
+                <button className="btn btn-ghost btn-sm" style={{marginLeft:'auto',flexShrink:0}}>Open App</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Estimate Editor ────────────────────────────────────────────────────────
+function EstimateEditor({ onNavigate }) {
+  const [items, setItems] = useState(MOCK_LINE_ITEMS.map(i => ({...i, note:''})));
+  const [margin, setMargin] = useState(15);
+  const [locked, setLocked] = useState(false);
+  const [locking, setLocking] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [recording, setRecording]   = useState(false);
+  const [recordingId, setRecordingId] = useState(null);
+  const [voiceInput, setVoiceInput]  = useState('');
+  const [showVoice, setShowVoice]    = useState(false);
+
+  // Simulated voice transcript lines for demo
+  const DEMO_TRANSCRIPTS = [
+    'Note: allow extra 2 metres of cable for ceiling void above living room',
+    'Check with builder on GPO height — may need to match kitchen splashback tile line',
+    'Client requested USB outlets in master bedroom — price up 2025USB units from rate library',
+    'Pool equipment still TBC — hold estimate line item pending scope confirmation',
+  ];
+
+  const startRecording = (itemId) => {
+    setRecording(true); setRecordingId(itemId); setVoiceInput('');
+    let i=0; const words = DEMO_TRANSCRIPTS[itemId % DEMO_TRANSCRIPTS.length].split(' ');
+    const iv = setInterval(()=>{
+      i++;
+      setVoiceInput(words.slice(0,i).join(' '));
+      if(i>=words.length){ clearInterval(iv); setTimeout(()=>stopRecording(itemId, words.join(' ')),400); }
+    }, 120);
+  };
+
+  const stopRecording = (itemId, text) => {
+    setRecording(false); setRecordingId(null);
+    if(text) setItems(prev=>prev.map(it=>it.id===itemId?{...it,note:text}:it));
+  };
+
+  const subtotal = items.reduce((s,i) => s + i.qty * i.rate, 0);
+  const marginAmt = subtotal * margin / 100;
+  const gst       = (subtotal + marginAmt) * 0.1;
+  const total     = subtotal + marginAmt + gst;
+
+  const updateItem = (id, field, val) => {
+    setItems(prev => prev.map(i => i.id === id ? {...i, [field]: field==='desc'?val:Number(val)||0} : i));
+  };
+  const addItem = () => {
+    const newId = Math.max(...items.map(i=>i.id)) + 1;
+    setItems(prev => [...prev, {id:newId, desc:'New Line Item', unit:'EA', qty:1, rate:0, labour:0, mat:0}]);
+    setEditId(newId);
+  };
+  const removeItem = (id) => setItems(prev => prev.filter(i => i.id !== id));
+
+  const handleLock = () => {
+    setLocking(true);
+    setTimeout(() => { setLocking(false); setLocked(true); }, 1800);
+  };
+
+  return (
+    <div>
+      <div className="flex-center gap-8 mb-16" style={{justifyContent:'space-between',flexWrap:'wrap'}}>
+        <div>
+          <div className="section-title">Estimate Editor</div>
+          <div className="section-sub">EST-2026-001-002 · Riverside Apartments · Based on Version 002</div>
+        </div>
+        {!locked ? (
+          <button className="btn btn-primary" onClick={handleLock} disabled={locking}>
+            {locking ? '⏳ Locking…' : '🔒 Finalise & Lock'}
+          </button>
+        ) : (
+          <div className="flex-center gap-8">
+            <span className="badge badge-green">✅ Locked — 18 Mar 2026</span>
+            <button className="btn btn-ghost btn-sm">Export PDF</button>
+            <button className="btn btn-ghost btn-sm">Export CSV</button>
+          </div>
+        )}
+      </div>
+
+      {locked && (
+        <div style={{background:'#f0fdf4',border:'1px solid #86efac',borderRadius:8,padding:'10px 14px',marginBottom:16,fontSize:12,color:'#166534'}}>
+          🔒 <strong>Estimate locked.</strong> This estimate is finalised and cannot be edited. Total: <strong>{fmt(total)}</strong> (inc. GST).
+        </div>
+      )}
+
+      <div style={{display:'flex',gap:16,alignItems:'flex-start',flexWrap:'wrap'}}>
+        {/* Line items table */}
+        <div style={{flex:'1 1 500px'}}>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th style={{width:'36%'}}>Description</th>
+                  <th>Unit</th>
+                  <th style={{textAlign:'right'}}>Qty</th>
+                  <th style={{textAlign:'right'}}>Rate</th>
+                  <th style={{textAlign:'right'}}>Total</th>
+                  {!locked && <th></th>}
+                </tr>
+              </thead>
+              <tbody>
+                {items.map(item => (
+                  <React.Fragment key={item.id}>
+                  <tr onClick={() => !locked && setEditId(editId===item.id?null:item.id)}
+                    style={{cursor:locked?'default':'pointer'}}>
+                    <td>
+                      {editId === item.id && !locked ? (
+                        <input type="text" value={item.desc} onChange={e => updateItem(item.id,'desc',e.target.value)} onClick={e=>e.stopPropagation()}/>
+                      ) : (
+                        <span style={{fontSize:12}}>{item.desc}</span>
+                      )}
+                    </td>
+                    <td>
+                      {editId === item.id && !locked ? (
+                        <select value={item.unit} onChange={e => updateItem(item.id,'unit',e.target.value)} onClick={e=>e.stopPropagation()} style={{width:60}}>
+                          <option>EA</option><option>LM</option><option>LS</option><option>HR</option>
+                        </select>
+                      ) : item.unit}
+                    </td>
+                    <td style={{textAlign:'right'}}>
+                      {editId === item.id && !locked ? (
+                        <input type="number" value={item.qty} onChange={e => updateItem(item.id,'qty',e.target.value)} onClick={e=>e.stopPropagation()} style={{width:60,textAlign:'right'}}/>
+                      ) : item.qty}
+                    </td>
+                    <td style={{textAlign:'right'}}>
+                      {editId === item.id && !locked ? (
+                        <input type="number" value={item.rate} onChange={e => updateItem(item.id,'rate',e.target.value)} onClick={e=>e.stopPropagation()} style={{width:72,textAlign:'right'}}/>
+                      ) : fmt(item.rate)}
+                    </td>
+                    <td style={{textAlign:'right',fontWeight:600}}>{fmt(item.qty * item.rate)}</td>
+                    {!locked && (
+                      <td>
+                        <div style={{display:'flex',gap:4,alignItems:'center'}}>
+                          <button
+                            title="Add voice note"
+                            onClick={e=>{e.stopPropagation(); if(!recording) startRecording(item.id);}}
+                            style={{background:recordingId===item.id?'#EF4444':'#F1F5F9',border:'none',borderRadius:6,padding:'4px 6px',cursor:'pointer',fontSize:14,lineHeight:1,transition:'background 0.2s'}}
+                          >
+                            {recordingId===item.id ? '⏹' : '🎤'}
+                          </button>
+                          <button className="btn btn-danger btn-sm" onClick={e=>{e.stopPropagation();removeItem(item.id);}}>✕</button>
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                  {(item.note || recordingId===item.id) && (
+                    <tr style={{background:'#F0F9FF'}}>
+                      <td colSpan={locked?5:6} style={{padding:'6px 10px'}}>
+                        <div style={{display:'flex',alignItems:'center',gap:8}}>
+                          <span style={{fontSize:12}}>🎤</span>
+                          {recordingId===item.id ? (
+                            <span style={{fontSize:11,color:'#1D6EFD',fontStyle:'italic'}}>
+                              <span style={{color:'#EF4444',fontWeight:700,marginRight:4}}>●</span>
+                              {voiceInput || 'Listening…'}
+                            </span>
+                          ) : (
+                            <span style={{fontSize:11,color:'#0369A1',fontStyle:'italic'}}>{item.note}</span>
+                          )}
+                          {item.note && !recording && (
+                            <button onClick={e=>{e.stopPropagation();setItems(prev=>prev.map(it=>it.id===item.id?{...it,note:''}:it));}} style={{marginLeft:'auto',background:'none',border:'none',cursor:'pointer',fontSize:12,color:'#94A3B8'}}>✕</button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {!locked && (
+            <div style={{display:'flex',gap:8,marginTop:8,alignItems:'center'}}>
+              <button className="btn btn-ghost btn-sm" onClick={addItem}>+ Add Line Item</button>
+              <button
+                onClick={()=>{ if(!recording) startRecording(items[0].id); }}
+                style={{display:'flex',alignItems:'center',gap:6,padding:'6px 12px',background:recording?'#FEE2E2':'#F1F5F9',border:`1px solid ${recording?'#EF4444':'#E2E8F0'}`,borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer',color:recording?'#EF4444':'#64748B',transition:'all 0.2s'}}>
+                <span style={{fontSize:14}}>{recording?'⏹':'🎤'}</span>
+                {recording?'Stop Recording':'Voice Note'}
+              </button>
+            </div>
+          )}
+
+          {/* Margin control */}
+          {!locked && (
+            <div className="card mt-16" style={{display:'flex',alignItems:'center',gap:12}}>
+              <div style={{fontSize:13,fontWeight:600,flexShrink:0}}>Margin / Markup:</div>
+              <input type="number" value={margin} onChange={e=>setMargin(Number(e.target.value)||0)} style={{width:64}} />
+              <span style={{color:'#64748b',fontSize:13}}>%</span>
+              <span style={{marginLeft:'auto',fontSize:12,color:'#64748b'}}>{fmt(marginAmt)} added</span>
+            </div>
+          )}
+        </div>
+
+        {/* Summary panel */}
+        <div style={{width:240,flexShrink:0}}>
+          <div className="estimate-summary">
+            <div style={{fontSize:12,color:'#94a3b8',marginBottom:12,fontWeight:700,letterSpacing:'0.5px',textTransform:'uppercase'}}>Estimate Summary</div>
+            <div className="summary-row">
+              <span className="summary-label">Subtotal</span>
+              <span className="summary-value">{fmt(subtotal)}</span>
+            </div>
+            <div className="summary-row">
+              <span className="summary-label">Margin ({margin}%)</span>
+              <span className="summary-value">{fmt(marginAmt)}</span>
+            </div>
+            <div className="summary-row">
+              <span className="summary-label">GST (10%)</span>
+              <span className="summary-value">{fmt(gst)}</span>
+            </div>
+            <div className="summary-row total">
+              <span>Total</span>
+              <span className="summary-value green">{fmt(total)}</span>
+            </div>
+          </div>
+
+          {/* ── Live Cable & Conduit Summary ──────────────────────────── */}
+          {(()=>{
+            const BUFFER    = 0.15;
+            const lmItems   = items.filter(i => i.unit === 'LM');
+            const cableItem = lmItems.find(i => i.desc.toLowerCase().includes('cable'));
+            const conduitItem = lmItems.find(i => i.desc.toLowerCase().includes('conduit'));
+            const otherLm   = lmItems.filter(i => i !== cableItem && i !== conduitItem);
+
+            const cableM    = cableItem   ? cableItem.qty   : 0;
+            const conduitM  = conduitItem ? conduitItem.qty : 0;
+            const totalRaw  = lmItems.reduce((s,i)=>s+i.qty,0);
+            const totalBuf  = Math.round(totalRaw * (1 + BUFFER));
+
+            const cableCost   = cableItem   ? cableItem.qty   * cableItem.rate   : 0;
+            const conduitCost = conduitItem ? conduitItem.qty * conduitItem.rate : 0;
+            const totalLmCost = lmItems.reduce((s,i)=>s+(i.qty*i.rate),0);
+
+            const ROW = ({label,value,bold,color})=>(
+              <div className="summary-row" style={{fontSize:11}}>
+                <span className="summary-label" style={{fontSize:11,maxWidth:118,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{label}</span>
+                <span style={{fontWeight:bold?800:600,color:color||'#1E293B'}}>{value}</span>
+              </div>
+            );
+
+            return (
+              <div className="card mt-12" style={{fontSize:11}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+                  <div className="label" style={{marginBottom:0}}>Cable & Conduit</div>
+                  <span style={{fontSize:9,fontWeight:700,background:'#DCFCE7',color:'#166534',padding:'2px 7px',borderRadius:10,letterSpacing:'0.5px'}}>⚡ LIVE</span>
+                </div>
+
+                {/* Per-item runs */}
+                {cableItem   && <ROW label={`📦 ${cableItem.desc.replace('Cable Runs — ','').replace('Cable Runs — ','')}`}   value={`${cableM.toLocaleString()} lm`} />}
+                {conduitItem && <ROW label={`🔵 ${conduitItem.desc.replace(' & Accessories','')}`} value={`${conduitM.toLocaleString()} lm`} />}
+                {otherLm.map(i=><ROW key={i.id} label={i.desc} value={`${i.qty.toLocaleString()} lm`} />)}
+
+                {lmItems.length === 0 && (
+                  <div style={{color:'#94A3B8',fontStyle:'italic',textAlign:'center',padding:'8px 0'}}>No LM items in estimate</div>
+                )}
+
+                {/* Totals separator */}
+                <div style={{borderTop:'1px dashed #E2E8F0',margin:'8px 0'}}/>
+                <ROW label="Raw Total"      value={`${totalRaw.toLocaleString()} lm`} />
+                <ROW label="+15% Buffer"    value={`${totalBuf.toLocaleString()} lm`} bold color="#F59E0B" />
+
+                {/* Cost breakdown */}
+                <div style={{borderTop:'1px solid #E2E8F0',margin:'8px 0'}}/>
+                {cableItem   && <ROW label="Cable cost"   value={fmt(cableCost)}   color="#1D6EFD" />}
+                {conduitItem && <ROW label="Conduit cost" value={fmt(conduitCost)} color="#1D6EFD" />}
+                <ROW label="Total LM cost" value={fmt(totalLmCost)} bold color="#10B981" />
+              </div>
+            );
+          })()}
+
+          <div style={{marginTop:12,fontSize:11,color:'#64748b',textAlign:'center'}}>
+            Based on Drawing Version 002<br/>Received 18 Mar 2026
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Variation Report ───────────────────────────────────────────────────────
+function VariationReport() {
+  const addedDelta   = MOCK_VARIATION.filter(r=>r.type==='added').reduce((s,r)=>s+r.delta,0);
+  const removedDelta = MOCK_VARIATION.filter(r=>r.type==='removed').reduce((s,r)=>s+r.delta,0);
+  const changedDelta = MOCK_VARIATION.filter(r=>r.type==='changed').reduce((s,r)=>s+r.delta,0);
+  const totalDelta   = addedDelta + removedDelta + changedDelta;
+  const base = 136200;
+  const revised = base + totalDelta;
+  const pctChange = (totalDelta / base * 100);
+
+  return (
+    <div>
+      <div className="section-title">Variation Report</div>
+      <div className="section-sub">EST-2026-001-001 → EST-2026-001-002 · Riverside Apartments</div>
+
+      {/* Variation banner */}
+      <div className="variation-banner">
+        <div className="variation-badge">
+          <div className="variation-badge-val" style={{color:'#60a5fa'}}>V001</div>
+          <div className="variation-badge-lbl">Base Estimate</div>
+          <div style={{fontSize:18,fontWeight:700,color:'white',marginTop:4}}>{fmt(base)}</div>
+        </div>
+        <div className="variation-divider"/>
+        <div style={{flex:1,textAlign:'center'}}>
+          <div style={{fontSize:11,color:'#94a3b8',letterSpacing:'0.5px',textTransform:'uppercase'}}>Net Variation</div>
+          <div style={{fontSize:28,fontWeight:800,color:totalDelta>=0?'#ef4444':'#10b981',margin:'4px 0'}}>
+            {totalDelta>=0?'+':''}{fmt(totalDelta)}
+          </div>
+          <div style={{fontSize:13,color:'#94a3b8'}}>{pct(pctChange)} change</div>
+        </div>
+        <div className="variation-divider"/>
+        <div className="variation-badge">
+          <div className="variation-badge-val" style={{color:'#34d399'}}>V002</div>
+          <div className="variation-badge-lbl">Revised Estimate</div>
+          <div style={{fontSize:18,fontWeight:700,color:'white',marginTop:4}}>{fmt(revised)}</div>
+        </div>
+      </div>
+
+      {/* Change summary chips */}
+      <div style={{display:'flex',gap:10,marginBottom:20,flexWrap:'wrap'}}>
+        <div className="card" style={{padding:'10px 16px',display:'flex',gap:8,alignItems:'center'}}>
+          <span style={{width:10,height:10,borderRadius:50,background:'#10b981',display:'inline-block'}}/>
+          <span style={{fontSize:13,fontWeight:600}}>{MOCK_VARIATION.filter(r=>r.type==='added').length} items added</span>
+          <span style={{fontSize:12,color:'#10b981',fontWeight:700}}>+{fmt(addedDelta)}</span>
+        </div>
+        <div className="card" style={{padding:'10px 16px',display:'flex',gap:8,alignItems:'center'}}>
+          <span style={{width:10,height:10,borderRadius:50,background:'#ef4444',display:'inline-block'}}/>
+          <span style={{fontSize:13,fontWeight:600}}>{MOCK_VARIATION.filter(r=>r.type==='removed').length} items removed</span>
+          <span style={{fontSize:12,color:'#ef4444',fontWeight:700}}>{fmt(removedDelta)}</span>
+        </div>
+        <div className="card" style={{padding:'10px 16px',display:'flex',gap:8,alignItems:'center'}}>
+          <span style={{width:10,height:10,borderRadius:50,background:'#f59e0b',display:'inline-block'}}/>
+          <span style={{fontSize:13,fontWeight:600}}>{MOCK_VARIATION.filter(r=>r.type==='changed').length} items changed</span>
+          <span style={{fontSize:12,color:'#f59e0b',fontWeight:700}}>+{fmt(changedDelta)}</span>
+        </div>
+        <div style={{marginLeft:'auto',display:'flex',gap:8}}>
+          <button className="btn btn-ghost btn-sm">Export PDF</button>
+          <button className="btn btn-ghost btn-sm">Export CSV</button>
+        </div>
+      </div>
+
+      {/* Variation table */}
+      <div className="table-wrap mb-16">
+        <table>
+          <thead>
+            <tr>
+              <th>Change Type</th>
+              <th>Room / Zone</th>
+              <th>Component</th>
+              <th style={{textAlign:'center'}}>V001 Qty</th>
+              <th style={{textAlign:'center'}}>V002 Qty</th>
+              <th style={{textAlign:'right'}}>Cost Impact</th>
+            </tr>
+          </thead>
+          <tbody>
+            {MOCK_VARIATION.map((r, i) => (
+              <tr key={i} className={`row-${r.type}`}>
+                <td>
+                  <span className={`badge ${r.type==='added'?'badge-green':r.type==='removed'?'badge-red':'badge-amber'}`}>
+                    {r.type==='added'?'+ Added':r.type==='removed'?'− Removed':'± Changed'}
+                  </span>
+                </td>
+                <td style={{fontSize:12}}>{r.room}</td>
+                <td style={{fontSize:12,fontWeight:500}}>{r.component}</td>
+                <td style={{textAlign:'center',color:r.qty001===0?'#94a3b8':'inherit'}}>{r.qty001 || '—'}</td>
+                <td style={{textAlign:'center',color:r.qty002===0?'#94a3b8':'inherit'}}>{r.qty002 || '—'}</td>
+                <td style={{textAlign:'right'}}>
+                  <span className={r.delta>0?'delta-positive':r.delta<0?'delta-negative':'delta-neutral'}>
+                    {r.delta>0?'+':''}{fmt(r.delta)}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Risk flags */}
+      <div className="label">Risk Flags — Version 002</div>
+      {MOCK_RISKS.map((r,i) => (
+        <div key={i} className={`risk-flag ${r.level}`}>
+          <div className="risk-icon">{r.icon}</div>
+          <div>
+            <div className="risk-title">{r.title}</div>
+            <div className="risk-desc">{r.desc}</div>
+          </div>
+          <div style={{marginLeft:'auto',flexShrink:0}}>
+            <button className="btn btn-ghost btn-sm">Add Note</button>
+          </div>
+        </div>
+      ))}
+
+      <div style={{marginTop:16,padding:'10px 14px',background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:8,fontSize:12,color:'#1d4ed8'}}>
+        📋 This report is ready to send. <strong>Export as PDF</strong> to attach to your revised estimate submission to the builder.
+      </div>
+    </div>
+  );
+}
+
+// ── Approvals ──────────────────────────────────────────────────────────────
+const APPROVAL_WORKFLOW = [
+  { id:1, step:'Draft',               icon:'✏️',  status:'done'    },
+  { id:2, step:'Submitted',           icon:'📤',  status:'done'    },
+  { id:3, step:'Builder Review',      icon:'🔍',  status:'done'    },
+  { id:4, step:'Re-estimate Request', icon:'🔄',  status:'done'    },
+  { id:5, step:'New Estimate',        icon:'💰',  status:'current' },
+  { id:6, step:'Final Approval',      icon:'✅',  status:'pending' },
+];
+
+const AUDIT_LOG = [
+  { id:1,  ts:'10 Mar 2026  9:14am',  actor:'Damien Callaghan',   role:'Electrician', roleColor:'#1D6EFD', action:'created',    label:'EST-2026-003 created',                          note:'Initial estimate based on Arch Rev C drawings. 11 components, 6 rooms.',                     doc:'EST-2026-003', sig:'DC-2026-0310-0914' },
+  { id:2,  ts:'11 Mar 2026  2:30pm',  actor:'Damien Callaghan',   role:'Electrician', roleColor:'#1D6EFD', action:'submitted',  label:'EST-2026-003 submitted to Allen Build',          note:'Estimate submitted for builder review. Total: $30,625 incl. GST.',                          doc:'EST-2026-003', sig:'DC-2026-0311-1430' },
+  { id:3,  ts:'13 Mar 2026 10:45am',  actor:'Tom Allen',          role:'Builder',     roleColor:'#8B5CF6', action:'reviewed',   label:'EST-2026-003 reviewed by Allen Build',           note:'Reviewed. Querying pool equipment scope — will confirm with architect.',                    doc:'EST-2026-003', sig:'TA-2026-0313-1045' },
+  { id:4,  ts:'15 Mar 2026  3:20pm',  actor:'Sarah Moore',        role:'Architect',   roleColor:'#0EA5E9', action:'issued',     label:'Arch Rev D drawings issued',                     note:'Revised drawings issued. Pool + spa added to scope. Additional 3 circuits required.',       doc:'Arch-RevD-Elec.pdf', sig:'SM-2026-0315-1520' },
+  { id:5,  ts:'16 Mar 2026  8:55am',  actor:'Tom Allen',          role:'Builder',     roleColor:'#8B5CF6', action:'requested',  label:'Re-estimate requested — EST-2026-004',           note:'New drawings from architect require updated estimate. Please revise based on Rev D.',        doc:'EST-2026-003', sig:'TA-2026-0316-0855' },
+  { id:6,  ts:'18 Mar 2026  9:02am',  actor:'Damien Callaghan',   role:'Electrician', roleColor:'#1D6EFD', action:'created',    label:'EST-2026-004 created from Rev D scan',           note:'AI scan of Rev D detected 3 new components. Pool circuit, spa circuit, CCTV x4 added.',    doc:'EST-2026-004', sig:'DC-2026-0318-0902' },
+  { id:7,  ts:'18 Mar 2026  4:15pm',  actor:'Damien Callaghan',   role:'Electrician', roleColor:'#1D6EFD', action:'submitted',  label:'EST-2026-004 submitted for approval',            note:'Updated estimate submitted. New total: $36,480 incl. GST. Delta: +$5,855 from EST-003.',   doc:'EST-2026-004', sig:'DC-2026-0318-1615' },
+  { id:8,  ts:'20 Mar 2026  8:30am',  actor:'Tom Allen',          role:'Builder',     roleColor:'#8B5CF6', action:'pending',    label:'Awaiting builder approval — EST-2026-004',       note:'EST-2026-004 is pending review by Tom Allen (Allen Build).',                                doc:'EST-2026-004', sig:null },
+];
+
+const ACTION_COLOR = {
+  created:'#1D6EFD', submitted:'#8B5CF6', reviewed:'#0EA5E9',
+  issued:'#F59E0B',  requested:'#EF4444', pending:'#94A3B8',
+  approved:'#10B981',rejected:'#EF4444',
+};
+const ACTION_BG = {
+  created:'#EFF6FF', submitted:'#F5F3FF', reviewed:'#F0F9FF',
+  issued:'#FFFBEB',  requested:'#FEF2F2', pending:'#F8FAFC',
+  approved:'#F0FDF4',rejected:'#FEF2F2',
+};
+
+// ── MYOB Connection Wizard ─────────────────────────────────────────────────
+function MYOBWizard({ onClose, onConnected }) {
+  const [step, setStep]         = useState(1);
+  const [email, setEmail]       = useState('damien@veshelectrical.com.au');
+  const [password, setPassword] = useState('');
+  const [showPwd, setShowPwd]   = useState(false);
+  const [code, setCode]         = useState(['','','','','','']);
+  const [codeError, setCodeError] = useState(false);
+  const [company, setCompany]   = useState('');
+  const [syncing, setSyncing]   = useState(false);
+  const [syncPct, setSyncPct]   = useState(0);
+  const [permissions, setPermissions] = useState({
+    invoices:true, quotes:true, expenses:true,
+    timesheets:true, jobs:true, contacts:true,
+  });
+  const [jobMappings, setJobMappings] = useState([
+    {project:'Riverside Apartments', myobJob:'', myobCode:''},
+    {project:'Brighton Residence',   myobJob:'', myobCode:''},
+    {project:'Southbank Office Fit', myobJob:'', myobCode:''},
+  ]);
+
+  const COMPANIES = ['Vesh Electrical Pty Ltd · File 001','Vesh Electrical Pty Ltd · File 002 (Archive)'];
+  const MYOB_JOBS = ['','RIV-2026-001','BRI-2026-002','SBK-2026-003','NEW-PROJECT'];
+
+  const handleCodeInput = (i, val) => {
+    if(!/^\d?$/.test(val)) return;
+    const next = [...code]; next[i] = val; setCode(next);
+    if(val && i < 5) document.getElementById('otp-'+(i+1))?.focus();
+  };
+
+  const handleVerify = () => {
+    if(code.join('').length < 6){ setCodeError(true); return; }
+    setCodeError(false); setStep(4);
+  };
+
+  const handleConnect = () => {
+    setSyncing(true); setSyncPct(0);
+    const iv = setInterval(()=>{
+      setSyncPct(p=>{ if(p>=100){ clearInterval(iv); setSyncing(false); setStep(7); return 100; } return p+5; });
+    }, 80);
+  };
+
+  const STEPS = ['Sign In','Two-Factor','Permissions','Company File','Job Mapping','Syncing','Connected'];
+
+  return (
+    <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.65)',zIndex:2000,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(6px)'}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:20,width:'100%',maxWidth:500,maxHeight:'90vh',overflow:'auto',boxShadow:'0 32px 100px rgba(0,0,0,0.4)'}}>
+
+        {/* Header */}
+        <div style={{background:'linear-gradient(135deg,#7B2FBE,#4C1D95)',padding:'20px 24px',borderRadius:'20px 20px 0 0',display:'flex',alignItems:'center',gap:12}}>
+          <div style={{width:40,height:40,borderRadius:10,background:'rgba(255,255,255,0.2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20}}>🟦</div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:15,fontWeight:800,color:'white'}}>Connect MYOB Business</div>
+            <div style={{fontSize:11,color:'rgba(255,255,255,0.7)'}}>AccountRight · Live · Payroll</div>
+          </div>
+          <button onClick={onClose} style={{background:'rgba(255,255,255,0.15)',border:'none',borderRadius:8,color:'white',fontSize:18,cursor:'pointer',width:32,height:32,display:'flex',alignItems:'center',justifyContent:'center'}}>✕</button>
+        </div>
+
+        {/* Step progress bar */}
+        {step < 7 && (
+          <div style={{padding:'12px 24px 0',background:'#F8F4FF'}}>
+            <div style={{display:'flex',alignItems:'center',gap:2,marginBottom:8}}>
+              {STEPS.map((s,i)=>(
+                <React.Fragment key={i}>
+                  <div style={{display:'flex',flexDirection:'column',alignItems:'center',flex:i<STEPS.length-1?1:'auto'}}>
+                    <div style={{width:22,height:22,borderRadius:11,fontSize:10,fontWeight:800,display:'flex',alignItems:'center',justifyContent:'center',background:i+1<step?'#10B981':i+1===step?'#7B2FBE':'#E2E8F0',color:i+1<=step?'white':'#94A3B8',transition:'all 0.3s'}}>
+                      {i+1<step?'✓':i+1}
+                    </div>
+                  </div>
+                  {i<STEPS.length-1 && <div style={{flex:1,height:2,background:i+1<step?'#10B981':'#E2E8F0',margin:'0 2px',marginBottom:0}}/>}
+                </React.Fragment>
+              ))}
+            </div>
+            <div style={{fontSize:11,fontWeight:700,color:'#7B2FBE',marginBottom:10,textAlign:'center'}}>{STEPS[step-1]}</div>
+          </div>
+        )}
+
+        <div style={{padding:'20px 24px 24px'}}>
+
+          {/* ── Step 1: Sign In ── */}
+          {step===1 && (
+            <div>
+              <div style={{fontSize:14,fontWeight:700,color:'#1E293B',marginBottom:4}}>Sign in to your MYOB account</div>
+              <div style={{fontSize:12,color:'#94A3B8',marginBottom:20}}>Use your MYOB login credentials. ElectraScan never stores your password.</div>
+              <div style={{marginBottom:14}}>
+                <div style={{fontSize:12,fontWeight:700,color:'#374151',marginBottom:5}}>Email address</div>
+                <input value={email} onChange={e=>setEmail(e.target.value)} style={{width:'100%',padding:'10px 12px',border:'1px solid #E2E8F0',borderRadius:9,fontSize:13,outline:'none',fontFamily:'inherit'}} placeholder="you@company.com.au"/>
+              </div>
+              <div style={{marginBottom:20}}>
+                <div style={{fontSize:12,fontWeight:700,color:'#374151',marginBottom:5}}>Password</div>
+                <div style={{position:'relative'}}>
+                  <input type={showPwd?'text':'password'} value={password} onChange={e=>setPassword(e.target.value)} style={{width:'100%',padding:'10px 40px 10px 12px',border:'1px solid #E2E8F0',borderRadius:9,fontSize:13,outline:'none',fontFamily:'inherit',boxSizing:'border-box'}} placeholder="••••••••"/>
+                  <button onClick={()=>setShowPwd(!showPwd)} style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',fontSize:14,color:'#94A3B8'}}>{showPwd?'🙈':'👁️'}</button>
+                </div>
+              </div>
+              <div style={{display:'flex',gap:10,marginBottom:12}}>
+                <button onClick={onClose} style={{flex:1,padding:'11px',background:'#F1F5F9',border:'none',borderRadius:9,fontSize:13,fontWeight:700,cursor:'pointer',color:'#64748B'}}>Cancel</button>
+                <button onClick={()=>setStep(2)} style={{flex:2,padding:'11px',background:'#7B2FBE',border:'none',borderRadius:9,fontSize:13,fontWeight:800,cursor:'pointer',color:'white'}}>Continue →</button>
+              </div>
+              <div style={{textAlign:'center',fontSize:11,color:'#94A3B8'}}>🔒 Secured via MYOB OAuth 2.0 · 256-bit TLS encryption</div>
+            </div>
+          )}
+
+          {/* ── Step 2: Two-Factor ── */}
+          {step===2 && (
+            <div>
+              <div style={{textAlign:'center',marginBottom:16}}>
+                <div style={{fontSize:36,marginBottom:8}}>📱</div>
+                <div style={{fontSize:14,fontWeight:700,color:'#1E293B',marginBottom:4}}>Two-Factor Authentication</div>
+                <div style={{fontSize:12,color:'#94A3B8'}}>Enter the 6-digit code from your MYOB Authenticator app or SMS to <strong>+61 4xx xxx 847</strong></div>
+              </div>
+              <div style={{display:'flex',gap:8,justifyContent:'center',marginBottom:16}}>
+                {code.map((c,i)=>(
+                  <input key={i} id={'otp-'+i} type="text" inputMode="numeric" maxLength={1} value={c} onChange={e=>handleCodeInput(i,e.target.value)}
+                    style={{width:44,height:52,textAlign:'center',fontSize:22,fontWeight:800,border:`2px solid ${codeError?'#EF4444':c?'#7B2FBE':'#E2E8F0'}`,borderRadius:10,outline:'none',color:'#1E293B',fontFamily:'inherit'}}/>
+                ))}
+              </div>
+              {codeError && <div style={{textAlign:'center',fontSize:12,color:'#EF4444',marginBottom:10}}>Please enter all 6 digits</div>}
+              <div style={{textAlign:'center',marginBottom:16}}>
+                <span style={{fontSize:11,color:'#94A3B8'}}>Didnt receive a code? </span>
+                <button style={{background:'none',border:'none',fontSize:11,color:'#7B2FBE',fontWeight:700,cursor:'pointer'}}>Resend SMS</button>
+              </div>
+              <div style={{display:'flex',gap:10}}>
+                <button onClick={()=>setStep(1)} style={{flex:1,padding:'11px',background:'#F1F5F9',border:'none',borderRadius:9,fontSize:13,fontWeight:700,cursor:'pointer',color:'#64748B'}}>← Back</button>
+                <button onClick={handleVerify} style={{flex:2,padding:'11px',background:'#7B2FBE',border:'none',borderRadius:9,fontSize:13,fontWeight:800,cursor:'pointer',color:'white'}}>Verify →</button>
+              </div>
+            </div>
+          )}
+
+          {/* ── Step 3 (skipped to 4 automatically) — mapped as step 4 ── */}
+
+          {/* ── Step 4: Permissions ── */}
+          {step===4 && (
+            <div>
+              <div style={{fontSize:14,fontWeight:700,color:'#1E293B',marginBottom:4}}>Grant Access</div>
+              <div style={{fontSize:12,color:'#94A3B8',marginBottom:16}}>ElectraScan is requesting the following permissions in your MYOB account. Deselect any you do not want to share.</div>
+              <div style={{border:'1px solid #E2E8F0',borderRadius:10,overflow:'hidden',marginBottom:16}}>
+                {[
+                  {key:'invoices',  icon:'🧾', label:'Invoices',     desc:'Create and update sales invoices from approved estimates'},
+                  {key:'quotes',    icon:'📄', label:'Quotes',       desc:'Push estimates as MYOB quotes for builder approval'},
+                  {key:'expenses',  icon:'💳', label:'Expenses',     desc:'Submit material costs and overruns as expense claims'},
+                  {key:'timesheets',icon:'⏱️', label:'Timesheets',   desc:'Sync weekly labour hours to payroll timesheets'},
+                  {key:'jobs',      icon:'🏗️', label:'Job Costing',  desc:'Track costs against project job codes in real time'},
+                  {key:'contacts',  icon:'👥', label:'Contacts',     desc:'Sync builder and client contacts for invoicing'},
+                ].map((p,i)=>(
+                  <div key={p.key} onClick={()=>setPermissions(prev=>({...prev,[p.key]:!prev[p.key]}))} style={{display:'flex',alignItems:'center',gap:12,padding:'11px 14px',borderBottom:i<5?'1px solid #F1F5F9':'none',cursor:'pointer',background:permissions[p.key]?'#FAF5FF':'white',transition:'background 0.15s'}}>
+                    <span style={{fontSize:18}}>{p.icon}</span>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:13,fontWeight:600,color:'#1E293B'}}>{p.label}</div>
+                      <div style={{fontSize:11,color:'#94A3B8'}}>{p.desc}</div>
+                    </div>
+                    <div style={{width:20,height:20,borderRadius:5,border:`2px solid ${permissions[p.key]?'#7B2FBE':'#E2E8F0'}`,background:permissions[p.key]?'#7B2FBE':'white',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,transition:'all 0.15s'}}>
+                      {permissions[p.key] && <span style={{fontSize:10,color:'white',fontWeight:800}}>✓</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{display:'flex',gap:10}}>
+                <button onClick={()=>setStep(2)} style={{flex:1,padding:'11px',background:'#F1F5F9',border:'none',borderRadius:9,fontSize:13,fontWeight:700,cursor:'pointer',color:'#64748B'}}>← Back</button>
+                <button onClick={()=>setStep(5)} style={{flex:2,padding:'11px',background:'#7B2FBE',border:'none',borderRadius:9,fontSize:13,fontWeight:800,cursor:'pointer',color:'white'}}>Grant Access →</button>
+              </div>
+            </div>
+          )}
+
+          {/* ── Step 5: Company File ── */}
+          {step===5 && (
+            <div>
+              <div style={{fontSize:14,fontWeight:700,color:'#1E293B',marginBottom:4}}>Select Company File</div>
+              <div style={{fontSize:12,color:'#94A3B8',marginBottom:16}}>Choose which MYOB company file to link with ElectraScan.</div>
+              {COMPANIES.map((c,i)=>(
+                <div key={i} onClick={()=>setCompany(c)} style={{display:'flex',alignItems:'center',gap:12,padding:'14px 16px',border:`2px solid ${company===c?'#7B2FBE':'#E2E8F0'}`,borderRadius:10,cursor:'pointer',marginBottom:10,background:company===c?'#FAF5FF':'white',transition:'all 0.15s'}}>
+                  <div style={{width:36,height:36,borderRadius:8,background:company===c?'#7B2FBE':'#F1F5F9',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0}}>🟦</div>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:13,fontWeight:600,color:'#1E293B'}}>{c.split(' · ')[0]}</div>
+                    <div style={{fontSize:11,color:'#94A3B8'}}>{c.split(' · ')[1]}</div>
+                  </div>
+                  {company===c && <div style={{color:'#7B2FBE',fontWeight:800,fontSize:16}}>✓</div>}
+                </div>
+              ))}
+              <div style={{display:'flex',gap:10,marginTop:6}}>
+                <button onClick={()=>setStep(4)} style={{flex:1,padding:'11px',background:'#F1F5F9',border:'none',borderRadius:9,fontSize:13,fontWeight:700,cursor:'pointer',color:'#64748B'}}>← Back</button>
+                <button onClick={()=>setStep(6)} disabled={!company} style={{flex:2,padding:'11px',background:company?'#7B2FBE':'#E2E8F0',border:'none',borderRadius:9,fontSize:13,fontWeight:800,cursor:company?'pointer':'not-allowed',color:company?'white':'#94A3B8'}}>Continue →</button>
+              </div>
+            </div>
+          )}
+
+          {/* ── Step 6: Job Mapping + Connect ── */}
+          {step===6 && (
+            <div>
+              <div style={{fontSize:14,fontWeight:700,color:'#1E293B',marginBottom:4}}>Map Projects to MYOB Jobs</div>
+              <div style={{fontSize:12,color:'#94A3B8',marginBottom:14}}>Link each ElectraScan project to a MYOB job code for accurate cost tracking.</div>
+              {jobMappings.map((m,i)=>(
+                <div key={i} style={{marginBottom:10,padding:'12px 14px',background:'#F8FAFC',borderRadius:9,border:'1px solid #E2E8F0'}}>
+                  <div style={{fontSize:12,fontWeight:700,color:'#1E293B',marginBottom:7}}>📁 {m.project}</div>
+                  <div style={{display:'flex',gap:8}}>
+                    <select value={m.myobJob} onChange={e=>{const j=[...jobMappings];j[i]={...j[i],myobJob:e.target.value};setJobMappings(j);}} style={{flex:1,padding:'7px 10px',border:'1px solid #E2E8F0',borderRadius:7,fontSize:12,background:'white',fontFamily:'inherit'}}>
+                      <option value="">Select MYOB job…</option>
+                      {MYOB_JOBS.filter(j=>j).map(j=><option key={j} value={j}>{j}</option>)}
+                    </select>
+                    <input placeholder="Cost code" value={m.myobCode} onChange={e=>{const j=[...jobMappings];j[i]={...j[i],myobCode:e.target.value};setJobMappings(j);}} style={{width:90,padding:'7px 10px',border:'1px solid #E2E8F0',borderRadius:7,fontSize:12,fontFamily:'inherit'}}/>
+                  </div>
+                </div>
+              ))}
+              <div style={{display:'flex',gap:10,marginTop:6}}>
+                <button onClick={()=>setStep(5)} style={{flex:1,padding:'11px',background:'#F1F5F9',border:'none',borderRadius:9,fontSize:13,fontWeight:700,cursor:'pointer',color:'#64748B'}}>← Back</button>
+                <button onClick={handleConnect} disabled={syncing} style={{flex:2,padding:'11px',background:'#7B2FBE',border:'none',borderRadius:9,fontSize:13,fontWeight:800,cursor:'pointer',color:'white'}}>
+                  {syncing?'Connecting…':'🔗 Connect to MYOB'}
+                </button>
+              </div>
+              {syncing && (
+                <div style={{marginTop:14}}>
+                  <div style={{fontSize:11,color:'#7B2FBE',fontWeight:700,marginBottom:6,textAlign:'center'}}>Establishing connection to MYOB…</div>
+                  <div style={{height:6,background:'#EDE9FE',borderRadius:3,overflow:'hidden'}}>
+                    <div style={{height:6,background:'#7B2FBE',borderRadius:3,width:`${syncPct}%`,transition:'width 0.1s'}}/>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Step 7: Success ── */}
+          {step===7 && (
+            <div style={{textAlign:'center'}}>
+              <div style={{fontSize:52,marginBottom:12}}>🎉</div>
+              <div style={{fontSize:18,fontWeight:800,color:'#1E293B',marginBottom:4}}>MYOB Connected!</div>
+              <div style={{fontSize:12,color:'#94A3B8',marginBottom:20}}>Vesh Electrical Pty Ltd · File 001 is now linked to ElectraScan</div>
+              <div style={{background:'#F5F3FF',border:'1px solid #DDD6FE',borderRadius:12,padding:'14px 18px',marginBottom:20,textAlign:'left'}}>
+                <div style={{fontSize:12,fontWeight:700,color:'#7B2FBE',marginBottom:10}}>Initial sync complete</div>
+                {[
+                  ['🧾','3 estimates pushed as MYOB quotes'],
+                  ['👥','2 contacts synced (Allen Build, Moore Design)'],
+                  ['🏗️','3 job codes mapped'],
+                  ['⏱️','4 timesheet weeks imported'],
+                ].map(([ic,lbl],i)=>(
+                  <div key={i} style={{display:'flex',alignItems:'center',gap:8,padding:'6px 0',borderBottom:i<3?'1px solid #EDE9FE':'none',fontSize:12,color:'#4C1D95'}}>
+                    <span>{ic}</span><span>{lbl}</span>
+                    <span style={{marginLeft:'auto',color:'#10B981',fontWeight:700}}>✓</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{background:'#F0FDF4',border:'1px solid #BBF7D0',borderRadius:9,padding:'10px 14px',marginBottom:20,fontSize:11,color:'#166534',textAlign:'left'}}>
+                ⚡ <strong>Auto-sync enabled:</strong> Estimates, invoices and timesheets will sync to MYOB every night at 7:00am AEST.
+              </div>
+              <button onClick={()=>{onConnected(); onClose();}} style={{width:'100%',padding:'13px',background:'#7B2FBE',border:'none',borderRadius:10,fontSize:14,fontWeight:800,cursor:'pointer',color:'white'}}>
+                Done — Back to Reports
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ApprovalsScreen() {
+  const [activeTab, setActiveTab]   = useState('workflow');
+  const [showApprove, setShowApprove] = useState(false);
+  const [showReject,  setShowReject]  = useState(false);
+  const [comment, setComment]         = useState('');
+  const [approved, setApproved]       = useState(false);
+  const [log, setLog]                 = useState(AUDIT_LOG);
+
+  const currentStep = APPROVAL_WORKFLOW.find(s=>s.status==='current');
+  const pendingEntry = log[log.length-1];
+
+  const handleApprove = () => {
+    const ts = new Date().toLocaleString('en-AU',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:true}).replace(',','');
+    setLog(prev=>[...prev,{
+      id:prev.length+1, ts, actor:'Tom Allen', role:'Builder', roleColor:'#8B5CF6',
+      action:'approved', label:'EST-2026-004 approved by Allen Build',
+      note: comment || 'Estimate approved. Proceed with electrical works as per Rev D drawings.',
+      doc:'EST-2026-004', sig:'TA-2026-APPROVED-'+Date.now().toString().slice(-6)
+    }]);
+    setApproved(true); setShowApprove(false); setComment('');
+  };
+
+  const handleReject = () => {
+    const ts = new Date().toLocaleString('en-AU',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:true}).replace(',','');
+    setLog(prev=>[...prev,{
+      id:prev.length+1, ts, actor:'Tom Allen', role:'Builder', roleColor:'#8B5CF6',
+      action:'rejected', label:'EST-2026-004 returned for revision',
+      note: comment || 'Please revise line items for pool equipment — client has changed supplier.',
+      doc:'EST-2026-004', sig:'TA-2026-RETURNED-'+Date.now().toString().slice(-6)
+    }]);
+    setShowReject(false); setComment('');
+  };
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:12,marginBottom:20}}>
+        <div>
+          <div className="section-title">Approval Workflow</div>
+          <div className="section-sub">Riverside Apartments · EST-2026-003 → EST-2026-004 · Allen Build</div>
+        </div>
+        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+          <button className="btn btn-outline btn-sm">📄 Export Audit Log</button>
+          <button className="btn btn-primary btn-sm">📧 Send for Approval</button>
+        </div>
+      </div>
+
+      {/* Current status banner */}
+      {!approved ? (
+        <div style={{background:'linear-gradient(135deg,#1A3A5C,#0D1B2A)',borderRadius:14,padding:'18px 22px',marginBottom:20,display:'flex',alignItems:'center',gap:16,flexWrap:'wrap'}}>
+          <div style={{fontSize:32}}>⏳</div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:13,fontWeight:700,color:'#60A5FA',letterSpacing:'0.5px',textTransform:'uppercase',marginBottom:3}}>Pending Approval</div>
+            <div style={{fontSize:17,fontWeight:800,color:'white'}}>EST-2026-004 awaiting review by Tom Allen · Allen Build</div>
+            <div style={{fontSize:12,color:'#94A3B8',marginTop:3}}>Submitted 18 Mar 2026 · Total: $36,480 incl. GST · +$5,855 vs EST-003</div>
+          </div>
+          <div style={{display:'flex',gap:8}}>
+            <button onClick={()=>setShowApprove(true)} style={{padding:'10px 20px',background:'#10B981',color:'white',border:'none',borderRadius:9,fontWeight:700,fontSize:13,cursor:'pointer'}}>✅ Approve</button>
+            <button onClick={()=>setShowReject(true)}  style={{padding:'10px 20px',background:'#EF4444', color:'white',border:'none',borderRadius:9,fontWeight:700,fontSize:13,cursor:'pointer'}}>↩ Return</button>
+          </div>
+        </div>
+      ) : (
+        <div style={{background:'linear-gradient(135deg,#065F46,#022C22)',borderRadius:14,padding:'18px 22px',marginBottom:20,display:'flex',alignItems:'center',gap:16}}>
+          <div style={{fontSize:32}}>✅</div>
+          <div>
+            <div style={{fontSize:13,fontWeight:700,color:'#6EE7B7',letterSpacing:'0.5px',textTransform:'uppercase',marginBottom:3}}>Approved</div>
+            <div style={{fontSize:17,fontWeight:800,color:'white'}}>EST-2026-004 approved by Tom Allen · Allen Build</div>
+            <div style={{fontSize:12,color:'#A7F3D0',marginTop:3}}>Approved {new Date().toLocaleString('en-AU',{day:'2-digit',month:'short',year:'numeric'})} · Total: $36,480 incl. GST</div>
+          </div>
+        </div>
+      )}
+
+      {/* Workflow stepper */}
+      <div style={{background:'white',borderRadius:12,border:'1px solid #E2E8F0',padding:'20px 24px',marginBottom:20,overflowX:'auto'}}>
+        <div style={{display:'flex',alignItems:'center',minWidth:600}}>
+          {(approved ? [...APPROVAL_WORKFLOW.slice(0,5),{...APPROVAL_WORKFLOW[5],status:'done'}] : APPROVAL_WORKFLOW).map((s,i,arr)=>(
+            <React.Fragment key={s.id}>
+              <div style={{display:'flex',flexDirection:'column',alignItems:'center',flex:1}}>
+                <div style={{
+                  width:44,height:44,borderRadius:22,display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,
+                  background:s.status==='done'?'#10B981':s.status==='current'?'#1D6EFD':'#F1F5F9',
+                  border:`2px solid ${s.status==='done'?'#10B981':s.status==='current'?'#1D6EFD':'#E2E8F0'}`,
+                  boxShadow:s.status==='current'?'0 0 0 4px #DBEAFE':'none',
+                  transition:'all 0.3s'
+                }}>
+                  {s.status==='done'?'✓':s.icon}
+                </div>
+                <div style={{fontSize:11,fontWeight:600,color:s.status==='done'?'#10B981':s.status==='current'?'#1D6EFD':'#94A3B8',marginTop:6,textAlign:'center',lineHeight:1.3}}>{s.step}</div>
+              </div>
+              {i<arr.length-1 && (
+                <div style={{height:2,flex:1,background:s.status==='done'?'#10B981':'#E2E8F0',margin:'0 4px',marginBottom:20,transition:'background 0.3s'}}/>
+              )}
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{display:'flex',borderBottom:'2px solid #E2E8F0',marginBottom:20,gap:4}}>
+        {[['workflow','📋 Audit Trail'],['estimates','💰 Estimates'],['parties','👥 Parties']].map(([id,lbl])=>(
+          <div key={id} onClick={()=>setActiveTab(id)} style={{padding:'8px 16px',cursor:'pointer',fontWeight:600,fontSize:13,borderBottom:`2px solid ${activeTab===id?'#1D6EFD':'transparent'}`,color:activeTab===id?'#1D6EFD':'#64748B',marginBottom:-2}}>
+            {lbl}
+          </div>
+        ))}
+      </div>
+
+      {/* ── Audit Trail tab ── */}
+      {activeTab==='workflow' && (
+        <div>
+          <div style={{fontSize:11,color:'#94A3B8',marginBottom:14,display:'flex',alignItems:'center',gap:8}}>
+            <span>🔐</span> {log.length} timestamped events · All entries are immutable once recorded · SHA-256 signed
+          </div>
+          <div style={{position:'relative'}}>
+            {/* Vertical line */}
+            <div style={{position:'absolute',left:19,top:0,bottom:0,width:2,background:'#E2E8F0',zIndex:0}}/>
+            {log.map((entry,i)=>(
+              <div key={entry.id} style={{display:'flex',gap:14,marginBottom:16,position:'relative',zIndex:1}}>
+                {/* Timeline dot */}
+                <div style={{
+                  width:40,height:40,borderRadius:20,flexShrink:0,
+                  background:ACTION_BG[entry.action],
+                  border:`2px solid ${ACTION_COLOR[entry.action]}`,
+                  display:'flex',alignItems:'center',justifyContent:'center',
+                  fontSize:14
+                }}>
+                  {entry.action==='created'?'✏️':entry.action==='submitted'?'📤':entry.action==='reviewed'?'🔍':entry.action==='issued'?'📐':entry.action==='requested'?'🔄':entry.action==='approved'?'✅':entry.action==='rejected'?'↩':'⏳'}
+                </div>
+                {/* Card */}
+                <div style={{flex:1,background:'white',borderRadius:10,border:`1px solid ${ACTION_COLOR[entry.action]}30`,borderLeft:`3px solid ${ACTION_COLOR[entry.action]}`,padding:'12px 14px'}}>
+                  <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:8,flexWrap:'wrap',marginBottom:6}}>
+                    <div>
+                      <span style={{fontSize:13,fontWeight:700,color:'#1E293B'}}>{entry.label}</span>
+                      <div style={{display:'flex',alignItems:'center',gap:6,marginTop:3}}>
+                        <span style={{fontSize:11,fontWeight:700,color:entry.roleColor,background:entry.roleColor+'15',padding:'1px 7px',borderRadius:20}}>{entry.role}</span>
+                        <span style={{fontSize:11,color:'#64748B'}}>{entry.actor}</span>
+                      </div>
+                    </div>
+                    <div style={{textAlign:'right',flexShrink:0}}>
+                      <div style={{fontSize:11,fontWeight:700,color:'#94A3B8',fontFamily:'monospace'}}>{entry.ts}</div>
+                      {entry.doc && <div style={{fontSize:10,color:'#1D6EFD',marginTop:2}}>📎 {entry.doc}</div>}
+                    </div>
+                  </div>
+                  <div style={{fontSize:12,color:'#64748B',lineHeight:1.5,marginBottom:entry.sig?8:0}}>{entry.note}</div>
+                  {entry.sig && (
+                    <div style={{display:'flex',alignItems:'center',gap:6,paddingTop:8,borderTop:'1px solid #F1F5F9'}}>
+                      <span style={{fontSize:10}}>🔐</span>
+                      <span style={{fontSize:10,color:'#94A3B8',fontFamily:'monospace'}}>{entry.sig}</span>
+                      <span style={{fontSize:10,color:'#10B981',marginLeft:'auto',fontWeight:700}}>✓ Verified</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Estimates tab ── */}
+      {activeTab==='estimates' && (
+        <div style={{display:'flex',flexDirection:'column',gap:12}}>
+          {[
+            {est:'EST-2026-003',version:'Rev C',total:30625,date:'11 Mar 2026',status:'superseded',delta:null,components:11},
+            {est:'EST-2026-004',version:'Rev D',total:36480,date:'18 Mar 2026',status:approved?'approved':'pending',delta:5855,components:14},
+          ].map((e,i)=>(
+            <div key={i} style={{background:'white',borderRadius:12,border:`1px solid ${e.status==='approved'?'#10B981':e.status==='pending'?'#F59E0B':'#E2E8F0'}`,padding:'16px 20px',display:'flex',alignItems:'center',gap:16,flexWrap:'wrap'}}>
+              <div style={{width:48,height:48,borderRadius:10,background:e.status==='approved'?'#D1FAE5':e.status==='pending'?'#FEF3C7':'#F1F5F9',display:'flex',alignItems:'center',justifyContent:'center',fontSize:22}}>
+                {e.status==='approved'?'✅':e.status==='pending'?'⏳':'📄'}
+              </div>
+              <div style={{flex:1}}>
+                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                  <span style={{fontSize:15,fontWeight:800,color:'#1E293B'}}>{e.est}</span>
+                  <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,background:e.status==='approved'?'#D1FAE5':e.status==='pending'?'#FEF3C7':'#F1F5F9',color:e.status==='approved'?'#065F46':e.status==='pending'?'#92400E':'#64748B'}}>{e.status.toUpperCase()}</span>
+                </div>
+                <div style={{fontSize:12,color:'#64748B'}}>Based on {e.version} drawings · {e.components} components · Submitted {e.date}</div>
+              </div>
+              <div style={{textAlign:'right'}}>
+                <div style={{fontSize:20,fontWeight:800,color:e.status==='approved'?'#10B981':'#1E293B'}}>{fmt(e.total)}</div>
+                {e.delta && <div style={{fontSize:11,color:'#EF4444',fontWeight:700}}>+{fmt(e.delta)} vs prior</div>}
+              </div>
+            </div>
+          ))}
+          <div style={{padding:'12px 16px',background:'#F8FAFC',border:'1px solid #E2E8F0',borderRadius:10,fontSize:12,color:'#64748B'}}>
+            💡 Both estimates are stored with full audit history. EST-2026-003 is retained as the baseline for variation reporting.
+          </div>
+        </div>
+      )}
+
+      {/* ── Parties tab ── */}
+      {activeTab==='parties' && (
+        <div style={{display:'flex',flexDirection:'column',gap:10}}>
+          {[
+            {name:'Damien Callaghan',company:'Vesh Electrical',role:'Electrician',email:'damien@veshelectrical.com.au',color:'#1D6EFD',actions:['Create Estimate','Submit','Voice Notes'],status:'Active'},
+            {name:'Tom Allen',company:'Allen Build',role:'Builder',email:'tom.allen@allenbuild.com.au',color:'#8B5CF6',actions:['Review','Approve','Request Re-estimate'],status:'Pending approval'},
+            {name:'Sarah Moore',company:'Moore Design Group',role:'Architect',email:'sarah.moore@mooredesign.com.au',color:'#0EA5E9',actions:['Issue Drawings','Email Upload'],status:'Rev D issued'},
+          ].map((p,i)=>(
+            <div key={i} style={{background:'white',borderRadius:12,border:'1px solid #E2E8F0',padding:'14px 18px',display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
+              <div style={{width:44,height:44,borderRadius:22,background:p.color+'20',border:`2px solid ${p.color}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:800,color:p.color,flexShrink:0}}>
+                {p.name.split(' ').map(n=>n[0]).join('')}
+              </div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:14,fontWeight:700,color:'#1E293B'}}>{p.name}</div>
+                <div style={{fontSize:11,color:'#64748B'}}>{p.company} · {p.email}</div>
+                <div style={{display:'flex',gap:4,marginTop:6,flexWrap:'wrap'}}>
+                  {p.actions.map(a=><span key={a} style={{fontSize:10,padding:'2px 7px',borderRadius:12,background:p.color+'15',color:p.color,fontWeight:600}}>{a}</span>)}
+                </div>
+              </div>
+              <div style={{textAlign:'right'}}>
+                <span style={{fontSize:11,fontWeight:700,padding:'3px 10px',borderRadius:20,background:p.color+'20',color:p.color}}>{p.status}</span>
+                <div style={{marginTop:6}}>
+                  <span style={{fontSize:10,padding:'2px 8px',borderRadius:10,background:'#F1F5F9',color:'#64748B',fontWeight:600}}>{p.role}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Approve modal ── */}
+      {showApprove && (
+        <div onClick={()=>setShowApprove(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(4px)'}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:16,padding:32,maxWidth:440,width:'90%',boxShadow:'0 24px 80px rgba(0,0,0,0.3)'}}>
+            <div style={{fontSize:32,marginBottom:12,textAlign:'center'}}>✅</div>
+            <div style={{fontSize:18,fontWeight:800,color:'#1E293B',textAlign:'center',marginBottom:4}}>Approve EST-2026-004</div>
+            <div style={{fontSize:13,color:'#64748B',textAlign:'center',marginBottom:20}}>Total: $36,480 incl. GST · This action will be timestamped and signed</div>
+            <div style={{marginBottom:16}}>
+              <div style={{fontSize:12,fontWeight:700,color:'#64748B',marginBottom:6}}>Approval comment (optional)</div>
+              <textarea value={comment} onChange={e=>setComment(e.target.value)} rows={3} placeholder="e.g. Approved. Proceed with works per Rev D." style={{width:'100%',padding:'10px 12px',border:'1px solid #E2E8F0',borderRadius:8,fontSize:13,resize:'none',fontFamily:'inherit'}}/>
+            </div>
+            <div style={{background:'#F0FDF4',border:'1px solid #BBF7D0',borderRadius:8,padding:'10px 14px',fontSize:11,color:'#166534',marginBottom:20}}>
+              🔐 Your approval will be recorded as: <strong>TA-{new Date().toISOString().slice(0,10).replace(/-/g,'')}-APPROVED</strong> with a UTC timestamp
+            </div>
+            <div style={{display:'flex',gap:10}}>
+              <button onClick={()=>setShowApprove(false)} style={{flex:1,padding:'11px',background:'#F1F5F9',border:'none',borderRadius:9,fontSize:13,fontWeight:700,cursor:'pointer',color:'#64748B'}}>Cancel</button>
+              <button onClick={handleApprove} style={{flex:2,padding:'11px',background:'#10B981',border:'none',borderRadius:9,fontSize:13,fontWeight:800,cursor:'pointer',color:'white'}}>✅ Confirm Approval</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Return/Reject modal ── */}
+      {showReject && (
+        <div onClick={()=>setShowReject(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(4px)'}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:16,padding:32,maxWidth:440,width:'90%',boxShadow:'0 24px 80px rgba(0,0,0,0.3)'}}>
+            <div style={{fontSize:32,marginBottom:12,textAlign:'center'}}>↩</div>
+            <div style={{fontSize:18,fontWeight:800,color:'#1E293B',textAlign:'center',marginBottom:4}}>Return for Revision</div>
+            <div style={{fontSize:13,color:'#64748B',textAlign:'center',marginBottom:20}}>EST-2026-004 will be returned to Vesh Electrical with your notes</div>
+            <div style={{marginBottom:16}}>
+              <div style={{fontSize:12,fontWeight:700,color:'#64748B',marginBottom:6}}>Reason for return <span style={{color:'#EF4444'}}>*</span></div>
+              <textarea value={comment} onChange={e=>setComment(e.target.value)} rows={3} placeholder="e.g. Pool equipment scope has changed — client updated supplier. Please revise line items." style={{width:'100%',padding:'10px 12px',border:'1px solid #FCA5A5',borderRadius:8,fontSize:13,resize:'none',fontFamily:'inherit'}}/>
+            </div>
+            <div style={{background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:8,padding:'10px 14px',fontSize:11,color:'#991B1B',marginBottom:20}}>
+              🔐 This return action will be logged with timestamp and trigger a re-estimate request notification to Vesh Electrical
+            </div>
+            <div style={{display:'flex',gap:10}}>
+              <button onClick={()=>setShowReject(false)} style={{flex:1,padding:'11px',background:'#F1F5F9',border:'none',borderRadius:9,fontSize:13,fontWeight:700,cursor:'pointer',color:'#64748B'}}>Cancel</button>
+              <button onClick={handleReject} style={{flex:2,padding:'11px',background:'#EF4444',border:'none',borderRadius:9,fontSize:13,fontWeight:800,cursor:'pointer',color:'white'}}>↩ Return for Revision</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Reports ────────────────────────────────────────────────────────────────
+const REPORT_BUDGET = {
+  total:36480, labour:21888, materials:14592,
+  spentLabour:8640, spentMaterials:5200,
+  contingency:1800,
+};
+const REPORT_WEEKS  = ['Start','W1','W2','W3','W4','W5','W6','W7','W8'];
+const REPORT_PLAN   = [36480,32800,29200,25600,22000,18400,14800,11200,7600];
+const REPORT_ACTUAL = [36480,33200,29600,26100,22640];
+const REPORT_HOURS  = [
+  {week:'Week 1 · 10 Mar', planned:40,actual:38,labour:3280,materials:890},
+  {week:'Week 2 · 17 Mar', planned:40,actual:42,labour:3600,materials:980},
+  {week:'Week 3 · 24 Mar', planned:40,actual:38,labour:3200,materials:810},
+  {week:'Week 4 · 17 Mar', planned:40,actual:30,labour:2560,materials:640},
+];
+const REPORT_MILESTONES = [
+  {label:'Rough-in Complete',   pct:25, amount:9120, status:'claimed',  claimDate:'17 Mar 2026', warning:false},
+  {label:'First Fix Complete',  pct:50, amount:9120, status:'warning',  claimDate:null,           warning:true},
+  {label:'Second Fix Complete', pct:75, amount:9120, status:'pending',  claimDate:null,           warning:false},
+  {label:'Practical Completion',pct:100,amount:9120, status:'pending',  claimDate:null,           warning:false},
+];
+const REPORT_OVERRUNS = [
+  {item:'Copper cable surcharge',  cat:'Materials',amount:420, severity:'high',  note:'Spot market +8.2% since estimate locked'},
+  {item:'Fuel & transport',        cat:'Labour',   amount:180, severity:'medium',note:'4 additional site visits beyond scope'},
+  {item:'Insurance premium rise',  cat:'Admin',    amount:250, severity:'low',   note:'Annual policy renewal — 6.4% increase'},
+];
+
+function ReportsScreen() {
+  const [tab, setTab]           = useState('overview');
+  const [syncState, setSyncState] = useState({myob:'connected',xero:'idle',quickbooks:'idle'});
+  const [syncing, setSyncing]   = useState(null);
+  const [payTab, setPayTab]     = useState('schedule');
+  const [showMYOB, setShowMYOB] = useState(false);
+
+  const B = REPORT_BUDGET;
+  const totalSpent    = B.spentLabour + B.spentMaterials;
+  const remaining     = B.total - totalSpent;
+  const pctBurnt      = (totalSpent / B.total * 100).toFixed(1);
+  const labourPct     = (B.spentLabour / B.labour * 100).toFixed(0);
+  const matPct        = (B.spentMaterials / B.materials * 100).toFixed(0);
+  const totalOverrun  = REPORT_OVERRUNS.reduce((s,o)=>s+o.amount,0);
+  const contingLeft   = B.contingency - totalOverrun;
+  const totalPlanned  = REPORT_HOURS.reduce((s,h)=>s+h.planned,0);
+  const totalActual   = REPORT_HOURS.reduce((s,h)=>s+h.actual,0);
+  const claimed       = REPORT_MILESTONES.filter(m=>m.status==='claimed').reduce((s,m)=>s+m.amount,0);
+
+  // SVG Burndown chart helpers
+  const CW=480, CH=130, steps=REPORT_WEEKS.length-1;
+  const xFor = i => Math.round((i/steps)*CW);
+  const yFor = v => Math.round(CH - (v/B.total)*CH);
+  const planPath = REPORT_PLAN.map((v,i)=>`${i===0?'M':'L'}${xFor(i)},${yFor(v)}`).join(' ');
+  const actPath  = REPORT_ACTUAL.map((v,i)=>`${i===0?'M':'L'}${xFor(i)},${yFor(v)}`).join(' ');
+  const planArea = planPath+` L${CW},${CH} L0,${CH} Z`;
+  const actArea  = actPath +` L${xFor(REPORT_ACTUAL.length-1)},${CH} L0,${CH} Z`;
+
+  const handleSync = (sys) => {
+    setSyncing(sys);
+    setTimeout(()=>{ setSyncing(null); setSyncState(p=>({...p,[sys]:'connected'})); }, 2200);
+  };
+
+  const SEV_COLOR = {high:'#EF4444',medium:'#F59E0B',low:'#94A3B8'};
+  const SEV_BG    = {high:'#FEF2F2',medium:'#FFFBEB',low:'#F8FAFC'};
+
+  const TABS = [
+    ['overview','📊 Overview'],['burndown','📉 Burndown'],
+    ['hours','⏱ Hours'],['milestones','🚩 Milestones'],
+    ['overruns','⚠️ Overruns'],['accounting','🔗 Accounting'],
+  ];
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:12,marginBottom:16}}>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          <div className="section-title" style={{margin:0}}>Project Reports</div>
+          <span style={{background:'#0D1B2A',color:'#60A5FA',fontSize:9,fontWeight:700,padding:'2px 9px',borderRadius:20,letterSpacing:'1.5px'}}>🔒 INTERNAL ONLY</span>
+        </div>
+        <div style={{display:'flex',gap:8}}>
+          <button className="btn btn-outline btn-sm">📄 Export PDF</button>
+          <button className="btn btn-primary btn-sm">📧 Send to Finance</button>
+        </div>
+      </div>
+
+      {/* Alert banners */}
+      <div style={{display:'flex',flexDirection:'column',gap:6,marginBottom:16}}>
+        <div style={{background:'#FFFBEB',border:'1px solid #FDE68A',borderLeft:'4px solid #F59E0B',borderRadius:8,padding:'8px 14px',display:'flex',gap:10,alignItems:'center',fontSize:12}}>
+          <span>⚠️</span><div><strong style={{color:'#92400E'}}>50% Milestone Warning —</strong><span style={{color:'#78350F'}}> Budget is 38% burnt. First Fix milestone not yet reached. Finance team notified.</span></div>
+        </div>
+        <div style={{background:'#FEF2F2',border:'1px solid #FECACA',borderLeft:'4px solid #EF4444',borderRadius:8,padding:'8px 14px',display:'flex',gap:10,alignItems:'center',fontSize:12}}>
+          <span>🔺</span><div><strong style={{color:'#991B1B'}}>Overrun Alert —</strong><span style={{color:'#7F1D1D'}}> ${totalOverrun.toLocaleString()} in unplanned costs detected (copper, fuel, insurance). ${contingLeft.toLocaleString()} contingency remaining.</span></div>
+        </div>
+      </div>
+
+      {/* Tab bar */}
+      <div style={{display:'flex',gap:2,borderBottom:'2px solid #E2E8F0',marginBottom:20,overflowX:'auto'}}>
+        {TABS.map(([id,lbl])=>(
+          <div key={id} onClick={()=>setTab(id)} style={{padding:'8px 14px',cursor:'pointer',fontWeight:600,fontSize:12,whiteSpace:'nowrap',borderBottom:`2px solid ${tab===id?'#1D6EFD':'transparent'}`,color:tab===id?'#1D6EFD':'#64748B',marginBottom:-2}}>
+            {lbl}
+          </div>
+        ))}
+      </div>
+
+      {/* ── OVERVIEW ── */}
+      {tab==='overview' && (
+        <div>
+          {/* 4 stat cards */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:12,marginBottom:20}}>
+            {[
+              {label:'Total Budget',   val:fmt(B.total),       sub:'EST-2026-004 approved',    color:'#1D6EFD',bg:'#EFF6FF'},
+              {label:'Spent to Date',  val:fmt(totalSpent),    sub:`${pctBurnt}% of budget`,   color:'#F59E0B',bg:'#FFFBEB'},
+              {label:'Remaining',      val:fmt(remaining),     sub:`${(100-Number(pctBurnt)).toFixed(1)}% left`,color:'#10B981',bg:'#F0FDF4'},
+              {label:'Claimed',        val:fmt(claimed),       sub:'1 of 4 milestones',        color:'#8B5CF6',bg:'#F5F3FF'},
+            ].map((c,i)=>(
+              <div key={i} style={{background:'white',borderRadius:12,border:'1px solid #E2E8F0',padding:'16px',borderTop:`3px solid ${c.color}`}}>
+                <div style={{fontSize:11,fontWeight:700,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:6}}>{c.label}</div>
+                <div style={{fontSize:22,fontWeight:800,color:c.color}}>{c.val}</div>
+                <div style={{fontSize:11,color:'#64748B',marginTop:3}}>{c.sub}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Budget breakdown bars */}
+          <div style={{background:'white',borderRadius:12,border:'1px solid #E2E8F0',padding:'18px 20px',marginBottom:16}}>
+            <div style={{fontSize:12,fontWeight:700,color:'#64748B',marginBottom:14,textTransform:'uppercase',letterSpacing:'0.5px'}}>Budget Breakdown</div>
+            {[
+              {label:'Labour',   budget:B.labour,   spent:B.spentLabour,   pct:labourPct, color:'#1D6EFD'},
+              {label:'Materials',budget:B.materials,spent:B.spentMaterials,pct:matPct,    color:'#8B5CF6'},
+            ].map((r,i)=>(
+              <div key={i} style={{marginBottom:14}}>
+                <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:5}}>
+                  <span style={{fontWeight:600,color:'#1E293B'}}>{r.label}</span>
+                  <span style={{color:'#64748B'}}>{fmt(r.spent)} <span style={{color:'#94A3B8'}}>/ {fmt(r.budget)}</span> <strong style={{color:r.color,marginLeft:4}}>{r.pct}%</strong></span>
+                </div>
+                <div style={{height:10,background:'#F1F5F9',borderRadius:5,overflow:'hidden'}}>
+                  <div style={{height:10,background:r.color,borderRadius:5,width:`${r.pct}%`,transition:'width 0.5s'}}/>
+                </div>
+              </div>
+            ))}
+            {/* Contingency */}
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#94A3B8',marginTop:4,paddingTop:10,borderTop:'1px solid #F1F5F9'}}>
+              <span>Contingency Reserve: {fmt(B.contingency)}</span>
+              <span style={{color:contingLeft<500?'#EF4444':'#10B981',fontWeight:700}}>Remaining: {fmt(contingLeft)}</span>
+            </div>
+          </div>
+
+          {/* Quick hours snapshot */}
+          <div style={{background:'white',borderRadius:12,border:'1px solid #E2E8F0',padding:'18px 20px'}}>
+            <div style={{fontSize:12,fontWeight:700,color:'#64748B',marginBottom:14,textTransform:'uppercase',letterSpacing:'0.5px'}}>Hours Summary</div>
+            <div style={{display:'flex',gap:20,flexWrap:'wrap'}}>
+              {[
+                {label:'Planned Total', val:`${totalPlanned * 2}h`, sub:'8-week project plan'},
+                {label:'Logged So Far', val:`${totalActual}h`,      sub:`${REPORT_HOURS.length} weeks in`},
+                {label:'Variance',      val:`+${totalActual-totalPlanned}h`, sub:'Tracking slightly over',color:'#F59E0B'},
+              ].map((s,i)=>(
+                <div key={i} style={{flex:1,minWidth:100,textAlign:'center',padding:'10px',background:'#F8FAFC',borderRadius:8}}>
+                  <div style={{fontSize:20,fontWeight:800,color:s.color||'#1E293B'}}>{s.val}</div>
+                  <div style={{fontSize:11,fontWeight:600,color:'#1E293B',marginTop:2}}>{s.label}</div>
+                  <div style={{fontSize:10,color:'#94A3B8',marginTop:1}}>{s.sub}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── BURNDOWN ── */}
+      {tab==='burndown' && (
+        <div>
+          <div style={{background:'white',borderRadius:12,border:'1px solid #E2E8F0',padding:'20px',marginBottom:16}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,flexWrap:'wrap',gap:8}}>
+              <div style={{fontSize:13,fontWeight:700,color:'#1E293B'}}>Budget Burndown — Riverside Apartments</div>
+              <div style={{display:'flex',gap:16,fontSize:11}}>
+                <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:16,height:3,background:'#1D6EFD',borderRadius:2}}/><span style={{color:'#64748B'}}>Planned</span></div>
+                <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:16,height:3,background:'#10B981',borderRadius:2}}/><span style={{color:'#64748B'}}>Actual</span></div>
+                <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:16,height:3,background:'#F59E0B',borderRadius:2,borderTop:'2px dashed #F59E0B',height:0}}/><span style={{color:'#64748B'}}>Forecast</span></div>
+              </div>
+            </div>
+            <div style={{overflowX:'auto'}}>
+              <svg viewBox={`0 0 ${CW+40} ${CH+40}`} style={{width:'100%',minWidth:360,display:'block'}}>
+                {/* Y grid lines */}
+                {[0,0.25,0.5,0.75,1].map(f=>(
+                  <React.Fragment key={f}>
+                    <line x1="36" y1={yFor(B.total*f)} x2={CW+36} y2={yFor(B.total*f)} stroke="#F1F5F9" strokeWidth="1"/>
+                    <text x="32" y={yFor(B.total*f)+4} textAnchor="end" fontSize="8" fill="#94A3B8">${Math.round(B.total*f/1000)}k</text>
+                  </React.Fragment>
+                ))}
+                {/* X week labels */}
+                {REPORT_WEEKS.map((w,i)=>(
+                  <text key={i} x={xFor(i)+36} y={CH+26} textAnchor="middle" fontSize="9" fill="#94A3B8">{w}</text>
+                ))}
+                {/* Axis */}
+                <line x1="36" y1="0" x2="36" y2={CH} stroke="#E2E8F0" strokeWidth="1"/>
+                <line x1="36" y1={CH} x2={CW+36} y2={CH} stroke="#E2E8F0" strokeWidth="1"/>
+                {/* Chart areas */}
+                <g transform="translate(36,0)">
+                  <path d={planArea} fill="#1D6EFD" fillOpacity="0.08"/>
+                  <path d={actArea}  fill="#10B981" fillOpacity="0.12"/>
+                  <path d={planPath} fill="none" stroke="#1D6EFD" strokeWidth="2" strokeDasharray="5,3"/>
+                  <path d={actPath}  fill="none" stroke="#10B981" strokeWidth="2.5"/>
+                  {/* Actual data points */}
+                  {REPORT_ACTUAL.map((v,i)=>(
+                    <circle key={i} cx={xFor(i)} cy={yFor(v)} r="4" fill="#10B981" stroke="white" strokeWidth="1.5"/>
+                  ))}
+                  {/* Forecast dashed continuation */}
+                  <line x1={xFor(REPORT_ACTUAL.length-1)} y1={yFor(REPORT_ACTUAL[REPORT_ACTUAL.length-1])} x2={CW} y2={yFor(7600)} stroke="#F59E0B" strokeWidth="1.5" strokeDasharray="4,4"/>
+                </g>
+              </svg>
+            </div>
+          </div>
+
+          {/* Weekly table */}
+          <div style={{background:'white',borderRadius:12,border:'1px solid #E2E8F0',overflow:'hidden'}}>
+            <div style={{display:'grid',gridTemplateColumns:'80px 1fr 110px 110px 110px',padding:'8px 14px',background:'#F8FAFC',borderBottom:'1px solid #E2E8F0',fontSize:10,fontWeight:700,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'0.5px'}}>
+              <div>Week</div><div>Period</div><div>Planned Rem.</div><div>Actual Rem.</div><div>Variance</div>
+            </div>
+            {REPORT_WEEKS.map((w,i)=>{
+              const plan = REPORT_PLAN[i];
+              const act  = REPORT_ACTUAL[i];
+              const variance = act !== undefined ? act - plan : null;
+              return (
+                <div key={i} style={{display:'grid',gridTemplateColumns:'80px 1fr 110px 110px 110px',padding:'10px 14px',borderBottom:i<REPORT_WEEKS.length-1?'1px solid #F1F5F9':'none',background:i%2===0?'white':'#FAFBFC',alignItems:'center'}}>
+                  <div style={{fontSize:11,fontWeight:700,color:'#1D6EFD'}}>{w}</div>
+                  <div style={{fontSize:11,color:'#64748B'}}>{i===0?'Project start':i<=4?'Logged':'Forecast'}</div>
+                  <div style={{fontSize:12,fontWeight:600,color:'#64748B'}}>{fmt(plan)}</div>
+                  <div style={{fontSize:12,fontWeight:600,color:act!==undefined?'#10B981':'#94A3B8'}}>{act!==undefined?fmt(act):'—'}</div>
+                  <div style={{fontSize:12,fontWeight:700,color:variance===null?'#94A3B8':variance>0?'#EF4444':'#10B981'}}>
+                    {variance===null?'—':(variance>0?'+':'')+fmt(Math.abs(variance))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── HOURS ── */}
+      {tab==='hours' && (
+        <div>
+          {/* Summary */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))',gap:12,marginBottom:16}}>
+            {[
+              {label:'Planned (total)',val:`${totalPlanned*2}h`,color:'#1D6EFD'},
+              {label:'Logged (4wks)',  val:`${totalActual}h`,   color:'#10B981'},
+              {label:'Remaining Est.', val:`${totalPlanned*2 - totalActual}h`,color:'#64748B'},
+              {label:'Variance',       val:`+${totalActual-totalPlanned}h`,color:'#F59E0B'},
+            ].map((s,i)=>(
+              <div key={i} style={{background:'white',borderRadius:10,border:'1px solid #E2E8F0',padding:'14px',textAlign:'center'}}>
+                <div style={{fontSize:22,fontWeight:800,color:s.color}}>{s.val}</div>
+                <div style={{fontSize:11,color:'#64748B',marginTop:3}}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Weekly timesheet */}
+          <div style={{background:'white',borderRadius:12,border:'1px solid #E2E8F0',overflow:'hidden',marginBottom:16}}>
+            <div style={{padding:'14px 16px',borderBottom:'1px solid #E2E8F0',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <div style={{fontSize:13,fontWeight:700,color:'#1E293B'}}>Weekly Timesheet Log</div>
+              <button className="btn btn-primary btn-sm">+ Submit Timesheet</button>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 80px 80px 90px 90px 80px',padding:'8px 14px',background:'#F8FAFC',borderBottom:'1px solid #E2E8F0',fontSize:10,fontWeight:700,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'0.5px'}}>
+              <div>Week</div><div style={{textAlign:'center'}}>Planned</div><div style={{textAlign:'center'}}>Actual</div><div style={{textAlign:'right'}}>Labour $</div><div style={{textAlign:'right'}}>Materials $</div><div style={{textAlign:'right'}}>Variance</div>
+            </div>
+            {REPORT_HOURS.map((h,i)=>{
+              const v = h.actual - h.planned;
+              return (
+                <div key={i} style={{display:'grid',gridTemplateColumns:'1fr 80px 80px 90px 90px 80px',padding:'11px 14px',borderBottom:i<REPORT_HOURS.length-1?'1px solid #F1F5F9':'none',background:i%2===0?'white':'#FAFBFC',alignItems:'center'}}>
+                  <div style={{fontSize:12,fontWeight:600,color:'#1E293B'}}>{h.week}</div>
+                  <div style={{fontSize:12,textAlign:'center',color:'#64748B'}}>{h.planned}h</div>
+                  <div style={{fontSize:12,textAlign:'center',fontWeight:700,color:h.actual>h.planned?'#EF4444':'#10B981'}}>{h.actual}h</div>
+                  <div style={{fontSize:12,textAlign:'right',color:'#64748B'}}>{fmt(h.labour)}</div>
+                  <div style={{fontSize:12,textAlign:'right',color:'#64748B'}}>{fmt(h.materials)}</div>
+                  <div style={{fontSize:12,textAlign:'right',fontWeight:700,color:v>0?'#EF4444':'#10B981'}}>{v>0?'+':''}{v}h</div>
+                </div>
+              );
+            })}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 80px 80px 90px 90px 80px',padding:'11px 14px',background:'#F8FAFC',borderTop:'2px solid #E2E8F0',alignItems:'center'}}>
+              <div style={{fontSize:12,fontWeight:700,color:'#1E293B'}}>TOTALS</div>
+              <div style={{fontSize:12,textAlign:'center',fontWeight:700}}>{totalPlanned}h</div>
+              <div style={{fontSize:12,textAlign:'center',fontWeight:700,color:totalActual>totalPlanned?'#EF4444':'#10B981'}}>{totalActual}h</div>
+              <div style={{fontSize:12,textAlign:'right',fontWeight:700}}>{fmt(REPORT_HOURS.reduce((s,h)=>s+h.labour,0))}</div>
+              <div style={{fontSize:12,textAlign:'right',fontWeight:700}}>{fmt(REPORT_HOURS.reduce((s,h)=>s+h.materials,0))}</div>
+              <div style={{fontSize:12,textAlign:'right',fontWeight:700,color:'#EF4444'}}>+{totalActual-totalPlanned}h</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MILESTONES ── */}
+      {tab==='milestones' && (
+        <div>
+          {/* Payment schedule tabs */}
+          <div style={{display:'flex',gap:6,marginBottom:16}}>
+            {[['schedule','Payment Schedule'],['claims','Claim Status'],['deposit','Deposit + Splits']].map(([id,lbl])=>(
+              <button key={id} onClick={()=>setPayTab(id)} style={{padding:'6px 14px',borderRadius:20,fontSize:12,fontWeight:700,border:`1px solid ${payTab===id?'#1D6EFD':'#E2E8F0'}`,background:payTab===id?'#1D6EFD':'white',color:payTab===id?'white':'#64748B',cursor:'pointer'}}>{lbl}</button>
+            ))}
+          </div>
+
+          {payTab==='schedule' && (
+            <div>
+              {REPORT_MILESTONES.map((m,i)=>{
+                const statusColor = m.status==='claimed'?'#10B981':m.status==='warning'?'#F59E0B':'#94A3B8';
+                const statusBg    = m.status==='claimed'?'#F0FDF4':m.status==='warning'?'#FFFBEB':'#F8FAFC';
+                return (
+                  <div key={i} style={{background:'white',borderRadius:12,border:`1px solid ${m.warning?'#FDE68A':'#E2E8F0'}`,borderLeft:`4px solid ${statusColor}`,padding:'16px 20px',marginBottom:10,display:'flex',alignItems:'center',gap:16,flexWrap:'wrap'}}>
+                    {/* Circle */}
+                    <div style={{width:52,height:52,borderRadius:26,border:`3px solid ${statusColor}`,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,background:statusBg}}>
+                      <div style={{textAlign:'center'}}>
+                        <div style={{fontSize:13,fontWeight:800,color:statusColor}}>{m.pct}%</div>
+                      </div>
+                    </div>
+                    <div style={{flex:1}}>
+                      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:3}}>
+                        <span style={{fontSize:14,fontWeight:700,color:'#1E293B'}}>{m.label}</span>
+                        {m.warning && <span style={{fontSize:10,fontWeight:700,background:'#FEF3C7',color:'#92400E',padding:'2px 7px',borderRadius:20}}>⚠️ WARNING</span>}
+                        {m.status==='claimed' && <span style={{fontSize:10,fontWeight:700,background:'#D1FAE5',color:'#065F46',padding:'2px 7px',borderRadius:20}}>✓ CLAIMED</span>}
+                      </div>
+                      <div style={{fontSize:12,color:'#64748B'}}>
+                        Claim amount: <strong>{fmt(m.amount)}</strong>
+                        {m.claimDate && <span style={{marginLeft:8,color:'#10B981'}}>Claimed {m.claimDate}</span>}
+                        {m.warning && <span style={{marginLeft:8,color:'#F59E0B'}}>Finance department notified</span>}
+                      </div>
+                    </div>
+                    <div style={{flexShrink:0}}>
+                      {m.status==='claimed'
+                        ? <span style={{fontSize:13,fontWeight:700,color:'#10B981'}}>✓ {fmt(m.amount)}</span>
+                        : m.status==='warning'
+                        ? <button style={{padding:'7px 14px',background:'#F59E0B',color:'white',border:'none',borderRadius:8,fontWeight:700,fontSize:12,cursor:'pointer'}}>Submit Claim</button>
+                        : <span style={{fontSize:12,color:'#94A3B8',fontWeight:600}}>Pending</span>
+                      }
+                    </div>
+                  </div>
+                );
+              })}
+              <div style={{background:'#F0F9FF',border:'1px solid #BAE6FD',borderRadius:10,padding:'12px 16px',fontSize:12,color:'#0369A1'}}>
+                💡 Milestone notifications trigger automatically: <strong>Finance alert at 50%</strong> remaining, <strong>warning at 25%</strong>, <strong>critical at 10%</strong>.
+              </div>
+            </div>
+          )}
+
+          {payTab==='deposit' && (
+            <div style={{display:'flex',flexDirection:'column',gap:10}}>
+              {[
+                {label:'Deposit on Signing',       pct:10, amount:3648,  status:'paid',    date:'10 Mar 2026',note:'Paid on commencement'},
+                {label:'Rough-in Milestone (25%)', pct:25, amount:9120,  status:'invoiced',date:'17 Mar 2026',note:'Invoice #INV-2026-012'},
+                {label:'First Fix Milestone (50%)',pct:25, amount:9120,  status:'pending', date:null,          note:'Pending milestone sign-off'},
+                {label:'Second Fix (75%)',          pct:25, amount:9120,  status:'pending', date:null,          note:''},
+                {label:'Retention Release',        pct:5,  amount:1824,  status:'pending', date:null,          note:'Held until defect period ends'},
+              ].map((p,i)=>(
+                <div key={i} style={{background:'white',borderRadius:10,border:'1px solid #E2E8F0',padding:'14px 18px',display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
+                  <div style={{width:36,height:36,borderRadius:8,background:p.status==='paid'?'#D1FAE5':p.status==='invoiced'?'#DBEAFE':'#F1F5F9',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0}}>
+                    {p.status==='paid'?'✅':p.status==='invoiced'?'📄':'⏳'}
+                  </div>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:13,fontWeight:700,color:'#1E293B'}}>{p.label}</div>
+                    <div style={{fontSize:11,color:'#94A3B8'}}>{p.note}{p.date && ` · ${p.date}`}</div>
+                  </div>
+                  <div style={{textAlign:'right'}}>
+                    <div style={{fontSize:15,fontWeight:800,color:p.status==='paid'?'#10B981':p.status==='invoiced'?'#1D6EFD':'#94A3B8'}}>{fmt(p.amount)}</div>
+                    <div style={{fontSize:10,fontWeight:700,color:p.status==='paid'?'#10B981':p.status==='invoiced'?'#1D6EFD':'#94A3B8',textTransform:'uppercase'}}>{p.status}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {payTab==='claims' && (
+            <div style={{background:'white',borderRadius:12,border:'1px solid #E2E8F0',padding:'16px 20px'}}>
+              <div style={{fontSize:13,fontWeight:700,color:'#1E293B',marginBottom:12}}>Claim Summary</div>
+              {[
+                {label:'Total Contract Value', val:fmt(B.total), color:'#1D6EFD'},
+                {label:'Claimed to Date',       val:fmt(claimed),  color:'#10B981'},
+                {label:'Unclaimed Remaining',   val:fmt(B.total-claimed), color:'#F59E0B'},
+              ].map((r,i)=>(
+                <div key={i} style={{display:'flex',justifyContent:'space-between',padding:'10px 0',borderBottom:i<2?'1px solid #F1F5F9':'none'}}>
+                  <span style={{fontSize:13,color:'#64748B'}}>{r.label}</span>
+                  <span style={{fontSize:15,fontWeight:800,color:r.color}}>{r.val}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── OVERRUNS ── */}
+      {tab==='overruns' && (
+        <div>
+          {/* Contingency gauge */}
+          <div style={{background:'white',borderRadius:12,border:'1px solid #E2E8F0',padding:'18px 20px',marginBottom:16,display:'flex',alignItems:'center',gap:20,flexWrap:'wrap'}}>
+            <div style={{flex:1}}>
+              <div style={{fontSize:12,fontWeight:700,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:8}}>Contingency Reserve</div>
+              <div style={{height:14,background:'#F1F5F9',borderRadius:7,overflow:'hidden',marginBottom:8}}>
+                <div style={{height:14,borderRadius:7,width:`${(contingLeft/B.contingency)*100}%`,background:contingLeft<500?'#EF4444':'#F59E0B',transition:'width 0.5s'}}/>
+              </div>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:12}}>
+                <span style={{color:'#94A3B8'}}>Used: <strong style={{color:'#EF4444'}}>{fmt(totalOverrun)}</strong></span>
+                <span style={{color:'#94A3B8'}}>Remaining: <strong style={{color:contingLeft<500?'#EF4444':'#F59E0B'}}>{fmt(contingLeft)}</strong> of {fmt(B.contingency)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Overrun items */}
+          <div style={{fontSize:11,fontWeight:700,color:'#94A3B8',letterSpacing:'1px',textTransform:'uppercase',marginBottom:10}}>Flagged Cost Overruns</div>
+          {REPORT_OVERRUNS.map((o,i)=>(
+            <div key={i} style={{background:SEV_BG[o.severity],border:`1px solid ${SEV_COLOR[o.severity]}30`,borderLeft:`4px solid ${SEV_COLOR[o.severity]}`,borderRadius:10,padding:'13px 16px',marginBottom:8,display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:13,fontWeight:700,color:'#1E293B'}}>{o.item}</div>
+                <div style={{fontSize:11,color:'#64748B',marginTop:2}}>{o.note}</div>
+                <span style={{fontSize:10,fontWeight:700,background:SEV_COLOR[o.severity]+'20',color:SEV_COLOR[o.severity],padding:'2px 7px',borderRadius:12,marginTop:5,display:'inline-block'}}>{o.cat} · {o.severity.toUpperCase()}</span>
+              </div>
+              <div style={{fontSize:18,fontWeight:800,color:SEV_COLOR[o.severity]}}>{fmt(o.amount)}</div>
+            </div>
+          ))}
+
+          {/* External risk factors */}
+          <div style={{marginTop:16,fontSize:11,fontWeight:700,color:'#94A3B8',letterSpacing:'1px',textTransform:'uppercase',marginBottom:10}}>External Risk Factors</div>
+          {[
+            {factor:'Copper spot price',     trend:'↑ +8.2%',   impact:'High',  note:'LME copper at 5-yr high. Cable costs affected.'},
+            {factor:'Fuel / logistics',       trend:'↑ +4.1%',   impact:'Med',   note:'Diesel surcharge applied by suppliers.'},
+            {factor:'Interest rates',         trend:'↓ -0.25%',  impact:'Low',   note:'RBA cut May 2026. Minimal project impact.'},
+            {factor:'Insurance premiums',     trend:'↑ +6.4%',   impact:'Low',   note:'Annual renewal — passed through as admin cost.'},
+            {factor:'General inflation (CPI)',trend:'2.8%',      impact:'Watch', note:'Monitor for second fix and commissioning phases.'},
+          ].map((r,i)=>(
+            <div key={i} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 14px',background:'white',borderRadius:8,border:'1px solid #E2E8F0',marginBottom:6}}>
+              <span style={{fontSize:12,flex:2,fontWeight:600,color:'#1E293B'}}>{r.factor}</span>
+              <span style={{fontSize:12,fontWeight:800,color:r.trend.startsWith('↑')?'#EF4444':r.trend.startsWith('↓')?'#10B981':'#64748B',minWidth:70}}>{r.trend}</span>
+              <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:12,background:r.impact==='High'?'#FEF2F2':r.impact==='Med'?'#FFFBEB':'#F1F5F9',color:r.impact==='High'?'#EF4444':r.impact==='Med'?'#F59E0B':'#64748B',minWidth:50,textAlign:'center'}}>{r.impact}</span>
+              <span style={{fontSize:11,color:'#94A3B8',flex:3}}>{r.note}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── ACCOUNTING SYNC ── */}
+      {tab==='accounting' && (
+        <div>
+          <div style={{fontSize:13,color:'#64748B',marginBottom:16}}>Sync your approved estimate and invoices to your accounting platform. Once connected, timesheets, invoices and payment milestones push automatically.</div>
+
+          {/* Accounting platforms */}
+          {[
+            {id:'myob',       name:'MYOB',        logo:'🟦', color:'#7B2FBE', desc:'MYOB Business · AccountRight',       features:['Invoices','Timesheets','Job Costing','BAS']},
+            {id:'xero',       name:'Xero',         logo:'💙', color:'#13B5EA', desc:'Xero Accounting · Projects module',   features:['Invoices','Quotes','Expenses','Payroll']},
+            {id:'quickbooks', name:'QuickBooks',   logo:'🟩', color:'#2CA01C', desc:'QuickBooks Online · Advanced',        features:['Invoices','Time tracking','Job costing','GST']},
+          ].map(p=>{
+            const status = syncState[p.id];
+            return (
+              <div key={p.id} style={{background:'white',borderRadius:12,border:`1px solid ${status==='connected'?p.color+'60':'#E2E8F0'}`,padding:'18px 20px',marginBottom:12,display:'flex',alignItems:'center',gap:16,flexWrap:'wrap'}}>
+                <div style={{fontSize:32}}>{p.logo}</div>
+                <div style={{flex:1}}>
+                  <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:3}}>
+                    <span style={{fontSize:15,fontWeight:800,color:'#1E293B'}}>{p.name}</span>
+                    {status==='connected' && <span style={{fontSize:10,fontWeight:700,background:'#D1FAE5',color:'#065F46',padding:'2px 8px',borderRadius:20}}>✓ Connected</span>}
+                  </div>
+                  <div style={{fontSize:11,color:'#94A3B8',marginBottom:6}}>{p.desc}</div>
+                  <div style={{display:'flex',gap:5,flexWrap:'wrap'}}>
+                    {p.features.map(f=><span key={f} style={{fontSize:10,padding:'2px 7px',borderRadius:10,background:'#F1F5F9',color:'#64748B',fontWeight:600}}>{f}</span>)}
+                  </div>
+                </div>
+                <div>
+                  {status==='connected' ? (
+                    <div style={{display:'flex',flexDirection:'column',gap:6,alignItems:'flex-end'}}>
+                      <button onClick={()=>handleSync(p.id)} disabled={syncing===p.id} style={{padding:'7px 16px',background:p.color,color:'white',border:'none',borderRadius:8,fontWeight:700,fontSize:12,cursor:'pointer'}}>
+                        {syncing===p.id?'⏳ Syncing…':'🔄 Sync Now'}
+                      </button>
+                      <span style={{fontSize:10,color:'#94A3B8'}}>Last sync: Today 7:02am</span>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={p.id==='myob' ? ()=>setShowMYOB(true) : ()=>handleSync(p.id)}
+                      disabled={syncing===p.id}
+                      style={{padding:'8px 18px',background:syncing===p.id?'#F1F5F9':p.color,color:syncing===p.id?'#64748B':'white',border:'none',borderRadius:8,fontWeight:700,fontSize:12,cursor:'pointer'}}
+                    >
+                      {syncing===p.id?'⏳ Connecting…':p.id==='myob'?'Connect with MYOB':'Connect'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* What syncs */}
+          <div style={{background:'#F0F9FF',border:'1px solid #BAE6FD',borderRadius:10,padding:'14px 18px',marginTop:8}}>
+            <div style={{fontSize:12,fontWeight:700,color:'#0369A1',marginBottom:8}}>What syncs automatically once connected</div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:8}}>
+              {[
+                ['📄','Approved estimates → Quotes'],
+                ['🧾','Progress claims → Invoices'],
+                ['⏱️','Weekly timesheets → Time entries'],
+                ['💰','Milestone payments → Receipts'],
+                ['📦','Materials costs → Expense claims'],
+                ['👷','Labour hours → Payroll entries'],
+              ].map(([ic,lbl],i)=>(
+                <div key={i} style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'#0369A1'}}>
+                  <span>{ic}</span><span>{lbl}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MYOB Connection Wizard Modal */}
+      {showMYOB && (
+        <MYOBWizard
+          onClose={()=>setShowMYOB(false)}
+          onConnected={()=>{ setSyncState(p=>({...p,myob:'connected'})); setShowMYOB(false); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// ROOT APP
+// ══════════════════════════════════════════════════════════════════════════
+// ── Vendor Pricing / Rate Library ─────────────────────────────────────────
+function VendorPricing() {
+  const [activeTab, setActiveTab]   = useState('browse');
+  const [category, setCategory]     = useState('All');
+  const [search, setSearch]         = useState('');
+  const [syncing, setSyncing]       = useState(false);
+  const [syncDone, setSyncDone]     = useState(false);
+  const [library, setLibrary]       = useState(TLE_PRODUCTS.filter(p=>p.synced).map(p=>({...p, myRate:p.trade})));
+  const [syncPct, setSyncPct]       = useState(0);
+
+  const filtered = TLE_PRODUCTS.filter(p => {
+    const matchCat = category==='All' || p.category===category;
+    const matchQ   = p.name.toLowerCase().includes(search.toLowerCase()) || p.code.toLowerCase().includes(search.toLowerCase()) || p.brand.toLowerCase().includes(search.toLowerCase());
+    return matchCat && matchQ;
+  });
+
+  const addToLibrary = (p) => {
+    if (!library.find(l=>l.id===p.id)) setLibrary(prev=>[...prev,{...p,myRate:p.trade}]);
+  };
+  const removeFromLibrary = (id) => setLibrary(prev=>prev.filter(l=>l.id!==id));
+  const updateMyRate = (id,val) => setLibrary(prev=>prev.map(l=>l.id===id?{...l,myRate:Number(val)||0}:l));
+
+  const handleSync = () => {
+    setSyncing(true); setSyncDone(false); setSyncPct(0);
+    const iv = setInterval(()=> {
+      setSyncPct(p => {
+        if(p>=100){ clearInterval(iv); setSyncing(false); setSyncDone(true); return 100; }
+        return p+4;
+      });
+    }, 60);
+  };
+
+  return (
+    <div>
+      {/* Header */}
+      <div className="flex-center mb-16" style={{justifyContent:'space-between',flexWrap:'wrap',gap:8}}>
+        <div>
+          <div className="section-title">Rate Library</div>
+          <div className="section-sub">TLE Electrical Wholesaler · B2B Trade Pricing · Last synced: Today 7:02am</div>
+        </div>
+        <div className="flex-center gap-8">
+          {syncDone && <span className="badge badge-green">✓ 21 products synced</span>}
+          <button className="btn btn-outline btn-sm" onClick={handleSync} disabled={syncing}>
+            {syncing ? '⏳ Syncing…' : '🔄 Sync TLE Prices'}
+          </button>
+          <button className="btn btn-primary btn-sm">＋ Add Wholesaler</button>
+        </div>
+      </div>
+
+      {/* Sync progress bar */}
+      {syncing && (
+        <div style={{background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:10,padding:'12px 16px',marginBottom:16,display:'flex',alignItems:'center',gap:12}}>
+          <span>⚡</span>
+          <div style={{flex:1}}>
+            <div style={{fontSize:12,fontWeight:600,color:'#1D6EFD',marginBottom:4}}>Syncing trade prices from TLE Electrical…</div>
+            <div style={{height:6,background:'#DBEAFE',borderRadius:3,overflow:'hidden'}}>
+              <div style={{height:6,background:'#1D6EFD',borderRadius:3,width:`${syncPct}%`,transition:'width 0.1s'}}/>
+            </div>
+          </div>
+          <span style={{fontSize:12,fontWeight:700,color:'#1D6EFD'}}>{syncPct}%</span>
+        </div>
+      )}
+
+      {/* Tabs */}
+      <div style={{display:'flex',borderBottom:'2px solid #E2E8F0',marginBottom:20,gap:4}}>
+        {[['browse','🏪 Browse TLE Products'],['library','📚 My Rate Library'],['history','🕐 Sync History']].map(([id,lbl])=>(
+          <div key={id} onClick={()=>setActiveTab(id)} style={{padding:'8px 16px',cursor:'pointer',fontWeight:600,fontSize:13,borderBottom:`2px solid ${activeTab===id?'#1D6EFD':'transparent'}`,color:activeTab===id?'#1D6EFD':'#64748B',marginBottom:-2}}>
+            {lbl}
+          </div>
+        ))}
+      </div>
+
+      {/* ── Browse tab ── */}
+      {activeTab==='browse' && (
+        <div>
+          <div className="flex-center gap-8 mb-16" style={{flexWrap:'wrap'}}>
+            <input style={{flex:1,minWidth:200,padding:'8px 12px',border:'1px solid #E2E8F0',borderRadius:8,fontSize:13}} placeholder="Search products, codes, brands…" value={search} onChange={e=>setSearch(e.target.value)}/>
+            <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+              {TLE_CATEGORIES.map(c=>(
+                <button key={c} onClick={()=>setCategory(c)} style={{padding:'5px 12px',borderRadius:20,fontSize:11,fontWeight:700,border:`1px solid ${category===c?'#1D6EFD':'#E2E8F0'}`,background:category===c?'#1D6EFD':'white',color:category===c?'white':'#64748B',cursor:'pointer'}}>{c}</button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{fontSize:11,color:'#94A3B8',marginBottom:10}}>{filtered.length} products · TLE B2B trade account pricing</div>
+
+          {/* Product table */}
+          <div style={{background:'white',borderRadius:12,border:'1px solid #E2E8F0',overflow:'hidden'}}>
+            <div style={{display:'grid',gridTemplateColumns:'80px 1fr 90px 80px 80px 90px 100px',padding:'8px 12px',background:'#F8FAFC',borderBottom:'1px solid #E2E8F0',fontSize:10,fontWeight:700,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'0.5px'}}>
+              <div>Code</div><div>Product</div><div>Brand</div><div>Trade $</div><div>RRP $</div><div>Unit</div><div>Action</div>
+            </div>
+            {filtered.map((p,i)=>{
+              const inLib = !!library.find(l=>l.id===p.id);
+              return (
+                <div key={p.id} style={{display:'grid',gridTemplateColumns:'80px 1fr 90px 80px 80px 90px 100px',padding:'10px 12px',borderBottom:i<filtered.length-1?'1px solid #F1F5F9':'none',background:i%2===0?'white':'#FAFBFC',alignItems:'center'}}>
+                  <div style={{fontSize:10,fontWeight:700,color:'#1D6EFD',background:'#EFF6FF',padding:'2px 6px',borderRadius:4,width:'fit-content'}}>{p.code}</div>
+                  <div>
+                    <div style={{fontSize:12,fontWeight:600,color:'#1E293B'}}>{p.name}</div>
+                    <div style={{fontSize:10,color:'#94A3B8'}}>{p.category}</div>
+                  </div>
+                  <div style={{fontSize:11,color:'#64748B',fontWeight:600}}>{p.brand}</div>
+                  <div style={{fontSize:14,fontWeight:800,color:'#10B981'}}>{'$'+p.trade.toFixed(2)}</div>
+                  <div style={{fontSize:11,color:'#94A3B8',textDecoration:'line-through'}}>{'$'+p.rrp.toFixed(2)}</div>
+                  <div style={{fontSize:11,color:'#64748B'}}>{p.unit}</div>
+                  <div>
+                    {inLib
+                      ? <span style={{fontSize:11,fontWeight:700,color:'#10B981'}}>✓ In Library</span>
+                      : <button onClick={()=>addToLibrary(p)} style={{fontSize:11,fontWeight:700,padding:'4px 10px',background:'#1D6EFD',color:'white',border:'none',borderRadius:6,cursor:'pointer'}}>＋ Add</button>
+                    }
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── My Rate Library tab ── */}
+      {activeTab==='library' && (
+        <div>
+          <div style={{fontSize:11,color:'#94A3B8',marginBottom:12}}>{library.length} items in your rate library · Rates auto-populate estimates when components are detected</div>
+          <div style={{background:'white',borderRadius:12,border:'1px solid #E2E8F0',overflow:'hidden'}}>
+            <div style={{display:'grid',gridTemplateColumns:'80px 1fr 90px 90px 90px 80px',padding:'8px 12px',background:'#F8FAFC',borderBottom:'1px solid #E2E8F0',fontSize:10,fontWeight:700,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'0.5px'}}>
+              <div>Code</div><div>Product</div><div>Trade $</div><div>My Rate $</div><div>Margin</div><div>Remove</div>
+            </div>
+            {library.map((p,i)=>{
+              const margin = p.myRate>0 ? (((p.myRate - p.trade)/p.trade)*100).toFixed(0) : '—';
+              return (
+                <div key={p.id} style={{display:'grid',gridTemplateColumns:'80px 1fr 90px 90px 90px 80px',padding:'10px 12px',borderBottom:i<library.length-1?'1px solid #F1F5F9':'none',background:i%2===0?'white':'#FAFBFC',alignItems:'center'}}>
+                  <div style={{fontSize:10,fontWeight:700,color:'#1D6EFD',background:'#EFF6FF',padding:'2px 6px',borderRadius:4,width:'fit-content'}}>{p.code}</div>
+                  <div style={{fontSize:12,fontWeight:600,color:'#1E293B'}}>{p.name}</div>
+                  <div style={{fontSize:13,fontWeight:700,color:'#10B981'}}>{'$'+p.trade.toFixed(2)}</div>
+                  <div>
+                    <input style={{width:70,padding:'4px 6px',border:'1px solid #60A5FA',borderRadius:6,fontSize:13,fontWeight:700,color:'#1D6EFD',background:'#EFF6FF',textAlign:'right'}} value={p.myRate} onChange={e=>updateMyRate(p.id,e.target.value)}/>
+                  </div>
+                  <div style={{fontSize:12,fontWeight:700,color:Number(margin)>=0?'#10B981':'#EF4444'}}>{margin!=='—'?(Number(margin)>=0?'+':'')+margin+'%':margin}</div>
+                  <div><button onClick={()=>removeFromLibrary(p.id)} style={{background:'none',border:'none',cursor:'pointer',fontSize:16,color:'#EF4444'}}>✕</button></div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{marginTop:12,padding:'12px 16px',background:'#FFFBEB',border:'1px solid #FDE68A',borderRadius:10,fontSize:12,color:'#92400E'}}>
+            💡 <strong>Tip:</strong> Set your &quot;My Rate&quot; above trade to apply your markup at the product level. When ElectraScan detects a component, it will auto-populate using your rate, not the raw trade price.
+          </div>
+        </div>
+      )}
+
+      {/* ── Sync History tab ── */}
+      {activeTab==='history' && (
+        <div style={{background:'white',borderRadius:12,border:'1px solid #E2E8F0',overflow:'hidden'}}>
+          {[
+            {date:'Today 7:02am',products:21,source:'TLE Electrical',status:'success',note:'21 products updated, 3 new products added'},
+            {date:'Yesterday 7:01am',products:21,source:'TLE Electrical',status:'success',note:'18 products updated, no price changes'},
+            {date:'18 Mar 7:04am',products:19,source:'TLE Electrical',status:'success',note:'GPO Double price updated $11.90 → $12.50'},
+            {date:'17 Mar 7:02am',products:19,source:'TLE Electrical',status:'error',note:'Sync failed: API timeout. Retried successfully at 7:08am'},
+          ].map((h,i)=>(
+            <div key={i} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 16px',borderBottom:i<3?'1px solid #F1F5F9':'none',background:i%2===0?'white':'#FAFBFC'}}>
+              <div style={{width:8,height:8,borderRadius:4,background:h.status==='success'?'#10B981':'#EF4444',flexShrink:0}}/>
+              <div style={{flex:1}}>
+                <div style={{fontSize:12,fontWeight:600,color:'#1E293B'}}>{h.source} · {h.products} products</div>
+                <div style={{fontSize:11,color:'#94A3B8'}}>{h.note}</div>
+              </div>
+              <div style={{fontSize:11,color:'#94A3B8',whiteSpace:'nowrap'}}>{h.date}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Email Upload ────────────────────────────────────────────────────────────
+function EmailUpload({ onNavigate }) {
+  const [autoScan, setAutoScan]     = useState(true);
+  const [scanning, setScanning]     = useState(null);
+  const [scanned, setScanned]       = useState([]);
+
+  const triggerScan = (id) => {
+    setScanning(id);
+    setTimeout(()=>{ setScanning(null); setScanned(prev=>[...prev,id]); }, 2200);
+  };
+
+  return (
+    <div>
+      <div className="flex-center mb-16" style={{justifyContent:'space-between',flexWrap:'wrap',gap:8}}>
+        <div>
+          <div className="section-title">Email Upload</div>
+          <div className="section-sub">Email architectural drawings directly into ElectraScan for automatic scanning</div>
+        </div>
+        <button className="btn btn-primary btn-sm">📤 Upload File Manually</button>
+      </div>
+
+      {/* Inbox address card */}
+      <div style={{background:'linear-gradient(135deg,#0D1B2A 0%,#1A3A5C 100%)',borderRadius:14,padding:24,marginBottom:20,color:'white',display:'flex',alignItems:'center',gap:20,flexWrap:'wrap'}}>
+        <div style={{fontSize:36}}>📧</div>
+        <div style={{flex:1}}>
+          <div style={{fontSize:11,fontWeight:700,letterSpacing:'1px',textTransform:'uppercase',color:'#60A5FA',marginBottom:4}}>Your ElectraScan Inbox</div>
+          <div style={{fontSize:18,fontWeight:800,letterSpacing:'-0.5px',marginBottom:6}}>damien.callaghan<span style={{color:'#60A5FA'}}>@drawings.electrascan.app</span></div>
+          <div style={{fontSize:12,color:'#94A3B8'}}>Forward or CC this address on any email with drawing attachments. Plans are automatically detected, queued and scanned.</div>
+        </div>
+        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          <button style={{background:'#1D6EFD',color:'white',border:'none',borderRadius:8,padding:'8px 16px',fontSize:12,fontWeight:700,cursor:'pointer'}}>📋 Copy Address</button>
+          <button style={{background:'transparent',color:'#94A3B8',border:'1px solid #2d4a6a',borderRadius:8,padding:'8px 16px',fontSize:12,fontWeight:600,cursor:'pointer'}}>📤 Share via Email</button>
+        </div>
+      </div>
+
+      {/* How it works */}
+      <div style={{background:'#F0F9FF',border:'1px solid #BAE6FD',borderRadius:12,padding:'16px 20px',marginBottom:20}}>
+        <div style={{fontSize:12,fontWeight:700,color:'#0369A1',marginBottom:10}}>⚡ How it works</div>
+        <div style={{display:'flex',gap:16,flexWrap:'wrap'}}>
+          {[['1','📧','Forward drawings email','CC or forward any email with PDF/DWG attachments to your inbox address'],
+            ['2','🔍','Auto-detection','ElectraScan detects drawings in attachments and adds them to your scan queue'],
+            ['3','⚡','AI Scan','Drawings are scanned automatically — components detected, quantities counted'],
+            ['4','💰','Estimate ready','A draft estimate is generated and linked to the matching project']
+          ].map(([n,ic,title,desc])=>(
+            <div key={n} style={{flex:1,minWidth:140,display:'flex',gap:8}}>
+              <div style={{width:22,height:22,borderRadius:11,background:'#0EA5E9',color:'white',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800,flexShrink:0}}>{n}</div>
+              <div>
+                <div style={{fontSize:12,fontWeight:700,color:'#0D1B2A'}}>{ic} {title}</div>
+                <div style={{fontSize:11,color:'#64748B',marginTop:2,lineHeight:1.4}}>{desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Auto-scan toggle */}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',background:'white',border:'1px solid #E2E8F0',borderRadius:10,padding:'12px 16px',marginBottom:20}}>
+        <div>
+          <div style={{fontSize:13,fontWeight:600,color:'#1E293B'}}>⚡ Auto-scan incoming drawings</div>
+          <div style={{fontSize:11,color:'#94A3B8',marginTop:2}}>Drawings received via email are scanned automatically without manual approval</div>
+        </div>
+        <div onClick={()=>setAutoScan(!autoScan)} style={{width:44,height:24,borderRadius:12,background:autoScan?'#1D6EFD':'#CBD5E1',cursor:'pointer',position:'relative',transition:'background 0.2s',flexShrink:0}}>
+          <div style={{width:20,height:20,borderRadius:10,background:'white',position:'absolute',top:2,left:autoScan?22:2,transition:'left 0.2s',boxShadow:'0 1px 4px rgba(0,0,0,0.2)'}}/>
+        </div>
+      </div>
+
+      {/* Inbox table */}
+      <div style={{fontSize:11,fontWeight:700,letterSpacing:'1px',textTransform:'uppercase',color:'#94A3B8',marginBottom:10}}>INCOMING DRAWINGS — INBOX</div>
+      <div style={{background:'white',borderRadius:12,border:'1px solid #E2E8F0',overflow:'hidden'}}>
+        {MOCK_EMAILS.map((e,i)=>{
+          const isScanning = scanning===e.id;
+          const isDone     = scanned.includes(e.id) || e.status==='scanned';
+          return (
+            <div key={e.id} style={{padding:'14px 16px',borderBottom:i<MOCK_EMAILS.length-1?'1px solid #F1F5F9':'none',background:i%2===0?'white':'#FAFBFC'}}>
+              <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+                {/* File icon */}
+                <div style={{width:40,height:40,borderRadius:8,background:'#FFF7ED',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>
+                  {e.file.endsWith('.pdf')?'📄':'🖼️'}
+                </div>
+                {/* Details */}
+                <div style={{flex:1,minWidth:180}}>
+                  <div style={{fontSize:13,fontWeight:700,color:'#1E293B'}}>{e.subject}</div>
+                  <div style={{fontSize:11,color:'#94A3B8',marginTop:2}}>From: {e.from}</div>
+                  <div style={{display:'flex',gap:8,marginTop:4,flexWrap:'wrap'}}>
+                    <span style={{fontSize:10,fontWeight:700,color:'#1D6EFD',background:'#EFF6FF',padding:'2px 7px',borderRadius:4}}>{e.file}</span>
+                    <span style={{fontSize:10,color:'#94A3B8'}}>{e.pages}p</span>
+                    <span style={{fontSize:10,color:'#94A3B8'}}>📁 {e.project}</span>
+                  </div>
+                </div>
+                {/* Time */}
+                <div style={{fontSize:11,color:'#94A3B8',textAlign:'right',flexShrink:0}}>{e.received}</div>
+                {/* Status / Action */}
+                <div style={{flexShrink:0}}>
+                  {isDone && !isScanning
+                    ? <span style={{fontSize:11,fontWeight:700,color:'#10B981',background:'#D1FAE5',padding:'4px 10px',borderRadius:20}}>✓ Scanned</span>
+                    : isScanning
+                    ? <span style={{fontSize:11,fontWeight:700,color:'#1D6EFD',background:'#DBEAFE',padding:'4px 10px',borderRadius:20}}>⚡ Scanning…</span>
+                    : <button onClick={()=>triggerScan(e.id)} style={{fontSize:11,fontWeight:700,padding:'5px 12px',background:'#1D6EFD',color:'white',border:'none',borderRadius:8,cursor:'pointer'}}>Scan Now</button>
+                  }
+                </div>
+              </div>
+              {/* Scan progress */}
+              {isScanning && (
+                <div style={{marginTop:10,height:4,background:'#DBEAFE',borderRadius:2,overflow:'hidden'}}>
+                  <div style={{height:4,background:'#1D6EFD',borderRadius:2,animation:'scan-progress 2.2s ease-out forwards'}}/>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── App ─────────────────────────────────────────────────────────────────────
+function App() {
+  const [page, setPage] = useState('dashboard');
+  const [selectedProject, setSelectedProject] = useState(MOCK_PROJECTS[0]);
+  const [navActive, setNavActive] = useState('dashboard');
+  const [showQR, setShowQR] = useState(false);
+  const [qrExpiry, setQrExpiry] = useState(300); // 5 min countdown in seconds
+  const [qrTimer, setQrTimer] = useState(null);
+
+  const openQR = () => {
+    setShowQR(true); setQrExpiry(300);
+    const iv = setInterval(()=> setQrExpiry(s => { if(s<=1){ clearInterval(iv); setShowQR(false); return 0; } return s-1; }), 1000);
+    setQrTimer(iv);
+  };
+  const closeQR = () => { setShowQR(false); if(qrTimer) clearInterval(qrTimer); };
+  const qrFmt = (s) => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+
+  const navigate = (target, data) => {
+    if (target === 'project-detail') {
+      setSelectedProject(data);
+      setPage('project-detail');
+      setNavActive('projects');
+    } else if (target === 'estimate') {
+      setPage('estimate');
+      setNavActive('estimate');
+    } else if (target === 'variation') {
+      setPage('variation');
+      setNavActive('variation');
+    } else if (target === 'projects') {
+      setPage('projects');
+      setNavActive('projects');
+    } else {
+      setPage(target);
+      setNavActive(target);
+    }
+  };
+
+  const pageTitle = {
+    dashboard:      { title: 'Dashboard', sub: 'Welcome back, Damien' },
+    projects:       { title: 'Projects', sub: 'All active and completed jobs' },
+    'project-detail':{ title: selectedProject?.name, sub: selectedProject?.address },
+    estimate:       { title: 'Estimate Editor', sub: 'EST-2026-001-002 · Riverside Apartments' },
+    variation:      { title: 'Variation Report', sub: 'Version 001 → Version 002' },
+    pricing:        { title: 'Rate Library',     sub: 'TLE Electrical · B2B Trade Pricing' },
+    'email-upload': { title: 'Email Upload',     sub: 'Forward drawings to your ElectraScan inbox' },
+    approvals:      { title: 'Approvals',        sub: 'EST-2026-003 → EST-2026-004 · Allen Build' },
+    reports:        { title: 'Project Reports',  sub: 'Riverside Apartments · Internal Only' },
+  }[page] || { title: 'ElectraScan', sub: '' };
+
+  const renderPage = () => {
+    switch(page) {
+      case 'dashboard':     return <Dashboard onNavigate={navigate} />;
+      case 'projects':      return <Projects onNavigate={navigate} />;
+      case 'project-detail':return <ProjectDetail project={selectedProject} onNavigate={navigate} />;
+      case 'estimate':      return <EstimateEditor onNavigate={navigate} />;
+      case 'variation':     return <VariationReport />;
+      case 'pricing':       return <VendorPricing />;
+      case 'email-upload':  return <EmailUpload onNavigate={navigate} />;
+      case 'approvals':     return <ApprovalsScreen />;
+      case 'reports':       return <ReportsScreen />;
+      default:              return <Dashboard onNavigate={navigate} />;
+    }
+  };
+
+  return (
+    <div className="app">
+      {/* Sidebar */}
+      <div className="sidebar">
+        <div className="sidebar-logo">
+          <div className="logo-icon">⚡</div>
+          <div>
+            <div className="logo-text">ElectraScan</div>
+            <div className="logo-sub">Vesh Electrical</div>
+          </div>
+        </div>
+        <div className="nav-section">Main</div>
+        {NAV.slice(0,4).map(n => (
+          <div key={n.id} className={`nav-item ${navActive===n.id?'active':''}`}
+            onClick={() => navigate(n.id)}>
+            <span className="nav-icon">{n.icon}</span>{n.label}
+          </div>
+        ))}
+        <div className="nav-section">Workflow</div>
+        {NAV.slice(4,6).map(n => (
+          <div key={n.id} className={`nav-item ${navActive===n.id?'active':''}`}
+            onClick={() => navigate(n.id)}>
+            <span className="nav-icon">{n.icon}</span>{n.label}
+          </div>
+        ))}
+        <div className="nav-section">Tools</div>
+        {NAV.slice(6).map(n => (
+          <div key={n.id} className={`nav-item ${navActive===n.id?'active':''}`}
+            onClick={() => navigate(n.id)}>
+            <span className="nav-icon">{n.icon}</span>{n.label}
+          </div>
+        ))}
+        <div className="nav-section">Quick Actions</div>
+        <div className="nav-item" onClick={() => navigate('project-detail', MOCK_PROJECTS[0])}>
+          <span className="nav-icon">📤</span> Upload Drawings
+        </div>
+        <div className="sidebar-footer">
+          <div className="user-chip">
+            <div className="user-avatar">DC</div>
+            <div>
+              <div className="user-name" style={{color:'white',fontSize:12,fontWeight:600}}>Damien Callaghan</div>
+              <div className="user-name">Vesh Electrical</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Main content */}
+      <div className="main">
+        <div className="topbar">
+          <div>
+            <div className="topbar-title">{pageTitle.title}</div>
+            {pageTitle.sub && <div className="topbar-sub">{pageTitle.sub}</div>}
+          </div>
+          <div className="topbar-actions">
+            <span className="badge badge-green" style={{fontSize:10}}>⚡ ElectraScan v1.0</span>
+            <button className="btn btn-outline btn-sm" onClick={openQR} style={{display:'flex',alignItems:'center',gap:5}}>
+              📱 Continue on Mobile
+            </button>
+            <button className="btn btn-primary btn-sm" onClick={() => navigate('project-detail', MOCK_PROJECTS[0])}>
+              + New Project
+            </button>
+          </div>
+        </div>
+        <div className="page-content">
+          {renderPage()}
+        </div>
+      </div>
+
+      {/* Mobile bottom nav */}
+      <div className="bottom-nav">
+        {NAV.slice(0,4).map(n => (
+          <div key={n.id} className={`bottom-nav-item ${navActive===n.id?'active':''}`}
+            onClick={() => navigate(n.id)}>
+            <span className="bottom-nav-icon">{n.icon}</span>
+            {n.label}
+          </div>
+        ))}
+      </div>
+
+      {/* ── QR Handoff Modal ── */}
+      {showQR && (
+        <div onClick={closeQR} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(4px)'}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:20,padding:36,maxWidth:420,width:'90%',textAlign:'center',boxShadow:'0 24px 80px rgba(0,0,0,0.4)'}}>
+            {/* Header */}
+            <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,marginBottom:6}}>
+              <div style={{width:36,height:36,borderRadius:9,background:'linear-gradient(135deg,#1D6EFD,#0EA5E9)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>⚡</div>
+              <div style={{fontSize:18,fontWeight:800,color:'#0D1B2A'}}>Continue on Mobile</div>
+            </div>
+            <div style={{fontSize:13,color:'#64748B',marginBottom:24}}>Scan this code with your phone to pick up exactly where you left off</div>
+
+            {/* QR code SVG (visual representation) */}
+            <div style={{display:'inline-block',padding:16,background:'white',border:'3px solid #0D1B2A',borderRadius:12,marginBottom:20}}>
+              <svg width="160" height="160" viewBox="0 0 160 160" style={{display:'block'}}>
+                {/* Finder patterns */}
+                <rect x="8" y="8" width="44" height="44" rx="4" fill="#0D1B2A"/>
+                <rect x="14" y="14" width="32" height="32" rx="2" fill="white"/>
+                <rect x="20" y="20" width="20" height="20" rx="1" fill="#0D1B2A"/>
+                <rect x="108" y="8" width="44" height="44" rx="4" fill="#0D1B2A"/>
+                <rect x="114" y="14" width="32" height="32" rx="2" fill="white"/>
+                <rect x="120" y="20" width="20" height="20" rx="1" fill="#0D1B2A"/>
+                <rect x="8" y="108" width="44" height="44" rx="4" fill="#0D1B2A"/>
+                <rect x="14" y="114" width="32" height="32" rx="2" fill="white"/>
+                <rect x="20" y="120" width="20" height="20" rx="1" fill="#0D1B2A"/>
+                {/* Data modules (decorative) */}
+                {[60,68,76,84,92,100].map(x=>[60,68,76,84,92,100].map(y=> Math.sin(x*y)>0.2 &&
+                  <rect key={`${x}-${y}`} x={x} y={y} width="6" height="6" fill="#0D1B2A"/>
+                ))}
+                {[60,76,92].map(x=><rect key={`t${x}`} x={x} y={8} width="6" height="6" fill="#0D1B2A"/>)}
+                {[60,76,92].map(x=><rect key={`b${x}`} x={x} y={152} width="6" height="6" fill="#0D1B2A"/>)}
+                {[60,76,92].map(y=><rect key={`l${y}`} x={8} y={y} width="6" height="6" fill="#0D1B2A"/>)}
+                {/* ElectraScan centre logo */}
+                <rect x="68" y="68" width="24" height="24" rx="4" fill="#1D6EFD"/>
+                <text x="80" y="84" textAnchor="middle" fill="white" fontSize="14" fontWeight="bold">⚡</text>
+              </svg>
+            </div>
+
+            {/* Session info */}
+            <div style={{background:'#F8FAFC',border:'1px solid #E2E8F0',borderRadius:10,padding:'12px 16px',marginBottom:20,display:'flex',gap:16,justifyContent:'center',flexWrap:'wrap'}}>
+              <div style={{textAlign:'center'}}>
+                <div style={{fontSize:11,color:'#94A3B8',marginBottom:2}}>SESSION ID</div>
+                <div style={{fontSize:13,fontWeight:800,color:'#0D1B2A',letterSpacing:'1px',fontFamily:'monospace'}}>ESC-7F2A-9D1B</div>
+              </div>
+              <div style={{width:1,background:'#E2E8F0'}}/>
+              <div style={{textAlign:'center'}}>
+                <div style={{fontSize:11,color:'#94A3B8',marginBottom:2}}>EXPIRES IN</div>
+                <div style={{fontSize:18,fontWeight:800,color:qrExpiry<60?'#EF4444':'#10B981',letterSpacing:'1px',fontFamily:'monospace'}}>{qrFmt(qrExpiry)}</div>
+              </div>
+              <div style={{width:1,background:'#E2E8F0'}}/>
+              <div style={{textAlign:'center'}}>
+                <div style={{fontSize:11,color:'#94A3B8',marginBottom:2}}>CURRENT PAGE</div>
+                <div style={{fontSize:12,fontWeight:700,color:'#0D1B2A'}}>{pageTitle.title}</div>
+              </div>
+            </div>
+
+            {/* Steps */}
+            <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:24,textAlign:'left'}}>
+              {[['1','Open the ElectraScan app on your phone'],['2','Tap the QR scanner icon in the top bar'],['3','Scan this code — your session loads instantly']].map(([n,t])=>(
+                <div key={n} style={{display:'flex',alignItems:'center',gap:10}}>
+                  <div style={{width:22,height:22,borderRadius:11,background:'#EFF6FF',border:'1px solid #BFDBFE',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800,color:'#1D6EFD',flexShrink:0}}>{n}</div>
+                  <div style={{fontSize:12,color:'#64748B'}}>{t}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Close */}
+            <button onClick={closeQR} style={{width:'100%',padding:'12px',background:'#0D1B2A',color:'white',border:'none',borderRadius:10,fontSize:14,fontWeight:700,cursor:'pointer'}}>
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
