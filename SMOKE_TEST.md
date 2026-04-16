@@ -1,31 +1,21 @@
 # Smoke Test — overnight run 2026-04-16
 
-## 1. Vercel deploy — BLOCKED
+## 1. Vercel deploy — DONE
 
-`vercel --prod` couldn't run non-interactively from this session:
+After an interactive `vercel login` from the user's shell, `vercel --prod
+--yes` deployed the current main branch cleanly.
 
-- Vercel CLI 51.4.0 is reachable via `npx vercel` (confirmed with `--version`).
-- No `VERCEL_TOKEN` / `NOW_TOKEN` / `VC_*` env var is set.
-- No existing `~/.vercel/` or `~/.local/share/com.vercel.cli/` auth cache.
-- No `.vercel/` or `vercel.json` in the repo.
-- `vercel whoami` hung waiting for a browser-based login handoff; had to be
-  killed.
+- Production URL (alias): https://electrascan-app.vercel.app
+- Deployment URL: https://electrascan-2yknnyyph-damienc13-5532s-projects.vercel.app
+- Deployment id: `dpl_CT9ouP2ZtJGcLNufZuu5dibuV2do`
+- Response: `HTTP/2 200` on GET /
+- Build: vite 6.4.1, 2050 modules transformed, no errors.
 
-**To unblock**: run one of these from a user-driven terminal once (it's a
-one-time setup):
-
-```bash
-# Interactive login — opens a browser tab
-vercel login
-
-# OR create a token at https://vercel.com/account/tokens and export it
-export VERCEL_TOKEN=…
-vercel link       # associates the repo with a Vercel project
-vercel --prod
-```
-
-After first-time setup, subsequent deploys from this session will work
-without prompts.
+Initial blocker: CLI wasn't authed and there was no `VERCEL_TOKEN` in
+env, so the device-code flow had to be completed from the user's
+browser. Once authed, subsequent `vercel --prod` calls from this session
+run without prompts (auth is cached under `~/.local/share/com.vercel.cli`
+on macOS).
 
 ## 2. Build check — PASS (local vite build)
 
