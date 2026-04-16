@@ -7,6 +7,8 @@ import {
   getReviewItems,
 } from "./analyze_pdf";
 import VariationReport, { VariationItem, VariationRisk } from "./components/VariationReport";
+import { getActiveCompanyProfile } from "./services/companyProfile";
+import { downloadEstimatePDF } from "./utils/estimatePdf";
 
 // ─── Design tokens ─────────────────────────────
 const C = {
@@ -669,9 +671,29 @@ function EstimateEditor({ result, fileName, onBack }: {
   const deleteItem = (id: string) => !locked && setItems(prev => prev.filter(i => i.id !== id));
   const addItem = () => { if (locked) return; const n: LineItem = { id: `m-${Date.now()}`, description: "New item", room: "General", qty: 1, unitPrice: 0, lineTotal: 0, locked: false, fromDetection: false }; setItems(prev => [...prev, n]); };
 
-  const exportEst = () => {
-    const lines = [`ELECTRICAL ESTIMATE\n${estNumber}\n\nVesh Electrical Services Pty Ltd\n7/108 Old Pittwater Road, Brookvale NSW 2100\n\nDate: ${new Date().toLocaleDateString("en-AU")}\nDrawing: ${fileName}\n\n${"─".repeat(60)}\nITEM                                    QTY    RATE      TOTAL\n${"─".repeat(60)}`, ...items.map(i => `${i.description.padEnd(40)} ${String(i.qty).padStart(3)}  $${String(i.unitPrice).padStart(7)}  $${String(i.qty * i.unitPrice).padStart(8)}`), `${"─".repeat(60)}\n\nSubtotal ex GST:      ${fmt(subtotal).padStart(12)}\nMargin (${margin}%):          ${fmt(marginAmt).padStart(12)}\nSubtotal with margin: ${fmt(subtotalM).padStart(12)}\nGST (10%):            ${fmt(gst).padStart(12)}\nTOTAL INC GST:        ${fmt(total).padStart(12)}\n\nValid for 30 days.`].join("\n");
-    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([lines], { type: "text/plain" })); a.download = `${estNumber}.txt`; a.click();
+  const exportEst = async () => {
+    // Generate a branded PDF estimate using the active tenant's CompanyProfile.
+    // Falls back to a basic alert on error (no ToastContext here; fine for now).
+    try {
+      const company = getActiveCompanyProfile();
+      await downloadEstimatePDF({
+        company,
+        estimateNumber: estNumber,
+        date: new Date().toLocaleDateString("en-AU"),
+        drawingFile: fileName,
+        projectName: fileName.replace(/\.pdf$/i, "").replace(/[_-]/g, " "),
+        items: items.map(i => ({
+          description: i.description,
+          room: i.room,
+          qty: i.qty,
+          unitPrice: i.unitPrice,
+        })),
+        marginPercent: margin,
+      });
+    } catch (err) {
+      console.error("Failed to generate estimate PDF:", err);
+      alert("Could not generate PDF. Check console for details.");
+    }
   };
 
   return (
@@ -837,6 +859,8 @@ export default function App() {
       {screen === "variation" && selectedProject && (
         <VariationReport
           projectName={selectedProject.name}
+          projectAddress={selectedProject.address}
+          clientName={selectedProject.client}
           baseEstNumber={selectedProject.estimates[selectedProject.estimates.length - 1]?.number ?? "EST-2026-000-001"}
           baseTotal={selectedProject.estimates[selectedProject.estimates.length - 1]?.subtotal ?? 0}
           variationItems={MOCK_VARIATION_ITEMS}
