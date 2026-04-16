@@ -6,6 +6,7 @@ import {
   groupByRoom,
   getReviewItems,
 } from "./analyze_pdf";
+import VariationReport, { VariationEstimateLike } from "./components/VariationReport";
 
 // ─── Design tokens ─────────────────────────────
 const C = {
@@ -16,7 +17,7 @@ const C = {
   purple: "#7C3AED",
 };
 
-type Screen = "dashboard" | "upload" | "scanning" | "results" | "estimate" | "project";
+type Screen = "dashboard" | "upload" | "scanning" | "results" | "estimate" | "project" | "variation";
 type ResultTab = "schedule" | "risks";
 type ProjectStatus = "estimating" | "submitted" | "approved" | "active" | "completed";
 
@@ -287,8 +288,8 @@ function DashboardScreen({ projects, onNewScan, onOpenProject }: {
 }
 
 // ─── Project Detail Screen ──────────────────────
-function ProjectScreen({ project, onBack, onNewScan }: {
-  project: Project; onBack: () => void; onNewScan: () => void;
+function ProjectScreen({ project, onBack, onNewScan, onOpenVariation }: {
+  project: Project; onBack: () => void; onNewScan: () => void; onOpenVariation: (p: Project) => void;
 }) {
   const status = STATUS_CONFIG[project.status];
   const latestEst = project.estimates[project.estimates.length - 1];
@@ -409,11 +410,17 @@ function ProjectScreen({ project, onBack, onNewScan }: {
               <div style={{ fontSize: 11, color: C.muted, fontWeight: 400 }}>Upload Rev {String.fromCharCode(65 + project.estimates.length)} → auto-generate variation report</div>
             </div>
           </button>
-          <button style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text, fontSize: 14, fontWeight: 600, padding: "14px", borderRadius: 14, cursor: "pointer", textAlign: "left" as const, display: "flex", alignItems: "center", gap: 10 }}>
+          <button onClick={() => onOpenVariation(project)} style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text, fontSize: 14, fontWeight: 600, padding: "14px", borderRadius: 14, cursor: "pointer", textAlign: "left" as const, display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{ fontSize: 20 }}>📊</span>
             <div>
               <div>Variation report</div>
-              <div style={{ fontSize: 11, color: C.muted, fontWeight: 400 }}>Compare drawing versions — coming soon</div>
+              <div style={{ fontSize: 11, color: C.muted, fontWeight: 400 }}>
+                {project.estimates.length >= 2
+                  ? `Compare ${project.estimates[project.estimates.length - 2].number} → ${project.estimates[project.estimates.length - 1].number}`
+                  : project.estimates.length === 1
+                    ? `Preview change deltas vs baseline`
+                    : `Scan a drawing first to generate a baseline`}
+              </div>
             </div>
           </button>
           <button style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text, fontSize: 14, fontWeight: 600, padding: "14px", borderRadius: 14, cursor: "pointer", textAlign: "left" as const, display: "flex", alignItems: "center", gap: 10 }}>
@@ -759,6 +766,11 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>(MOCK_PROJECTS);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [variationPair, setVariationPair] = useState<{
+    projectName: string;
+    previous: VariationEstimateLike;
+    current: VariationEstimateLike;
+  } | null>(null);
 
   const handleFile = async (f: File) => {
     setFile(f); setError(null); setScreen("scanning");
@@ -771,6 +783,40 @@ export default function App() {
   };
 
   const goToScan = () => { setScreen("upload"); setFile(null); setResult(null); setError(null); };
+
+  const openVariation = (project: Project) => {
+    // Pick the two most-recent estimates. Synthesise a baseline if the project
+    // only has one estimate so the report still renders a meaningful delta —
+    // this mirrors the prototype's V001 → V002 comparison UX.
+    const ests = project.estimates;
+    let previous: VariationEstimateLike;
+    let current: VariationEstimateLike;
+    if (ests.length >= 2) {
+      const p = ests[ests.length - 2];
+      const c = ests[ests.length - 1];
+      previous = { id: p.id, number: p.number, total: p.total, subtotal: p.subtotal, date: p.date, lineItems: p.lineItems };
+      current  = { id: c.id, number: c.number, total: c.total, subtotal: c.subtotal, date: c.date, lineItems: c.lineItems };
+    } else if (ests.length === 1) {
+      const c = ests[0];
+      const baselineTotal = Math.round(c.total / 1.09);
+      previous = {
+        id: `${c.id}-baseline`,
+        number: c.number.replace(/-(\d+)$/, (_, n) => `-${String(Math.max(Number(n) - 1, 1)).padStart(3, "0")}`),
+        total: baselineTotal,
+        subtotal: Math.round(baselineTotal / 1.1),
+        date: c.date,
+        lineItems: [],
+      };
+      current = { id: c.id, number: c.number, total: c.total, subtotal: c.subtotal, date: c.date, lineItems: c.lineItems };
+    } else {
+      // No estimates yet — fall back to demo numbers.
+      previous = { id: "v001", number: `EST-${new Date().getFullYear()}-001-001`, total: 136200, lineItems: [] };
+      current  = { id: "v002", number: `EST-${new Date().getFullYear()}-001-002`, total: 148500, lineItems: [] };
+    }
+    setVariationPair({ projectName: project.name, previous, current });
+    setSelectedProject(project);
+    setScreen("variation");
+  };
 
   const handleNewEstimate = () => {
     if (!result || !file) return;
@@ -807,11 +853,20 @@ export default function App() {
     <>
       <style>{CSS}</style>
       {screen === "dashboard" && <DashboardScreen projects={projects} onNewScan={goToScan} onOpenProject={p => { setSelectedProject(p); setScreen("project"); }} />}
-      {screen === "project" && selectedProject && <ProjectScreen project={selectedProject} onBack={() => setScreen("dashboard")} onNewScan={goToScan} />}
+      {screen === "project" && selectedProject && <ProjectScreen project={selectedProject} onBack={() => setScreen("dashboard")} onNewScan={goToScan} onOpenVariation={openVariation} />}
       {screen === "upload" && <UploadScreen onFile={handleFile} onBack={() => setScreen("dashboard")} error={error} />}
       {screen === "scanning" && file && <ScanningScreen fileName={file.name} />}
       {screen === "results" && result && file && <ResultsScreen result={result} fileName={file.name} onBack={goToScan} onBuildEstimate={handleNewEstimate} />}
       {screen === "estimate" && result && file && <EstimateEditor result={result} fileName={file.name} onBack={() => setScreen("dashboard")} />}
+      {screen === "variation" && variationPair && (
+        <VariationReport
+          projectName={variationPair.projectName}
+          previous={variationPair.previous}
+          current={variationPair.current}
+          onBack={() => setScreen(selectedProject ? "project" : "dashboard")}
+          onOpenScan={goToScan}
+        />
+      )}
     </>
   );
 }
