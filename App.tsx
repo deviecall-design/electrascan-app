@@ -6,6 +6,7 @@ import {
   groupByRoom,
   getReviewItems,
 } from "./analyze_pdf";
+import VariationReport, { VariationItem, VariationRisk } from "./components/VariationReport";
 
 // ─── Design tokens ─────────────────────────────
 const C = {
@@ -16,7 +17,7 @@ const C = {
   purple: "#7C3AED",
 };
 
-type Screen = "dashboard" | "upload" | "scanning" | "results" | "estimate" | "project";
+type Screen = "dashboard" | "upload" | "scanning" | "results" | "estimate" | "project" | "variation";
 type ResultTab = "schedule" | "risks";
 type ProjectStatus = "estimating" | "submitted" | "approved" | "active" | "completed";
 
@@ -121,6 +122,31 @@ const MOCK_PROJECTS: Project[] = [
     contractValue: 312000, createdAt: "10/01/2026", updatedAt: "15/03/2026",
     drawingVersion: "Rev D", daysActive: 64,
     estimates: [],
+  },
+];
+
+// ─── Mock variation data ─────────────────────────
+// Simulates what a revised drawing scan would produce when compared to the base estimate.
+const MOCK_VARIATION_ITEMS: VariationItem[] = [
+  { description: "Recessed pair of Down Lights",    prevQty: 18, newQty: 22, unitPrice: 200,  change: "increased" },
+  { description: "LED Strip Light",                 prevQty: 23, newQty: 28, unitPrice: 400,  change: "increased" },
+  { description: "Motorised Blind",                 prevQty: 14, newQty: 18, unitPrice: 380,  change: "increased" },
+  { description: "ZETR 13 series double powerpoint", prevQty: 6, newQty: 8,  unitPrice: 525,  change: "increased" },
+  { description: "EV Charger",                      prevQty: 0,  newQty: 2,  unitPrice: 1000, change: "added" },
+  { description: "Ceiling Fan",                     prevQty: 4,  newQty: 2,  unitPrice: 450,  change: "decreased" },
+  { description: "Door Bell",                       prevQty: 1,  newQty: 0,  unitPrice: 250,  change: "removed" },
+];
+
+const MOCK_VARIATION_RISKS: VariationRisk[] = [
+  {
+    level: "medium",
+    title: "EV Charger added",
+    description: "2 EV charger points added to drawings. Confirm cable run distance — max 15m from switchboard. Add cable allowance if over.",
+  },
+  {
+    level: "info",
+    title: "Motorised Blind qty increase",
+    description: "4 additional motorised blinds detected. Ensure Dynalite/Dali programming scope covers the extra zones. Confirm with automation contractor.",
   },
 ];
 
@@ -287,8 +313,8 @@ function DashboardScreen({ projects, onNewScan, onOpenProject }: {
 }
 
 // ─── Project Detail Screen ──────────────────────
-function ProjectScreen({ project, onBack, onNewScan }: {
-  project: Project; onBack: () => void; onNewScan: () => void;
+function ProjectScreen({ project, onBack, onNewScan, onViewVariation }: {
+  project: Project; onBack: () => void; onNewScan: () => void; onViewVariation: () => void;
 }) {
   const status = STATUS_CONFIG[project.status];
   const latestEst = project.estimates[project.estimates.length - 1];
@@ -409,11 +435,11 @@ function ProjectScreen({ project, onBack, onNewScan }: {
               <div style={{ fontSize: 11, color: C.muted, fontWeight: 400 }}>Upload Rev {String.fromCharCode(65 + project.estimates.length)} → auto-generate variation report</div>
             </div>
           </button>
-          <button style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text, fontSize: 14, fontWeight: 600, padding: "14px", borderRadius: 14, cursor: "pointer", textAlign: "left" as const, display: "flex", alignItems: "center", gap: 10 }}>
+          <button onClick={onViewVariation} style={{ background: C.card, border: `1px solid ${C.purple}`, color: C.text, fontSize: 14, fontWeight: 700, padding: "14px", borderRadius: 14, cursor: "pointer", textAlign: "left" as const, display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{ fontSize: 20 }}>📊</span>
             <div>
-              <div>Variation report</div>
-              <div style={{ fontSize: 11, color: C.muted, fontWeight: 400 }}>Compare drawing versions — coming soon</div>
+              <div style={{ color: C.purple }}>Variation report</div>
+              <div style={{ fontSize: 11, color: C.muted, fontWeight: 400 }}>Compare drawing versions — auto-diff against {project.estimates[project.estimates.length - 1]?.number ?? "base estimate"}</div>
             </div>
           </button>
           <button style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text, fontSize: 14, fontWeight: 600, padding: "14px", borderRadius: 14, cursor: "pointer", textAlign: "left" as const, display: "flex", alignItems: "center", gap: 10 }}>
@@ -807,7 +833,17 @@ export default function App() {
     <>
       <style>{CSS}</style>
       {screen === "dashboard" && <DashboardScreen projects={projects} onNewScan={goToScan} onOpenProject={p => { setSelectedProject(p); setScreen("project"); }} />}
-      {screen === "project" && selectedProject && <ProjectScreen project={selectedProject} onBack={() => setScreen("dashboard")} onNewScan={goToScan} />}
+      {screen === "project" && selectedProject && <ProjectScreen project={selectedProject} onBack={() => setScreen("dashboard")} onNewScan={goToScan} onViewVariation={() => setScreen("variation")} />}
+      {screen === "variation" && selectedProject && (
+        <VariationReport
+          projectName={selectedProject.name}
+          baseEstNumber={selectedProject.estimates[selectedProject.estimates.length - 1]?.number ?? "EST-2026-000-001"}
+          baseTotal={selectedProject.estimates[selectedProject.estimates.length - 1]?.subtotal ?? 0}
+          variationItems={MOCK_VARIATION_ITEMS}
+          risks={MOCK_VARIATION_RISKS}
+          onBack={() => setScreen("project")}
+        />
+      )}
       {screen === "upload" && <UploadScreen onFile={handleFile} onBack={() => setScreen("dashboard")} error={error} />}
       {screen === "scanning" && file && <ScanningScreen fileName={file.name} />}
       {screen === "results" && result && file && <ResultsScreen result={result} fileName={file.name} onBack={goToScan} onBuildEstimate={handleNewEstimate} />}
