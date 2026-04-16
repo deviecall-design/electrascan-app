@@ -10,6 +10,7 @@ import VariationReport, { VariationEstimateLike } from "./components/VariationRe
 import ApprovalsScreen, { ApprovalEstimateLike } from "./components/ApprovalsScreen";
 import RateLibrary from "./components/RateLibrary";
 import EmailUpload from "./components/EmailUpload";
+import ReportsScreen from "./components/ReportsScreen";
 import type { RiskFlag as DetectionRiskFlag } from "./analyze_pdf";
 
 // ─── Design tokens ─────────────────────────────
@@ -21,7 +22,7 @@ const C = {
   purple: "#7C3AED",
 };
 
-type Screen = "dashboard" | "upload" | "scanning" | "results" | "estimate" | "project" | "variation" | "approvals" | "ratelibrary" | "email";
+type Screen = "dashboard" | "upload" | "scanning" | "results" | "estimate" | "project" | "variation" | "approvals" | "ratelibrary" | "email" | "reports";
 type ResultTab = "schedule" | "risks";
 type ProjectStatus = "estimating" | "submitted" | "approved" | "active" | "completed";
 
@@ -303,8 +304,8 @@ function DashboardScreen({ projects, onNewScan, onOpenProject, onOpenRateLibrary
 }
 
 // ─── Project Detail Screen ──────────────────────
-function ProjectScreen({ project, onBack, onNewScan, onOpenVariation, onOpenApprovals }: {
-  project: Project; onBack: () => void; onNewScan: () => void; onOpenVariation: (p: Project) => void; onOpenApprovals: (p: Project) => void;
+function ProjectScreen({ project, onBack, onNewScan, onOpenVariation, onOpenApprovals, onOpenReports }: {
+  project: Project; onBack: () => void; onNewScan: () => void; onOpenVariation: (p: Project) => void; onOpenApprovals: (p: Project) => void; onOpenReports: (p: Project) => void;
 }) {
   const status = STATUS_CONFIG[project.status];
   const latestEst = project.estimates[project.estimates.length - 1];
@@ -460,11 +461,11 @@ function ProjectScreen({ project, onBack, onNewScan, onOpenVariation, onOpenAppr
               </div>
             </div>
           </button>
-          <button style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text, fontSize: 14, fontWeight: 600, padding: "14px", borderRadius: 14, cursor: "pointer", textAlign: "left" as const, display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 20 }}>📁</span>
+          <button onClick={() => onOpenReports(project)} style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text, fontSize: 14, fontWeight: 600, padding: "14px", borderRadius: 14, cursor: "pointer", textAlign: "left" as const, display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 20 }}>📈</span>
             <div>
-              <div>Full project report</div>
-              <div style={{ fontSize: 11, color: C.muted, fontWeight: 400 }}>All versions, variations & audit trail — coming soon</div>
+              <div>Project reports</div>
+              <div style={{ fontSize: 11, color: C.muted, fontWeight: 400 }}>Budget, burndown, hours, milestones & accounting</div>
             </div>
           </button>
         </div>
@@ -956,7 +957,7 @@ export default function App() {
     <>
       <style>{CSS}</style>
       {screen === "dashboard" && <DashboardScreen projects={projects} onNewScan={goToScan} onOpenProject={p => { setSelectedProject(p); setScreen("project"); }} onOpenRateLibrary={() => setScreen("ratelibrary")} onOpenEmail={() => setScreen("email")} />}
-      {screen === "project" && selectedProject && <ProjectScreen project={selectedProject} onBack={() => setScreen("dashboard")} onNewScan={goToScan} onOpenVariation={openVariation} onOpenApprovals={openApprovals} />}
+      {screen === "project" && selectedProject && <ProjectScreen project={selectedProject} onBack={() => setScreen("dashboard")} onNewScan={goToScan} onOpenVariation={openVariation} onOpenApprovals={openApprovals} onOpenReports={(p) => { setSelectedProject(p); setScreen("reports"); }} />}
       {screen === "upload" && <UploadScreen onFile={handleFile} onBack={() => setScreen("dashboard")} error={error} />}
       {screen === "scanning" && file && <ScanningScreen fileName={file.name} />}
       {screen === "results" && result && file && <ResultsScreen result={result} fileName={file.name} onBack={goToScan} onBuildEstimate={handleNewEstimate} />}
@@ -987,6 +988,12 @@ export default function App() {
         <EmailUpload
           onBack={() => setScreen("dashboard")}
           onUploadManual={goToScan}
+        />
+      )}
+      {screen === "reports" && (
+        <ReportsScreen
+          projectName={selectedProject?.name}
+          onBack={() => setScreen(selectedProject ? "project" : "dashboard")}
         />
       )}
     </>
