@@ -748,12 +748,39 @@ function EstimateEditor({ result, fileName, onBack }: {
       </div>
 
       {/* Bottom bar */}
+      {/* Export Quote is the primary action and is available as soon as the
+          estimate has line items — it's no longer gated on the submission /
+          lock status. Lock & Finalise remains a separate secondary action
+          shown only while the estimate is still a draft. */}
       <div style={{ position: "fixed" as const, bottom: 0, left: 0, right: 0, background: C.navy, borderTop: `1px solid ${C.border}`, padding: "10px 14px", display: "flex", gap: 10 }}>
-        <button onClick={exportEst} style={{ flex: 1, background: C.card, border: `1px solid ${C.border}`, color: C.text, fontSize: 13, fontWeight: 600, padding: "12px", borderRadius: 12, cursor: "pointer" }}>Export</button>
-        {!locked
-          ? <button onClick={() => setShowLock(true)} style={{ flex: 2, background: C.green, border: "none", color: "#fff", fontSize: 14, fontWeight: 700, padding: "12px", borderRadius: 12, cursor: "pointer" }}>🔒 Lock & Finalise</button>
-          : <button onClick={exportEst} style={{ flex: 2, background: C.blue, border: "none", color: "#fff", fontSize: 14, fontWeight: 700, padding: "12px", borderRadius: 12, cursor: "pointer" }}>📤 Export Quote</button>
-        }
+        <button
+          onClick={exportEst}
+          disabled={items.length === 0}
+          style={{
+            flex: locked ? 1 : 2,
+            background: items.length === 0 ? C.card : C.blue,
+            border: items.length === 0 ? `1px solid ${C.border}` : "none",
+            color: items.length === 0 ? C.muted : "#fff",
+            fontSize: 14, fontWeight: 700, padding: "12px", borderRadius: 12,
+            cursor: items.length === 0 ? "not-allowed" : "pointer",
+            opacity: items.length === 0 ? 0.6 : 1,
+          }}
+        >📤 Export Quote</button>
+        {!locked && (
+          <button
+            onClick={() => setShowLock(true)}
+            disabled={items.length === 0}
+            style={{
+              flex: 2,
+              background: items.length === 0 ? C.card : C.green,
+              border: items.length === 0 ? `1px solid ${C.border}` : "none",
+              color: items.length === 0 ? C.muted : "#fff",
+              fontSize: 14, fontWeight: 700, padding: "12px", borderRadius: 12,
+              cursor: items.length === 0 ? "not-allowed" : "pointer",
+              opacity: items.length === 0 ? 0.6 : 1,
+            }}
+          >🔒 Lock & Finalise</button>
+        )}
       </div>
     </div>
   );
