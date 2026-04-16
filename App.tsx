@@ -8,6 +8,7 @@ import {
 } from "./analyze_pdf";
 import VariationReport, { VariationEstimateLike } from "./components/VariationReport";
 import ApprovalsScreen, { ApprovalEstimateLike } from "./components/ApprovalsScreen";
+import RateLibrary from "./components/RateLibrary";
 import type { RiskFlag as DetectionRiskFlag } from "./analyze_pdf";
 
 // ─── Design tokens ─────────────────────────────
@@ -19,7 +20,7 @@ const C = {
   purple: "#7C3AED",
 };
 
-type Screen = "dashboard" | "upload" | "scanning" | "results" | "estimate" | "project" | "variation" | "approvals";
+type Screen = "dashboard" | "upload" | "scanning" | "results" | "estimate" | "project" | "variation" | "approvals" | "ratelibrary";
 type ResultTab = "schedule" | "risks";
 type ProjectStatus = "estimating" | "submitted" | "approved" | "active" | "completed";
 
@@ -148,8 +149,8 @@ const toLineItems = (components: DetectedComponent[]): LineItem[] =>
   }));
 
 // ─── Dashboard Screen ───────────────────────────
-function DashboardScreen({ projects, onNewScan, onOpenProject }: {
-  projects: Project[]; onNewScan: () => void; onOpenProject: (p: Project) => void;
+function DashboardScreen({ projects, onNewScan, onOpenProject, onOpenRateLibrary }: {
+  projects: Project[]; onNewScan: () => void; onOpenProject: (p: Project) => void; onOpenRateLibrary: () => void;
 }) {
   const [filter, setFilter] = useState<ProjectStatus | "all">("all");
   const totalValue = projects.reduce((s, p) => s + p.contractValue, 0);
@@ -280,9 +281,9 @@ function DashboardScreen({ projects, onNewScan, onOpenProject }: {
           <div style={{ width: 44, height: 44, borderRadius: "50%", background: C.blue, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, marginTop: -10, boxShadow: `0 4px 20px ${C.blue}66` }}>⚡</div>
           <div style={{ fontSize: 11, fontWeight: 600, color: C.blue }}>Scan</div>
         </button>
-        <button style={{ flex: 1, background: "none", border: "none", padding: "8px 0", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-          <div style={{ fontSize: 20 }}>⚙️</div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: C.muted }}>Settings</div>
+        <button onClick={onOpenRateLibrary} style={{ flex: 1, background: "none", border: "none", padding: "8px 0", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+          <div style={{ fontSize: 20 }}>📚</div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: C.muted }}>Library</div>
         </button>
       </div>
     </div>
@@ -942,7 +943,7 @@ export default function App() {
   return (
     <>
       <style>{CSS}</style>
-      {screen === "dashboard" && <DashboardScreen projects={projects} onNewScan={goToScan} onOpenProject={p => { setSelectedProject(p); setScreen("project"); }} />}
+      {screen === "dashboard" && <DashboardScreen projects={projects} onNewScan={goToScan} onOpenProject={p => { setSelectedProject(p); setScreen("project"); }} onOpenRateLibrary={() => setScreen("ratelibrary")} />}
       {screen === "project" && selectedProject && <ProjectScreen project={selectedProject} onBack={() => setScreen("dashboard")} onNewScan={goToScan} onOpenVariation={openVariation} onOpenApprovals={openApprovals} />}
       {screen === "upload" && <UploadScreen onFile={handleFile} onBack={() => setScreen("dashboard")} error={error} />}
       {screen === "scanning" && file && <ScanningScreen fileName={file.name} />}
@@ -966,6 +967,9 @@ export default function App() {
           priorEstimate={approvalsContext.priorEstimate}
           onBack={() => setScreen(selectedProject ? "project" : "dashboard")}
         />
+      )}
+      {screen === "ratelibrary" && (
+        <RateLibrary onBack={() => setScreen("dashboard")} />
       )}
     </>
   );
