@@ -7,6 +7,7 @@ import {
   getReviewItems,
 } from "./analyze_pdf";
 import VariationReport, { VariationEstimateLike } from "./components/VariationReport";
+import ApprovalsScreen, { ApprovalEstimateLike } from "./components/ApprovalsScreen";
 import type { RiskFlag as DetectionRiskFlag } from "./analyze_pdf";
 
 // ─── Design tokens ─────────────────────────────
@@ -18,7 +19,7 @@ const C = {
   purple: "#7C3AED",
 };
 
-type Screen = "dashboard" | "upload" | "scanning" | "results" | "estimate" | "project" | "variation";
+type Screen = "dashboard" | "upload" | "scanning" | "results" | "estimate" | "project" | "variation" | "approvals";
 type ResultTab = "schedule" | "risks";
 type ProjectStatus = "estimating" | "submitted" | "approved" | "active" | "completed";
 
@@ -289,8 +290,8 @@ function DashboardScreen({ projects, onNewScan, onOpenProject }: {
 }
 
 // ─── Project Detail Screen ──────────────────────
-function ProjectScreen({ project, onBack, onNewScan, onOpenVariation }: {
-  project: Project; onBack: () => void; onNewScan: () => void; onOpenVariation: (p: Project) => void;
+function ProjectScreen({ project, onBack, onNewScan, onOpenVariation, onOpenApprovals }: {
+  project: Project; onBack: () => void; onNewScan: () => void; onOpenVariation: (p: Project) => void; onOpenApprovals: (p: Project) => void;
 }) {
   const status = STATUS_CONFIG[project.status];
   const latestEst = project.estimates[project.estimates.length - 1];
@@ -421,6 +422,28 @@ function ProjectScreen({ project, onBack, onNewScan, onOpenVariation }: {
                   : project.estimates.length === 1
                     ? `Preview change deltas vs baseline`
                     : `Scan a drawing first to generate a baseline`}
+              </div>
+            </div>
+          </button>
+          <button
+            onClick={() => onOpenApprovals(project)}
+            disabled={project.estimates.length === 0}
+            style={{
+              background: C.card,
+              border: `1px solid ${project.estimates.length === 0 ? C.border : C.green}55`,
+              color: project.estimates.length === 0 ? C.muted : C.text,
+              fontSize: 14, fontWeight: 600, padding: "14px", borderRadius: 14,
+              cursor: project.estimates.length === 0 ? "not-allowed" : "pointer",
+              textAlign: "left" as const, display: "flex", alignItems: "center", gap: 10,
+              opacity: project.estimates.length === 0 ? 0.6 : 1,
+            }}>
+            <span style={{ fontSize: 20 }}>✅</span>
+            <div>
+              <div>Approval workflow</div>
+              <div style={{ fontSize: 11, color: C.muted, fontWeight: 400 }}>
+                {project.estimates.length === 0
+                  ? "Scan a drawing first to generate an estimate to approve"
+                  : `Track ${project.estimates[project.estimates.length - 1].number} through builder review`}
               </div>
             </div>
           </button>
@@ -800,6 +823,12 @@ export default function App() {
     current: VariationEstimateLike;
     detectedRiskFlags?: DetectionRiskFlag[];
   } | null>(null);
+  const [approvalsContext, setApprovalsContext] = useState<{
+    projectName: string;
+    projectSummary: string;
+    currentEstimate: ApprovalEstimateLike;
+    priorEstimate?: ApprovalEstimateLike;
+  } | null>(null);
 
   const handleFile = async (f: File) => {
     setFile(f); setError(null); setScreen("scanning");
@@ -856,6 +885,29 @@ export default function App() {
     setScreen("variation");
   };
 
+  const openApprovals = (project: Project) => {
+    const ests = project.estimates;
+    if (ests.length === 0) return;
+    const current = ests[ests.length - 1];
+    const prior = ests.length >= 2 ? ests[ests.length - 2] : undefined;
+    const toApproval = (e: Estimate): ApprovalEstimateLike => ({
+      id: e.id,
+      number: e.number,
+      total: e.total,
+      componentCount: e.lineItems.length || undefined,
+      date: e.date,
+      status: e.status,
+    });
+    setApprovalsContext({
+      projectName: project.name,
+      projectSummary: `${project.name} · ${project.client}`,
+      currentEstimate: toApproval(current),
+      priorEstimate: prior ? toApproval(prior) : undefined,
+    });
+    setSelectedProject(project);
+    setScreen("approvals");
+  };
+
   const handleNewEstimate = () => {
     if (!result || !file) return;
     const gst = result.estimate_subtotal * 0.1;
@@ -891,7 +943,7 @@ export default function App() {
     <>
       <style>{CSS}</style>
       {screen === "dashboard" && <DashboardScreen projects={projects} onNewScan={goToScan} onOpenProject={p => { setSelectedProject(p); setScreen("project"); }} />}
-      {screen === "project" && selectedProject && <ProjectScreen project={selectedProject} onBack={() => setScreen("dashboard")} onNewScan={goToScan} onOpenVariation={openVariation} />}
+      {screen === "project" && selectedProject && <ProjectScreen project={selectedProject} onBack={() => setScreen("dashboard")} onNewScan={goToScan} onOpenVariation={openVariation} onOpenApprovals={openApprovals} />}
       {screen === "upload" && <UploadScreen onFile={handleFile} onBack={() => setScreen("dashboard")} error={error} />}
       {screen === "scanning" && file && <ScanningScreen fileName={file.name} />}
       {screen === "results" && result && file && <ResultsScreen result={result} fileName={file.name} onBack={goToScan} onBuildEstimate={handleNewEstimate} />}
@@ -904,6 +956,15 @@ export default function App() {
           detectedRiskFlags={variationPair.detectedRiskFlags}
           onBack={() => setScreen(selectedProject ? "project" : "dashboard")}
           onOpenScan={goToScan}
+        />
+      )}
+      {screen === "approvals" && approvalsContext && (
+        <ApprovalsScreen
+          projectName={approvalsContext.projectName}
+          projectSummary={approvalsContext.projectSummary}
+          currentEstimate={approvalsContext.currentEstimate}
+          priorEstimate={approvalsContext.priorEstimate}
+          onBack={() => setScreen(selectedProject ? "project" : "dashboard")}
         />
       )}
     </>
