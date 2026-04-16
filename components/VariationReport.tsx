@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { jsPDF } from "jspdf";
 import { saveVariationReport } from "../services/variationService";
+import type { RiskFlag as DetectionRiskFlag, DetectionFlag, ComponentType } from "../analyze_pdf";
 
 // ─── Shared design tokens ────────────────────────────
 // Kept in sync with the `C` palette declared in App.tsx so the screen fits the
@@ -56,6 +57,23 @@ export interface VariationReportProps {
   current: VariationEstimateLike;
   onBack: () => void;
   onOpenScan?: () => void;
+  /**
+   * Risk flags emitted by the detection pipeline for the *current* drawing
+   * version. Each flag has the shape:
+   *
+   *   interface RiskFlag {
+   *     flag: DetectionFlag;          // e.g. HEIGHT_RISK, MISSING_CIRCUIT
+   *     level: "high" | "medium" | "info";
+   *     component_type: ComponentType; // e.g. POOL_OUTDOOR, DOWNLIGHT_RECESSED
+   *     description: string;
+   *   }
+   *
+   * See `analyze_pdf.ts` for the canonical definitions. When this prop is
+   * omitted or an empty array is passed, the report falls back to the
+   * prototype's illustrative risk flags so the UI still demonstrates the
+   * feature during mock-data demos.
+   */
+  detectedRiskFlags?: DetectionRiskFlag[];
 }
 
 // ─── Mock fallback ────────────────────────────────────
@@ -79,6 +97,59 @@ const MOCK_RISKS: VariationRiskFlag[] = [
   { id: "r3", level: "info",   icon: "🏠", title: "Automation Dependency — Dali Lighting",
     desc: "Dimmable downlights specified in Bedrooms. Dali protocol requires separate programming contractor. Confirm scope split with client." },
 ];
+
+// ─── Risk-flag mapping ─────────────────────────────────
+// Human-readable titles for each DetectionFlag emitted by the pipeline. Kept
+// in sync with `generateRiskFlags()` in analyze_pdf.ts.
+const FLAG_TITLES: Record<DetectionFlag, string> = {
+  HEIGHT_RISK:           "Height Risk",
+  AUTOMATION_DEPENDENCY: "Automation Dependency",
+  MISSING_CIRCUIT:       "Missing Circuit",
+  SCOPE_CONFIRM:         "Scope Confirmation Required",
+  OUTDOOR_LOCATION:      "Outdoor Location",
+  OFF_FORM_PREMIUM:      "Off-form Premium",
+  CABLE_RUN_LONG:        "Long Cable Run",
+  LOW_CONFIDENCE:        "Low Confidence Detection",
+  SYMBOL_AMBIGUOUS:      "Ambiguous Symbol",
+  LEGEND_MISMATCH:       "Legend Mismatch",
+  NOT_ELECTRICAL_SCOPE:  "Not Electrical Scope",
+  FROM_LEGEND:           "Legend-Derived Quantity",
+};
+
+// Mirror of the `LABELS` map in App.tsx so we can render flag titles with a
+// human component name (e.g. "Height Risk — Downlight").
+const COMPONENT_LABELS: Partial<Record<ComponentType, string>> = {
+  GPO_STANDARD: "Power Point", GPO_DOUBLE: "Double Power Point",
+  GPO_WEATHERPROOF: "Weatherproof GPO", GPO_USB: "USB Power Point",
+  DOWNLIGHT_RECESSED: "Downlight", PENDANT_FEATURE: "Pendant Light",
+  EXHAUST_FAN: "Exhaust Fan",
+  SWITCHING_STANDARD: "Light Switch", SWITCHING_DIMMER: "Dimmer Switch",
+  SWITCHING_2WAY: "2-Way Switch",
+  SWITCHBOARD_MAIN: "Main Switchboard", SWITCHBOARD_SUB: "Sub Board",
+  AC_SPLIT: "Split System AC", AC_DUCTED: "Ducted AC",
+  DATA_CAT6: "Data Point", DATA_TV: "TV/Data Point",
+  SECURITY_CCTV: "CCTV Camera", SECURITY_INTERCOM: "Intercom",
+  SECURITY_ALARM: "Alarm Sensor",
+  EV_CHARGER: "EV Charger", POOL_OUTDOOR: "Pool Equipment",
+  GATE_ACCESS: "Gate/Access", AUTOMATION_HUB: "Home Automation",
+};
+
+// Level → icon, matching the prototype's Risk Flag component (§5.3).
+const LEVEL_ICON: Record<DetectionRiskFlag["level"], string> = {
+  high: "⚡", medium: "⚠️", info: "🏠",
+};
+
+function mapDetectedFlag(flag: DetectionRiskFlag, idx: number): VariationRiskFlag {
+  const compLabel = COMPONENT_LABELS[flag.component_type] ?? flag.component_type;
+  const title = `${FLAG_TITLES[flag.flag] ?? flag.flag} — ${compLabel}`;
+  return {
+    id: `${flag.flag}-${flag.component_type}-${idx}`,
+    level: flag.level,
+    icon: LEVEL_ICON[flag.level],
+    title,
+    desc: flag.description,
+  };
+}
 
 // ─── Helpers ───────────────────────────────────────────
 const fmt = (n: number) => {
@@ -127,6 +198,7 @@ export default function VariationReport({
   current,
   onBack,
   onOpenScan,
+  detectedRiskFlags,
 }: VariationReportProps) {
   const rows = useMemo(() => diffEstimates(previous, current), [previous, current]);
 
@@ -144,7 +216,16 @@ export default function VariationReport({
   const revised = current.total > 0 ? current.total : base + totalDelta;
   const pctChange = base === 0 ? 0 : (totalDelta / base) * 100;
 
-  const risks = MOCK_RISKS;
+  // Prefer live flags from the detection pipeline; fall back to prototype
+  // mocks only when no flags are available (e.g. viewing a mock project or
+  // the previous scan didn't surface anything).
+  const risks = useMemo<VariationRiskFlag[]>(() => {
+    if (detectedRiskFlags && detectedRiskFlags.length > 0) {
+      return detectedRiskFlags.map(mapDetectedFlag);
+    }
+    return MOCK_RISKS;
+  }, [detectedRiskFlags]);
+  const usingMockRisks = !detectedRiskFlags || detectedRiskFlags.length === 0;
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [noteOpen, setNoteOpen] = useState<string | null>(null);
   const [noteDraft, setNoteDraft] = useState("");
@@ -425,7 +506,14 @@ export default function VariationReport({
         </div>
 
         {/* Risk flags */}
-        <SectionTitle>Risk Flags — Version 002</SectionTitle>
+        <SectionTitle>
+          Risk Flags — {current.number}
+          {usingMockRisks && risks.length > 0 && (
+            <span style={{ color: C.dim, fontWeight: 500, letterSpacing: 0, textTransform: "none", marginLeft: 6 }}>
+              · sample (no scan data)
+            </span>
+          )}
+        </SectionTitle>
         {risks.map(r => {
           const accent = r.level === "high" ? C.red : r.level === "medium" ? C.amber : C.teal;
           const tint = `${accent}14`;

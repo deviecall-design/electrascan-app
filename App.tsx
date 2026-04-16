@@ -7,6 +7,7 @@ import {
   getReviewItems,
 } from "./analyze_pdf";
 import VariationReport, { VariationEstimateLike } from "./components/VariationReport";
+import type { RiskFlag as DetectionRiskFlag } from "./analyze_pdf";
 
 // ─── Design tokens ─────────────────────────────
 const C = {
@@ -770,6 +771,7 @@ export default function App() {
     projectName: string;
     previous: VariationEstimateLike;
     current: VariationEstimateLike;
+    detectedRiskFlags?: DetectionRiskFlag[];
   } | null>(null);
 
   const handleFile = async (f: File) => {
@@ -813,7 +815,16 @@ export default function App() {
       previous = { id: "v001", number: `EST-${new Date().getFullYear()}-001-001`, total: 136200, lineItems: [] };
       current  = { id: "v002", number: `EST-${new Date().getFullYear()}-001-002`, total: 148500, lineItems: [] };
     }
-    setVariationPair({ projectName: project.name, previous, current });
+    // If the current in-memory scan result belongs to the project being
+    // opened, pass its risk flags through. The detection pipeline populates
+    // `result.risk_flags` via generateRiskFlags() in analyze_pdf.ts.
+    const scanFlags = result?.risk_flags;
+    setVariationPair({
+      projectName: project.name,
+      previous,
+      current,
+      detectedRiskFlags: scanFlags && scanFlags.length > 0 ? scanFlags : undefined,
+    });
     setSelectedProject(project);
     setScreen("variation");
   };
@@ -863,6 +874,7 @@ export default function App() {
           projectName={variationPair.projectName}
           previous={variationPair.previous}
           current={variationPair.current}
+          detectedRiskFlags={variationPair.detectedRiskFlags}
           onBack={() => setScreen(selectedProject ? "project" : "dashboard")}
           onOpenScan={goToScan}
         />
