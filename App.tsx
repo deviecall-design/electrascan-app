@@ -9,6 +9,7 @@ import {
 import VariationReport, { VariationEstimateLike } from "./components/VariationReport";
 import ApprovalsScreen, { ApprovalEstimateLike } from "./components/ApprovalsScreen";
 import RateLibrary from "./components/RateLibrary";
+import EmailUpload from "./components/EmailUpload";
 import type { RiskFlag as DetectionRiskFlag } from "./analyze_pdf";
 
 // ─── Design tokens ─────────────────────────────
@@ -20,7 +21,7 @@ const C = {
   purple: "#7C3AED",
 };
 
-type Screen = "dashboard" | "upload" | "scanning" | "results" | "estimate" | "project" | "variation" | "approvals" | "ratelibrary";
+type Screen = "dashboard" | "upload" | "scanning" | "results" | "estimate" | "project" | "variation" | "approvals" | "ratelibrary" | "email";
 type ResultTab = "schedule" | "risks";
 type ProjectStatus = "estimating" | "submitted" | "approved" | "active" | "completed";
 
@@ -149,8 +150,8 @@ const toLineItems = (components: DetectedComponent[]): LineItem[] =>
   }));
 
 // ─── Dashboard Screen ───────────────────────────
-function DashboardScreen({ projects, onNewScan, onOpenProject, onOpenRateLibrary }: {
-  projects: Project[]; onNewScan: () => void; onOpenProject: (p: Project) => void; onOpenRateLibrary: () => void;
+function DashboardScreen({ projects, onNewScan, onOpenProject, onOpenRateLibrary, onOpenEmail }: {
+  projects: Project[]; onNewScan: () => void; onOpenProject: (p: Project) => void; onOpenRateLibrary: () => void; onOpenEmail: () => void;
 }) {
   const [filter, setFilter] = useState<ProjectStatus | "all">("all");
   const totalValue = projects.reduce((s, p) => s + p.contractValue, 0);
@@ -169,13 +170,24 @@ function DashboardScreen({ projects, onNewScan, onOpenProject, onOpenRateLibrary
             </div>
             <div style={{ fontSize: 12, color: C.muted, marginTop: 1 }}>Vesh Electrical Services</div>
           </div>
-          <button onClick={onNewScan} style={{
-            background: C.blue, border: "none", color: "#fff",
-            fontSize: 13, fontWeight: 700, padding: "10px 16px",
-            borderRadius: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
-          }}>
-            <span style={{ fontSize: 16 }}>⚡</span> New Scan
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button onClick={onOpenEmail}
+              title="Email Upload inbox"
+              style={{
+                background: C.card, border: `1px solid ${C.border}`, color: C.text,
+                width: 40, height: 40, borderRadius: 12, cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18,
+              }}>
+              📧
+            </button>
+            <button onClick={onNewScan} style={{
+              background: C.blue, border: "none", color: "#fff",
+              fontSize: 13, fontWeight: 700, padding: "10px 16px",
+              borderRadius: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
+            }}>
+              <span style={{ fontSize: 16 }}>⚡</span> New Scan
+            </button>
+          </div>
         </div>
 
         {/* KPI strip */}
@@ -943,7 +955,7 @@ export default function App() {
   return (
     <>
       <style>{CSS}</style>
-      {screen === "dashboard" && <DashboardScreen projects={projects} onNewScan={goToScan} onOpenProject={p => { setSelectedProject(p); setScreen("project"); }} onOpenRateLibrary={() => setScreen("ratelibrary")} />}
+      {screen === "dashboard" && <DashboardScreen projects={projects} onNewScan={goToScan} onOpenProject={p => { setSelectedProject(p); setScreen("project"); }} onOpenRateLibrary={() => setScreen("ratelibrary")} onOpenEmail={() => setScreen("email")} />}
       {screen === "project" && selectedProject && <ProjectScreen project={selectedProject} onBack={() => setScreen("dashboard")} onNewScan={goToScan} onOpenVariation={openVariation} onOpenApprovals={openApprovals} />}
       {screen === "upload" && <UploadScreen onFile={handleFile} onBack={() => setScreen("dashboard")} error={error} />}
       {screen === "scanning" && file && <ScanningScreen fileName={file.name} />}
@@ -970,6 +982,12 @@ export default function App() {
       )}
       {screen === "ratelibrary" && (
         <RateLibrary onBack={() => setScreen("dashboard")} />
+      )}
+      {screen === "email" && (
+        <EmailUpload
+          onBack={() => setScreen("dashboard")}
+          onUploadManual={goToScan}
+        />
       )}
     </>
   );
