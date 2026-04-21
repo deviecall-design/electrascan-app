@@ -1,169 +1,365 @@
 /**
- * DesktopShell — persistent app chrome for the desktop ElectraScan workflow.
+ * DesktopShell — persistent app chrome for the ElectraScan desktop workflow.
  *
- * Renders the top nav bar (brand + 6 section links + live-data badge + tenant
- * chip) and slots the current route's screen into the body.
+ * Anthropic design-system layout:
+ *   ┌───────────┬────────────────────────────────────────┐
+ *   │           │ TopBar (search ⌘K, Aries pill, bell,   │
+ *   │           │  New scan CTA)                         │
+ *   │  Sidebar  ├────────────────────────────────────────┤
+ *   │  (240)    │                                        │
+ *   │           │  <Outlet /> — the routed screen        │
+ *   │  Brand    │                                        │
+ *   │  Nav      │                                        │
+ *   │  Credits  │                                        │
+ *   │  User     │                                        │
+ *   └───────────┴────────────────────────────────────────┘
  *
- * Matches the Approvals-screen mockup exactly: full-width dark nav with
- * active link highlighted in blue, live-data badge (brand green) and
- * tenant name right-aligned.
+ * Sidebar items map to the 6-screen workflow. "Settings" sits below the
+ * stack as a secondary destination. The Vision credits card shows the
+ * tenant's monthly Claude Vision usage — live data will arrive in Phase 2.
  */
 
-import React from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { Outlet, useNavigate } from "react-router-dom";
+import {
+  LayoutDashboard,
+  Scan,
+  FileText,
+  BookOpen,
+  Settings as SettingsIcon,
+  FileEdit,
+  CheckCircle2,
+  Bell,
+  Plus,
+  Search,
+  Sparkles,
+} from "lucide-react";
 import ElectraScanMark from "./ElectraScanMark";
-import { C, FONT } from "./tokens";
+import { C, FONT, RADIUS } from "./tokens";
 import { getActiveCompanyProfile } from "../../services/companyProfile";
+import NavItem from "../ui/anthropic/NavItem";
 
-interface NavItem {
+// ─── Nav config ─────────────────────────────────────────────────────────
+// Kept at module scope so adding a new route is a one-line change.
+interface NavEntry {
   path: string;
   label: string;
+  icon: React.ReactNode;
+  badge?: string | number;
 }
 
-const NAV_ITEMS: NavItem[] = [
-  { path: "/dashboard",         label: "Dashboard" },
-  { path: "/detection",         label: "Detection" },
-  { path: "/estimate",          label: "Estimate" },
-  { path: "/pricing-schedule",  label: "Pricing Schedule" },
-  { path: "/variation-report",  label: "Variation Report" },
-  { path: "/approvals",         label: "Approvals" },
+const PRIMARY_NAV: NavEntry[] = [
+  { path: "/dashboard",         label: "Dashboard",        icon: <LayoutDashboard size={16} /> },
+  { path: "/detection",         label: "Detection",        icon: <Scan size={16} />,      badge: 3 },
+  { path: "/estimate",          label: "Estimate",         icon: <FileText size={16} /> },
+  { path: "/pricing-schedule",  label: "Pricing Schedule", icon: <BookOpen size={16} /> },
+  { path: "/variation-report",  label: "Variation Report", icon: <FileEdit size={16} /> },
+  { path: "/approvals",         label: "Approvals",        icon: <CheckCircle2 size={16} /> },
 ];
 
-// The "live data as of" date shown in the top-right badge. In production this
-// would come from the tenant's active rate-schedule version / pricing date.
-const LIVE_DATA_DATE = "31.3.2026";
+const SECONDARY_NAV: NavEntry[] = [
+  { path: "/settings", label: "Settings", icon: <SettingsIcon size={16} /> },
+];
 
 export default function DesktopShell() {
+  return (
+    <div style={{ display: "flex", minHeight: "100vh", color: C.text, fontFamily: FONT.body }}>
+      <Sidebar />
+      <main style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+        <TopBar />
+        <div style={{ padding: "36px 32px", maxWidth: 1400, width: "100%", flex: 1 }}>
+          <Outlet />
+        </div>
+      </main>
+    </div>
+  );
+}
+
+// ─── Sidebar ────────────────────────────────────────────────────────────
+function Sidebar() {
   const company = getActiveCompanyProfile();
+  const initials = company.name
+    .split(" ")
+    .map(w => w[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+  // Shortened tenant name for the user-chip line 2 (drops "Pty Ltd", "Services")
+  const shortName = company.name.replace(" Pty Ltd", "").replace(" Services", "");
+
+  return (
+    <aside
+      style={{
+        width: 240,
+        minHeight: "100vh",
+        borderRight: `1px solid ${C.border}`,
+        backgroundColor: C.bgSoft,
+        padding: "24px 20px",
+        display: "flex",
+        flexDirection: "column",
+        position: "sticky",
+        top: 0,
+        height: "100vh",
+        flexShrink: 0,
+      }}
+    >
+      {/* Brand */}
+      <div style={{ padding: "0 6px", marginBottom: 36 }}>
+        <ElectraScanMark size={32} />
+      </div>
+
+      {/* Primary nav */}
+      <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        {PRIMARY_NAV.map(item => (
+          <NavItem
+            key={item.path}
+            to={item.path}
+            icon={item.icon}
+            label={item.label}
+            badge={item.badge}
+          />
+        ))}
+      </nav>
+
+      {/* Vision credits card */}
+      <div
+        style={{
+          marginTop: 28,
+          padding: 14,
+          border: `1px solid ${C.border}`,
+          borderRadius: RADIUS.lg,
+          backgroundColor: C.bgCard,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+          <Sparkles size={13} color={C.orange} />
+          <span
+            style={{
+              fontFamily: FONT.heading,
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+              color: C.textMuted,
+            }}
+          >
+            Vision credits
+          </span>
+        </div>
+        <div style={{ fontFamily: FONT.heading, fontSize: 20, fontWeight: 600 }}>
+          847{" "}
+          <span style={{ color: C.textSubtle, fontWeight: 400, fontSize: 13 }}>
+            / 1,000
+          </span>
+        </div>
+        <div
+          style={{
+            height: 4,
+            borderRadius: 2,
+            backgroundColor: C.border,
+            marginTop: 8,
+            overflow: "hidden",
+          }}
+        >
+          <div style={{ width: "84.7%", height: "100%", backgroundColor: C.orange }} />
+        </div>
+        <div
+          style={{
+            fontSize: 12,
+            color: C.textMuted,
+            marginTop: 8,
+            fontStyle: "italic",
+          }}
+        >
+          Resets 1 May
+        </div>
+      </div>
+
+      {/* Secondary nav */}
+      <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 2 }}>
+        {SECONDARY_NAV.map(item => (
+          <NavItem key={item.path} to={item.path} icon={item.icon} label={item.label} />
+        ))}
+      </div>
+
+      {/* User chip — pinned to bottom */}
+      <div style={{ marginTop: "auto", borderTop: `1px solid ${C.border}`, paddingTop: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 6px" }}>
+          <div
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: "50%",
+              backgroundColor: C.green,
+              color: "#fff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontFamily: FONT.heading,
+              fontWeight: 500,
+              fontSize: 13,
+              flexShrink: 0,
+            }}
+          >
+            {initials}
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontFamily: FONT.heading, fontSize: 13, fontWeight: 500 }}>
+              Damien C.
+            </div>
+            <div style={{ fontSize: 12, color: C.textSubtle }}>{shortName}</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+// ─── Top bar ────────────────────────────────────────────────────────────
+function TopBar() {
+  const navigate = useNavigate();
+  const [_paletteOpen, setPaletteOpen] = useState(false);
+
+  // ⌘K opens the command palette (placeholder until the full palette lands
+  // in a later phase). Escape closes it. We keep the listener here because
+  // TopBar is always mounted — no need to lift it into the app root.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setPaletteOpen(o => !o);
+      }
+      if (e.key === "Escape") setPaletteOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   return (
     <div
       style={{
-        minHeight: "100vh",
-        background: C.bg,
-        color: C.text,
-        fontFamily: FONT.stack,
+        borderBottom: `1px solid ${C.border}`,
+        padding: "14px 32px",
         display: "flex",
-        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "space-between",
+        backgroundColor: C.bg,
+        position: "sticky",
+        top: 0,
+        zIndex: 10,
+        backdropFilter: "blur(8px)",
       }}
     >
-      {/* ── Top nav ── */}
-      <nav
+      {/* Command search */}
+      <button
+        onClick={() => setPaletteOpen(true)}
         style={{
-          height: 72,
-          background: C.navy,
-          borderBottom: `1px solid ${C.border}`,
           display: "flex",
           alignItems: "center",
-          padding: "0 28px",
-          gap: 32,
-          flexShrink: 0,
+          gap: 10,
+          color: C.textSubtle,
+          fontSize: 14,
+          fontStyle: "italic",
+          padding: "8px 14px",
+          border: `1px solid ${C.border}`,
+          borderRadius: RADIUS.md + 2,
+          backgroundColor: C.bgCard,
+          width: 380,
+          textAlign: "left",
+          fontFamily: FONT.body,
         }}
       >
-        {/* Brand */}
-        <NavLink to="/dashboard" style={{ textDecoration: "none" }}>
-          <ElectraScanMark size={36} />
-        </NavLink>
+        <Search size={15} />
+        <span>Search estimates, scans, rates…</span>
+        <span
+          style={{
+            marginLeft: "auto",
+            fontFamily: FONT.heading,
+            fontSize: 11,
+            color: C.textSubtle,
+            padding: "2px 6px",
+            border: `1px solid ${C.border}`,
+            borderRadius: 4,
+            fontStyle: "normal",
+          }}
+        >
+          ⌘K
+        </span>
+      </button>
 
-        {/* Section links */}
-        <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1 }}>
-          {NAV_ITEMS.map(item => (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              style={({ isActive }) => ({
-                padding: "10px 18px",
-                borderRadius: 10,
-                fontSize: 14,
-                fontWeight: 600,
-                textDecoration: "none",
-                color: isActive ? "#ffffff" : C.dim,
-                background: isActive ? C.blue : "transparent",
-                transition: "all 0.15s",
-              })}
-            >
-              {item.label}
-            </NavLink>
-          ))}
-        </div>
-
-        {/* Live-data badge */}
+      {/* Right-side cluster */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        {/* Aries online pill — pulse animation signals live AI agent */}
         <div
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 8,
-            padding: "6px 14px",
-            borderRadius: 8,
-            border: `1px solid ${C.liveGreen}55`,
-            background: C.liveGreenBg,
-            fontSize: 11,
-            fontWeight: 700,
-            color: C.liveGreen,
-            letterSpacing: "0.05em",
+            gap: 7,
+            padding: "6px 12px",
+            borderRadius: 20,
+            backgroundColor: C.greenSoft,
+            color: C.green,
+            fontFamily: FONT.heading,
+            fontSize: 12,
+            fontWeight: 500,
           }}
         >
           <span
+            className="pulse"
             style={{
               width: 6,
               height: 6,
               borderRadius: "50%",
-              background: C.liveGreen,
-              boxShadow: `0 0 8px ${C.liveGreen}`,
-              animation: "pulse 2s ease-in-out infinite",
+              backgroundColor: C.green,
             }}
           />
-          LIVE DATA · {LIVE_DATA_DATE}
+          Aries online
         </div>
 
-        {/* Tenant chip */}
-        <div
+        {/* Notifications */}
+        <button
+          className="es-btn-ghost"
           style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            padding: "6px 14px",
-            borderRadius: 10,
-            background: C.card,
-            border: `1px solid ${C.border}`,
-            fontSize: 13,
-            fontWeight: 600,
-            color: C.dim,
+            position: "relative",
+            padding: 8,
+            borderRadius: RADIUS.md,
           }}
         >
-          <div
+          <Bell size={16} />
+          <span
             style={{
-              width: 24,
-              height: 24,
-              borderRadius: 6,
-              background: C.blue,
-              color: "#fff",
-              fontSize: 11,
-              fontWeight: 800,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
+              position: "absolute",
+              top: 6,
+              right: 6,
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              backgroundColor: C.orange,
             }}
-          >
-            {company.name.split(" ").map(w => w[0]).slice(0, 2).join("")}
-          </div>
-          {company.name.replace(" Pty Ltd", "").replace(" Services", "")}
-        </div>
-      </nav>
+          />
+        </button>
 
-      {/* ── Body (routed screen) ── */}
-      <main style={{ flex: 1, overflow: "auto", padding: "32px 40px" }}>
-        <Outlet />
-      </main>
-
-      {/* Inline keyframes for the live-data pulse dot */}
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; transform: scale(1); }
-          50% { opacity: 0.5; transform: scale(1.2); }
-        }
-      `}</style>
+        {/* Primary CTA — New scan */}
+        <button
+          className="es-btn-primary"
+          onClick={() => navigate("/detection")}
+          style={{
+            fontFamily: FONT.heading,
+            fontSize: 14,
+            fontWeight: 500,
+            backgroundColor: C.orange,
+            color: "#fff",
+            padding: "9px 16px",
+            borderRadius: RADIUS.md,
+            display: "flex",
+            alignItems: "center",
+            gap: 7,
+            transition: "background-color 150ms",
+          }}
+        >
+          <Plus size={15} strokeWidth={2.5} /> New scan
+        </button>
+      </div>
     </div>
   );
 }

@@ -4,21 +4,29 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ProTakeoff - Takeoff Estimating Software</title>
+  <title>ElectraScan — AI-powered electrical estimating</title>
   <link rel="icon" href="/favicon.ico" />
 
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <!--
+    Anthropic design-system fonts. Preconnect + font-display:swap for fastest
+    paint. Poppins: headings, numbers, UI labels. Lora: body prose + italic
+    accents (the Claude-style signal). JetBrains Mono: rate codes, totals.
+    These are the only three families the UI uses — added via <link> so they
+    load at HTML parse time (faster than @import in CSS).
+  -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap">
   <style>
     :root {
       color-scheme: light;
-      /* Forcee browser components to light mode */
     }
 
     body {
-      font-family: 'Inter', sans-serif;
+      font-family: 'Lora', Georgia, serif;
       overflow: hidden;
-      /* Prevent body scroll, handle in app */
-      background-color: #f8fafc;
+      /* Body scroll handled by DesktopShell; this prevents a double scrollbar. */
+      background-color: #faf9f5;
     }
 
     /* Custom scrollbar for better UI */
@@ -28,16 +36,16 @@
     }
 
     ::-webkit-scrollbar-track {
-      background: #f1f5f9;
+      background: #f4f2ea;
     }
 
     ::-webkit-scrollbar-thumb {
-      background: #cbd5e1;
+      background: #e8e6dc;
       border-radius: 4px;
     }
 
     ::-webkit-scrollbar-thumb:hover {
-      background: #94a3b8;
+      background: #d6d3c4;
     }
 
     .react-pdf__Page__canvas {
@@ -75,7 +83,7 @@
  
 </head>
 
-<body class="bg-slate-50 text-slate-900 h-screen w-screen flex flex-col">
+<body class="h-screen w-screen flex flex-col">
   <div id="root" class="h-full w-full"></div>
   <script type="module" src="/index.tsx"></script>
 </body>

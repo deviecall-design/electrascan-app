@@ -1,66 +1,55 @@
 /**
- * ElectraScan brand mark — lightning bolt icon + wordmark.
+ * ElectraScanMark — brand lockup.
  *
- * Used in the top nav of the desktop shell, as well as PDF headers
- * (via the logo-placeholder.svg asset for tenants without their own).
+ * Anthropic version: solid-orange rounded-square tile containing a white
+ * lightning bolt, followed by "ElectraScan" in Poppins 600. No gradient,
+ * no split-colour wordmark (those were the dark-theme mobile treatment).
  *
- * The mark is SVG-based so it scales crisply at any size.
+ * Used in the sidebar header. Also rendered in PDF headers via
+ * logo-placeholder.svg for tenants without their own logo.
  */
 
 import React from "react";
+import { Zap } from "lucide-react";
+import { C, FONT, RADIUS } from "./tokens";
 
 interface ElectraScanMarkProps {
-  size?: number;           // Icon size in px (wordmark scales proportionally)
-  showWordmark?: boolean;  // Set false to render just the bolt
-  accentColor?: string;    // Default: ElectraScan blue
+  /** Width/height of the square tile in px. Wordmark scales proportionally. */
+  size?: number;
+  /** Render just the tile (no text). */
+  iconOnly?: boolean;
 }
 
-export default function ElectraScanMark({
-  size = 32,
-  showWordmark = true,
-  accentColor = "#1D6EFD",
-}: ElectraScanMarkProps) {
+export default function ElectraScanMark({ size = 32, iconOnly = false }: ElectraScanMarkProps) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: size * 0.3 }}>
-      {/* Bolt icon in rounded-square tile */}
+    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
       <div
         style={{
           width: size,
           height: size,
-          borderRadius: size * 0.22,
-          background: `linear-gradient(135deg, ${accentColor}, #4B8FFF)`,
+          borderRadius: RADIUS.md + 2,
+          backgroundColor: C.orange,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           flexShrink: 0,
         }}
       >
-        <svg viewBox="0 0 24 24" width={size * 0.6} height={size * 0.6}>
-          <path
-            d="M 13 2 L 4 14 L 11 14 L 9 22 L 20 10 L 13 10 Z"
-            fill="#ffffff"
-            stroke="#ffffff"
-            strokeLinejoin="round"
-            strokeWidth="0.5"
-          />
-        </svg>
+        <Zap size={size * 0.5} color="#fff" strokeWidth={2.5} />
       </div>
 
-      {/* Wordmark */}
-      {showWordmark && (
-        <div
+      {!iconOnly && (
+        <span
           style={{
-            fontSize: size * 0.62,
-            fontWeight: 900,
-            letterSpacing: "-0.02em",
-            lineHeight: 1,
-            display: "flex",
-            gap: size * 0.04,
+            fontFamily: FONT.heading,
+            fontWeight: 600,
+            fontSize: size * 0.53,
+            letterSpacing: "-0.01em",
+            color: C.text,
           }}
         >
-          <span style={{ color: accentColor }}>Electra</span>
-          <span style={{ color: "#EDF2FF" }}>Scan</span>
-        </div>
+          ElectraScan
+        </span>
       )}
     </div>
   );

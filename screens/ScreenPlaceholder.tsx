@@ -1,55 +1,80 @@
 /**
- * Placeholder panel for screens that haven't been built yet.
- * Used during Phase 1 (foundation) to prove routing works before each
- * screen gets its real UI in later phases.
+ * Placeholder panel for screens that haven't been built yet. Used during
+ * the reskin so routing is verifiable end-to-end before each screen gets
+ * its real content in Step 2 onwards.
+ *
+ * Uses the full Anthropic design system — warm-cream surface, Poppins
+ * heading, Lora-italic subtitle, orange sparkle — so the shell looks
+ * intentional even before real content exists.
  */
 
 import React from "react";
-import { C, FONT } from "../components/desktop/tokens";
+import { Sparkles } from "lucide-react";
+import { C, FONT, RADIUS } from "../components/desktop/tokens";
+import { PageHeader, Card, Footer } from "../components/ui/anthropic";
 
 interface ScreenPlaceholderProps {
   title: string;
-  phase: string;           // e.g. "Phase 2 — Foundation"
+  phase: string;
   description?: string;
 }
 
 export default function ScreenPlaceholder({ title, phase, description }: ScreenPlaceholderProps) {
   return (
-    <div
-      style={{
-        maxWidth: 1200,
-        margin: "0 auto",
-        fontFamily: FONT.stack,
-      }}
-    >
-      {/* Section header */}
-      <div style={{ marginBottom: 24 }}>
-        <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.02em" }}>{title}</div>
-        <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>
-          Desktop workflow · {phase}
-        </div>
-      </div>
-
-      {/* Empty-state card */}
-      <div
+    <div className="anim-in">
+      <PageHeader
+        title={title}
+        sub={`${phase} — the real content lands in the next commit on this screen.`}
+      />
+      <Card
         style={{
-          background: C.card,
+          padding: "64px 40px",
           border: `1px dashed ${C.border}`,
-          borderRadius: 16,
-          padding: "64px 32px",
           textAlign: "center",
         }}
       >
-        <div style={{ fontSize: 48, marginBottom: 12 }}>⚡</div>
-        <div style={{ fontSize: 18, fontWeight: 700, color: C.text, marginBottom: 6 }}>
-          {title} screen — coming in {phase}
+        <div
+          style={{
+            width: 48,
+            height: 48,
+            borderRadius: RADIUS.lg,
+            backgroundColor: C.orangeSoft,
+            color: C.orange,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            marginBottom: 16,
+          }}
+        >
+          <Sparkles size={22} />
         </div>
+        <h3
+          style={{
+            fontFamily: FONT.heading,
+            fontSize: 18,
+            fontWeight: 600,
+            color: C.text,
+            margin: "0 0 8px 0",
+          }}
+        >
+          {title} — arrives in {phase}
+        </h3>
         {description && (
-          <div style={{ fontSize: 13, color: C.muted, maxWidth: 480, margin: "0 auto", lineHeight: 1.6 }}>
+          <p
+            style={{
+              fontSize: 14,
+              color: C.textMuted,
+              maxWidth: 560,
+              margin: "0 auto",
+              lineHeight: 1.6,
+              fontStyle: "italic",
+            }}
+          >
             {description}
-          </div>
+          </p>
         )}
-      </div>
+      </Card>
+      <Footer />
     </div>
   );
 }
