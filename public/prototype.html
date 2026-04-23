@@ -7,6 +7,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
@@ -318,6 +319,18 @@ input:focus, select:focus { border-color: var(--blue); box-shadow: 0 0 0 2px rgb
   }
   .bottom-nav-item.active { color: var(--blue); }
   .bottom-nav-icon { font-size: 20px; }
+  .bottom-nav-scan {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    cursor: pointer; color: white; font-size: 10px; font-weight: 700;
+    transform: translateY(-14px);
+  }
+  .bottom-nav-scan-btn {
+    width: 52px; height: 52px; border-radius: 26px;
+    background: linear-gradient(135deg, var(--blue), var(--teal));
+    color: white; font-size: 22px;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 6px 20px rgba(29,110,253,0.5);
+  }
   .page-content { padding: 16px; padding-bottom: calc(var(--bottomnav-h) + 16px); }
   .grid-4 { grid-template-columns: repeat(2, 1fr); }
   .grid-3 { grid-template-columns: repeat(1, 1fr); }
@@ -636,6 +649,62 @@ const daysActiveBg = (d) => {
   if (d >= 14) return '#FFFBEB';
   return '#F8FAFC';
 };
+// ── QR session handoff helpers ─────────────────────────────────────────────
+// Desktop detection — used to conditionally render "Continue on Mobile"
+// (§7: must be conditionally rendered, NOT just CSS-hidden)
+function useIsDesktop() {
+  const [isDesktop, setIsDesktop] = useState(
+    typeof window !== 'undefined' ? window.innerWidth > 768 : true
+  );
+  useEffect(() => {
+    const onResize = () => setIsDesktop(window.innerWidth > 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  return isDesktop;
+}
+
+// Render a real scannable QR code SVG from the given URL. Falls back to a
+// decorative finder-pattern if the qrcode-generator lib failed to load.
+function QrCodeSvg({ value, size = 180 }) {
+  const svg = useMemo(() => {
+    const QR = (typeof window !== 'undefined') ? window.qrcode : null;
+    if (!QR) return null;
+    try {
+      const q = QR(0, 'M');
+      q.addData(value);
+      q.make();
+      const cells = q.getModuleCount();
+      const cell = size / cells;
+      const rects = [];
+      for (let r = 0; r < cells; r++) {
+        for (let c = 0; c < cells; c++) {
+          if (q.isDark(r, c)) {
+            rects.push(<rect key={`${r}-${c}`} x={(c * cell).toFixed(2)} y={(r * cell).toFixed(2)} width={cell.toFixed(2)} height={cell.toFixed(2)} fill="#0D1B2A"/>);
+          }
+        }
+      }
+      return (
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} shapeRendering="crispEdges" style={{display:'block'}}>
+          <rect width={size} height={size} fill="white"/>
+          {rects}
+        </svg>
+      );
+    } catch (e) {
+      console.warn('QR generation failed', e);
+      return null;
+    }
+  }, [value, size]);
+
+  if (svg) return svg;
+  // Fallback placeholder
+  return (
+    <div style={{width:size,height:size,display:'flex',alignItems:'center',justifyContent:'center',background:'#F1F5F9',color:'#64748B',fontSize:10,textAlign:'center',padding:8}}>
+      QR renderer unavailable — token: {value}
+    </div>
+  );
+}
+
 const DaysActiveBadge = ({ days }) => (
   <span style={{
     display:'inline-flex', alignItems:'center', gap:4,
@@ -1083,6 +1152,8 @@ function EstimateEditor({ onNavigate }) {
 
   const startRecording = (itemId) => {
     setRecording(true); setRecordingId(itemId); setVoiceInput('');
+    // Expose a global flag so the QR handoff flow can detect active recording (§7).
+    if (typeof window !== 'undefined') window.__voiceRecordingActive = true;
     let i=0; const words = DEMO_TRANSCRIPTS[itemId % DEMO_TRANSCRIPTS.length].split(' ');
     const iv = setInterval(()=>{
       i++;
@@ -1093,6 +1164,7 @@ function EstimateEditor({ onNavigate }) {
 
   const stopRecording = (itemId, text) => {
     setRecording(false); setRecordingId(null);
+    if (typeof window !== 'undefined') window.__voiceRecordingActive = false;
     if(text) setItems(prev=>prev.map(it=>it.id===itemId?{...it,note:text}:it));
   };
 
@@ -3329,17 +3401,158 @@ function App() {
   const [page, setPage] = useState('dashboard');
   const [selectedProject, setSelectedProject] = useState(MOCK_PROJECTS[0]);
   const [navActive, setNavActive] = useState('dashboard');
-  const [showQR, setShowQR] = useState(false);
-  const [qrExpiry, setQrExpiry] = useState(300); // 5 min countdown in seconds
-  const [qrTimer, setQrTimer] = useState(null);
 
-  const openQR = () => {
-    setShowQR(true); setQrExpiry(300);
-    const iv = setInterval(()=> setQrExpiry(s => { if(s<=1){ clearInterval(iv); setShowQR(false); return 0; } return s-1; }), 1000);
-    setQrTimer(iv);
-  };
-  const closeQR = () => { setShowQR(false); if(qrTimer) clearInterval(qrTimer); };
+  const isDesktop = useIsDesktop();
+
+  // ── QR Handoff state (§7) ───────────────────────────────────────────────
+  // Phases: idle → saving (force-save spinner) → active (QR shown) → expired
+  const HANDOFF_TTL = 600; // 10 min per spec
+  const [qrPhase, setQrPhase] = useState('idle');
+  const [qrToken, setQrToken] = useState(null);
+  const [qrUrl, setQrUrl] = useState(null);
+  const [qrSnapshot, setQrSnapshot] = useState(null);
+  const [qrExpiry, setQrExpiry] = useState(HANDOFF_TTL);
+  const qrTimerRef = useRef(null);
   const qrFmt = (s) => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+
+  const requestHandoffToken = async () => {
+    // Force-save payload to backend. Voice note in progress → prompt to stop first (§7)
+    // This prototype doesn't have real per-route state, so we snapshot the current page.
+    const body = {
+      route: page,
+      projectId: selectedProject?.id ?? null,
+      estimateId: page === 'estimate' ? 'EST-2026-001-002' : null,
+      tabState: null,
+    };
+    try {
+      const res = await fetch('/api/sessions/handoff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error('handoff POST failed: ' + res.status);
+      return await res.json();
+    } catch (err) {
+      // The prototype may be served as a static file (no backend). Fall back
+      // to a client-only simulated token so the UX still works end-to-end.
+      console.warn('Handoff API unavailable, using client-only token', err);
+      const r = () => Math.random().toString(36).slice(2, 6).toUpperCase();
+      const token = `ESC-${r()}-${r()}`;
+      const snapshotAt = new Date().toISOString();
+      // Stash the payload in localStorage so the same browser can receive it.
+      try { localStorage.setItem(`handoff:${token}`, JSON.stringify({ ...body, snapshotAt, expiresAt: Date.now() + HANDOFF_TTL * 1000 })); } catch {}
+      return { token, snapshotAt, expiresInSeconds: HANDOFF_TTL, qrPayload: `/handoff?token=${encodeURIComponent(token)}`, backend: 'client' };
+    }
+  };
+
+  const startCountdown = () => {
+    if (qrTimerRef.current) clearInterval(qrTimerRef.current);
+    qrTimerRef.current = setInterval(() => {
+      setQrExpiry(s => {
+        if (s <= 1) {
+          clearInterval(qrTimerRef.current);
+          setQrPhase('expired');
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+  };
+
+  const openQR = async () => {
+    // Voice recording guard — refuse to start handoff while voice note in progress.
+    if (typeof window !== 'undefined' && window.__voiceRecordingActive) {
+      alert('Please stop the voice note recording before continuing on mobile.');
+      return;
+    }
+    setQrPhase('saving');
+    const result = await requestHandoffToken();
+    setQrToken(result.token);
+    setQrSnapshot(result.snapshotAt);
+    const origin = (typeof window !== 'undefined') ? window.location.origin : '';
+    const url = `${origin}${result.qrPayload || `/handoff?token=${result.token}`}`;
+    // For prototype which lives at /prototype.html, add the redirect path so the mobile
+    // receive handler still resolves.
+    const protoUrl = `${origin}/prototype.html?handoff=${encodeURIComponent(result.token)}`;
+    setQrUrl(protoUrl);
+    setQrExpiry(HANDOFF_TTL);
+    setQrPhase('active');
+    startCountdown();
+  };
+
+  const regenerateQR = async () => {
+    if (qrTimerRef.current) clearInterval(qrTimerRef.current);
+    setQrPhase('saving');
+    const result = await requestHandoffToken();
+    setQrToken(result.token);
+    setQrSnapshot(result.snapshotAt);
+    const origin = (typeof window !== 'undefined') ? window.location.origin : '';
+    setQrUrl(`${origin}/prototype.html?handoff=${encodeURIComponent(result.token)}`);
+    setQrExpiry(HANDOFF_TTL);
+    setQrPhase('active');
+    startCountdown();
+  };
+
+  const closeQR = () => {
+    setQrPhase('idle');
+    if (qrTimerRef.current) { clearInterval(qrTimerRef.current); qrTimerRef.current = null; }
+  };
+
+  // ── Mobile handoff receive (§7) ─────────────────────────────────────────
+  // On app load, check for ?handoff=TOKEN; show confirmation modal before loading.
+  const [incomingHandoff, setIncomingHandoff] = useState(null);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const tok = params.get('handoff');
+    if (!tok) return;
+
+    (async () => {
+      // Try backend first; fall back to localStorage stash from same-browser desktop.
+      try {
+        const res = await fetch(`/api/sessions/handoff/${encodeURIComponent(tok)}`);
+        if (res.ok) {
+          const body = await res.json();
+          setIncomingHandoff({ token: tok, session: body.session, source: 'server' });
+          return;
+        }
+      } catch {}
+      try {
+        const raw = localStorage.getItem(`handoff:${tok}`);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed.expiresAt > Date.now()) {
+            setIncomingHandoff({ token: tok, session: parsed, source: 'client' });
+            localStorage.removeItem(`handoff:${tok}`); // single-use
+            return;
+          }
+        }
+      } catch {}
+      setIncomingHandoff({ token: tok, session: null, source: 'expired' });
+    })();
+
+    // Clear the query param from the URL so refresh doesn't re-trigger.
+    const newUrl = window.location.pathname + window.location.hash;
+    window.history.replaceState(null, '', newUrl);
+  }, []);
+
+  const acceptHandoff = () => {
+    const s = incomingHandoff?.session;
+    if (s?.route) { setPage(s.route); setNavActive(s.route); }
+    setIncomingHandoff(null);
+  };
+  const dismissHandoff = () => setIncomingHandoff(null);
+
+  // Mobile Scan button — on mobile, centre-ish bottom nav acts as QR reader.
+  // The spec's full camera flow isn't part of this prototype; we surface a
+  // paste-token fallback so the flow is demonstrable on any device.
+  const [showScanInput, setShowScanInput] = useState(false);
+  const [scanInput, setScanInput] = useState('');
+  const submitScanToken = () => {
+    const tok = scanInput.trim();
+    if (!tok) return;
+    window.location.search = `?handoff=${encodeURIComponent(tok)}`;
+  };
 
   const navigate = (target, data) => {
     if (target === 'project-detail') {
@@ -3450,9 +3663,11 @@ function App() {
           </div>
           <div className="topbar-actions">
             <span className="badge badge-green" style={{fontSize:10}}>⚡ ElectraScan v1.0</span>
-            <button className="btn btn-outline btn-sm" onClick={openQR} style={{display:'flex',alignItems:'center',gap:5}}>
-              📱 Continue on Mobile
-            </button>
+            {isDesktop && (
+              <button className="btn btn-outline btn-sm" onClick={openQR} style={{display:'flex',alignItems:'center',gap:5}}>
+                📱 Continue on Mobile
+              </button>
+            )}
             <button className="btn btn-primary btn-sm" onClick={() => navigate('project-detail', MOCK_PROJECTS[0])}>
               + New Project
             </button>
@@ -3463,86 +3678,146 @@ function App() {
         </div>
       </div>
 
-      {/* Mobile bottom nav */}
+      {/* Mobile bottom nav — 5 items: Projects / Estimate / [Scan centre] / Library / More */}
       <div className="bottom-nav">
-        {NAV.slice(0,4).map(n => (
-          <div key={n.id} className={`bottom-nav-item ${navActive===n.id?'active':''}`}
-            onClick={() => navigate(n.id)}>
-            <span className="bottom-nav-icon">{n.icon}</span>
-            {n.label}
-          </div>
-        ))}
+        <div className={`bottom-nav-item ${navActive==='projects'?'active':''}`} onClick={() => navigate('projects')}>
+          <span className="bottom-nav-icon">📁</span>Projects
+        </div>
+        <div className={`bottom-nav-item ${navActive==='estimate'?'active':''}`} onClick={() => navigate('estimate')}>
+          <span className="bottom-nav-icon">💰</span>Estimate
+        </div>
+        {/* Centre Scan button — primary action + QR reader for desktop handoff receive (§7) */}
+        <div className="bottom-nav-scan" onClick={() => setShowScanInput(true)}>
+          <div className="bottom-nav-scan-btn">📷</div>
+          <span>Scan</span>
+        </div>
+        <div className={`bottom-nav-item ${navActive==='pricing'?'active':''}`} onClick={() => navigate('pricing')}>
+          <span className="bottom-nav-icon">🏪</span>Library
+        </div>
+        <div className={`bottom-nav-item ${navActive==='dashboard'?'active':''}`} onClick={() => navigate('dashboard')}>
+          <span className="bottom-nav-icon">⋯</span>More
+        </div>
       </div>
 
-      {/* ── QR Handoff Modal ── */}
-      {showQR && (
-        <div onClick={closeQR} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(4px)'}}>
-          <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:20,padding:36,maxWidth:420,width:'90%',textAlign:'center',boxShadow:'0 24px 80px rgba(0,0,0,0.4)'}}>
-            {/* Header */}
+      {/* ── QR Handoff Modal (§7) ── */}
+      {qrPhase !== 'idle' && (
+        <div onClick={closeQR} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(4px)',padding:20}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:20,padding:32,maxWidth:440,width:'100%',textAlign:'center',boxShadow:'0 24px 80px rgba(0,0,0,0.4)',maxHeight:'92vh',overflow:'auto'}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,marginBottom:6}}>
               <div style={{width:36,height:36,borderRadius:9,background:'linear-gradient(135deg,#1D6EFD,#0EA5E9)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>⚡</div>
               <div style={{fontSize:18,fontWeight:800,color:'#0D1B2A'}}>Continue on Mobile</div>
             </div>
-            <div style={{fontSize:13,color:'#64748B',marginBottom:24}}>Scan this code with your phone to pick up exactly where you left off</div>
 
-            {/* QR code SVG (visual representation) */}
-            <div style={{display:'inline-block',padding:16,background:'white',border:'3px solid #0D1B2A',borderRadius:12,marginBottom:20}}>
-              <svg width="160" height="160" viewBox="0 0 160 160" style={{display:'block'}}>
-                {/* Finder patterns */}
-                <rect x="8" y="8" width="44" height="44" rx="4" fill="#0D1B2A"/>
-                <rect x="14" y="14" width="32" height="32" rx="2" fill="white"/>
-                <rect x="20" y="20" width="20" height="20" rx="1" fill="#0D1B2A"/>
-                <rect x="108" y="8" width="44" height="44" rx="4" fill="#0D1B2A"/>
-                <rect x="114" y="14" width="32" height="32" rx="2" fill="white"/>
-                <rect x="120" y="20" width="20" height="20" rx="1" fill="#0D1B2A"/>
-                <rect x="8" y="108" width="44" height="44" rx="4" fill="#0D1B2A"/>
-                <rect x="14" y="114" width="32" height="32" rx="2" fill="white"/>
-                <rect x="20" y="120" width="20" height="20" rx="1" fill="#0D1B2A"/>
-                {/* Data modules (decorative) */}
-                {[60,68,76,84,92,100].map(x=>[60,68,76,84,92,100].map(y=> Math.sin(x*y)>0.2 &&
-                  <rect key={`${x}-${y}`} x={x} y={y} width="6" height="6" fill="#0D1B2A"/>
-                ))}
-                {[60,76,92].map(x=><rect key={`t${x}`} x={x} y={8} width="6" height="6" fill="#0D1B2A"/>)}
-                {[60,76,92].map(x=><rect key={`b${x}`} x={x} y={152} width="6" height="6" fill="#0D1B2A"/>)}
-                {[60,76,92].map(y=><rect key={`l${y}`} x={8} y={y} width="6" height="6" fill="#0D1B2A"/>)}
-                {/* ElectraScan centre logo */}
-                <rect x="68" y="68" width="24" height="24" rx="4" fill="#1D6EFD"/>
-                <text x="80" y="84" textAnchor="middle" fill="white" fontSize="14" fontWeight="bold">⚡</text>
-              </svg>
-            </div>
+            {qrPhase === 'saving' && (
+              <div style={{padding:'32px 0'}}>
+                <div style={{width:48,height:48,margin:'0 auto 14px',border:'4px solid #E2E8F0',borderTopColor:'#1D6EFD',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>
+                <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+                <div style={{fontSize:14,fontWeight:600,color:'#0D1B2A'}}>Saving your work…</div>
+                <div style={{fontSize:12,color:'#64748B',marginTop:4}}>Pushing your current session to the server.</div>
+              </div>
+            )}
 
-            {/* Session info */}
-            <div style={{background:'#F8FAFC',border:'1px solid #E2E8F0',borderRadius:10,padding:'12px 16px',marginBottom:20,display:'flex',gap:16,justifyContent:'center',flexWrap:'wrap'}}>
-              <div style={{textAlign:'center'}}>
-                <div style={{fontSize:11,color:'#94A3B8',marginBottom:2}}>SESSION ID</div>
-                <div style={{fontSize:13,fontWeight:800,color:'#0D1B2A',letterSpacing:'1px',fontFamily:'monospace'}}>ESC-7F2A-9D1B</div>
-              </div>
-              <div style={{width:1,background:'#E2E8F0'}}/>
-              <div style={{textAlign:'center'}}>
-                <div style={{fontSize:11,color:'#94A3B8',marginBottom:2}}>EXPIRES IN</div>
-                <div style={{fontSize:18,fontWeight:800,color:qrExpiry<60?'#EF4444':'#10B981',letterSpacing:'1px',fontFamily:'monospace'}}>{qrFmt(qrExpiry)}</div>
-              </div>
-              <div style={{width:1,background:'#E2E8F0'}}/>
-              <div style={{textAlign:'center'}}>
-                <div style={{fontSize:11,color:'#94A3B8',marginBottom:2}}>CURRENT PAGE</div>
-                <div style={{fontSize:12,fontWeight:700,color:'#0D1B2A'}}>{pageTitle.title}</div>
-              </div>
-            </div>
+            {qrPhase === 'active' && (
+              <>
+                <div style={{fontSize:13,color:'#64748B',marginBottom:18}}>Scan this code with your phone to pick up exactly where you left off</div>
 
-            {/* Steps */}
-            <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:24,textAlign:'left'}}>
-              {[['1','Open the ElectraScan app on your phone'],['2','Tap the QR scanner icon in the top bar'],['3','Scan this code — your session loads instantly']].map(([n,t])=>(
-                <div key={n} style={{display:'flex',alignItems:'center',gap:10}}>
-                  <div style={{width:22,height:22,borderRadius:11,background:'#EFF6FF',border:'1px solid #BFDBFE',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800,color:'#1D6EFD',flexShrink:0}}>{n}</div>
-                  <div style={{fontSize:12,color:'#64748B'}}>{t}</div>
+                <div style={{display:'inline-block',padding:16,background:'white',border:'3px solid #0D1B2A',borderRadius:12,marginBottom:16}}>
+                  {qrUrl && <QrCodeSvg value={qrUrl} size={180}/>}
                 </div>
-              ))}
-            </div>
 
-            {/* Close */}
-            <button onClick={closeQR} style={{width:'100%',padding:'12px',background:'#0D1B2A',color:'white',border:'none',borderRadius:10,fontSize:14,fontWeight:700,cursor:'pointer'}}>
-              Close
-            </button>
+                <div style={{background:'#F8FAFC',border:'1px solid #E2E8F0',borderRadius:10,padding:'12px 14px',marginBottom:14,display:'flex',gap:14,justifyContent:'center',flexWrap:'wrap'}}>
+                  <div style={{textAlign:'center'}}>
+                    <div style={{fontSize:10,color:'#94A3B8',marginBottom:2,letterSpacing:0.5,textTransform:'uppercase'}}>Session ID</div>
+                    <div style={{fontSize:13,fontWeight:800,color:'#0D1B2A',letterSpacing:1,fontFamily:'monospace'}}>{qrToken}</div>
+                  </div>
+                  <div style={{width:1,background:'#E2E8F0'}}/>
+                  <div style={{textAlign:'center'}}>
+                    <div style={{fontSize:10,color:'#94A3B8',marginBottom:2,letterSpacing:0.5,textTransform:'uppercase'}}>Expires In</div>
+                    <div style={{fontSize:18,fontWeight:800,color:qrExpiry<60?'#EF4444':qrExpiry<180?'#F59E0B':'#10B981',letterSpacing:1,fontFamily:'monospace'}}>{qrFmt(qrExpiry)}</div>
+                  </div>
+                </div>
+
+                <div style={{background:'#F0F9FF',border:'1px solid #BAE6FD',borderRadius:10,padding:'10px 14px',marginBottom:16,textAlign:'left',fontSize:11,color:'#0369A1'}}>
+                  <div style={{fontWeight:700,marginBottom:4}}>Current context</div>
+                  Page: <strong>{pageTitle.title}</strong><br/>
+                  {selectedProject && <>Project: <strong>{selectedProject.name}</strong><br/></>}
+                  Saved: <strong>{qrSnapshot ? new Date(qrSnapshot).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' }) : '—'}</strong>
+                </div>
+
+                <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:18,textAlign:'left'}}>
+                  {[['1','Open the ElectraScan app on your phone'],['2','Tap the centre Scan button in the bottom nav'],['3','Scan this code — your session loads instantly']].map(([n,t])=>(
+                    <div key={n} style={{display:'flex',alignItems:'center',gap:10}}>
+                      <div style={{width:22,height:22,borderRadius:11,background:'#EFF6FF',border:'1px solid #BFDBFE',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800,color:'#1D6EFD',flexShrink:0}}>{n}</div>
+                      <div style={{fontSize:12,color:'#64748B'}}>{t}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{display:'flex',gap:10}}>
+                  <button onClick={regenerateQR} style={{flex:1,padding:'11px',background:'#F1F5F9',color:'#0D1B2A',border:'1px solid #E2E8F0',borderRadius:10,fontSize:13,fontWeight:700,cursor:'pointer'}}>↻ Regenerate</button>
+                  <button onClick={closeQR} style={{flex:2,padding:'11px',background:'#0D1B2A',color:'white',border:'none',borderRadius:10,fontSize:13,fontWeight:700,cursor:'pointer'}}>Close</button>
+                </div>
+              </>
+            )}
+
+            {qrPhase === 'expired' && (
+              <div style={{padding:'10px 0'}}>
+                <div style={{fontSize:40,marginBottom:10}}>⌛</div>
+                <div style={{fontSize:16,fontWeight:800,color:'#EF4444',marginBottom:4}}>Session token expired</div>
+                <div style={{fontSize:12,color:'#64748B',marginBottom:20}}>Handoff tokens are valid for 10 minutes. Regenerate to continue.</div>
+                <div style={{display:'flex',gap:10}}>
+                  <button onClick={closeQR} style={{flex:1,padding:'11px',background:'#F1F5F9',color:'#0D1B2A',border:'1px solid #E2E8F0',borderRadius:10,fontSize:13,fontWeight:700,cursor:'pointer'}}>Close</button>
+                  <button onClick={regenerateQR} style={{flex:2,padding:'11px',background:'#1D6EFD',color:'white',border:'none',borderRadius:10,fontSize:13,fontWeight:800,cursor:'pointer'}}>↻ Regenerate Token</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Mobile handoff receive confirmation (§7) ── */}
+      {incomingHandoff && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:1100,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(4px)',padding:20}}>
+          <div style={{background:'white',borderRadius:20,padding:28,maxWidth:420,width:'100%',textAlign:'center',boxShadow:'0 24px 80px rgba(0,0,0,0.4)'}}>
+            <div style={{fontSize:32,marginBottom:8}}>⚡</div>
+            {incomingHandoff.session ? (
+              <>
+                <div style={{fontSize:16,fontWeight:800,color:'#0D1B2A',marginBottom:4}}>Desktop Session Ready</div>
+                <div style={{fontSize:12,color:'#64748B',marginBottom:16}}>Token {incomingHandoff.token} · loaded from {incomingHandoff.source}</div>
+                <div style={{background:'#F0F9FF',border:'1px solid #BAE6FD',borderRadius:10,padding:'12px 14px',marginBottom:18,textAlign:'left',fontSize:12,color:'#0369A1'}}>
+                  Route: <strong>{incomingHandoff.session.route}</strong><br/>
+                  {incomingHandoff.session.projectId && <>Project ID: <strong>{incomingHandoff.session.projectId}</strong><br/></>}
+                  {incomingHandoff.session.estimateId && <>Estimate: <strong>{incomingHandoff.session.estimateId}</strong><br/></>}
+                  Saved: <strong>{incomingHandoff.session.snapshotAt ? new Date(incomingHandoff.session.snapshotAt).toLocaleString('en-AU', { hour:'2-digit', minute:'2-digit' }) : '—'}</strong>
+                </div>
+                <div style={{display:'flex',gap:10}}>
+                  <button onClick={dismissHandoff} style={{flex:1,padding:'11px',background:'#F1F5F9',color:'#0D1B2A',border:'1px solid #E2E8F0',borderRadius:10,fontSize:13,fontWeight:700,cursor:'pointer'}}>Dismiss</button>
+                  <button onClick={acceptHandoff} style={{flex:2,padding:'11px',background:'#1D6EFD',color:'white',border:'none',borderRadius:10,fontSize:13,fontWeight:800,cursor:'pointer'}}>Load Session</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{fontSize:16,fontWeight:800,color:'#EF4444',marginBottom:4}}>Session expired or already used</div>
+                <div style={{fontSize:12,color:'#64748B',marginBottom:18}}>Tokens are single-use and valid for 10 minutes. Ask the desktop to generate a new QR code.</div>
+                <button onClick={dismissHandoff} style={{width:'100%',padding:'11px',background:'#0D1B2A',color:'white',border:'none',borderRadius:10,fontSize:13,fontWeight:700,cursor:'pointer'}}>Close</button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Scan input (mobile bottom-nav centre button) ── */}
+      {showScanInput && (
+        <div onClick={()=>setShowScanInput(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:1100,display:'flex',alignItems:'flex-end',justifyContent:'center',padding:0}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:'20px 20px 0 0',padding:'24px 22px',width:'100%',maxWidth:520,boxShadow:'0 -12px 40px rgba(0,0,0,0.2)'}}>
+            <div style={{width:44,height:4,background:'#E2E8F0',borderRadius:2,margin:'0 auto 14px'}}/>
+            <div style={{fontSize:16,fontWeight:800,color:'#0D1B2A',marginBottom:4}}>📷 Scan QR / Handoff</div>
+            <div style={{fontSize:12,color:'#64748B',marginBottom:16}}>Scan a QR code to pick up a desktop session, or paste the Session ID below.</div>
+            <input type="text" value={scanInput} onChange={e=>setScanInput(e.target.value)} placeholder="ESC-XXXX-XXXX" style={{width:'100%',padding:'10px 12px',border:'1px solid #E2E8F0',borderRadius:10,fontSize:14,outline:'none',fontFamily:'monospace',textTransform:'uppercase',marginBottom:12}}/>
+            <div style={{display:'flex',gap:10}}>
+              <button onClick={()=>setShowScanInput(false)} style={{flex:1,padding:'11px',background:'#F1F5F9',color:'#0D1B2A',border:'1px solid #E2E8F0',borderRadius:10,fontSize:13,fontWeight:700,cursor:'pointer'}}>Cancel</button>
+              <button onClick={submitScanToken} disabled={!scanInput.trim()} style={{flex:2,padding:'11px',background:scanInput.trim()?'#1D6EFD':'#E2E8F0',color:scanInput.trim()?'white':'#94A3B8',border:'none',borderRadius:10,fontSize:13,fontWeight:800,cursor:scanInput.trim()?'pointer':'not-allowed'}}>Load Session</button>
+            </div>
           </div>
         </div>
       )}
