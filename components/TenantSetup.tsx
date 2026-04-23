@@ -12,15 +12,14 @@ interface TenantSetupProps {
   onBack: () => void;
 }
 
-type Field = keyof TenantConfig;
+type StringField = "name" | "abn" | "address" | "contactPhone" | "contactEmail";
 
-const FIELDS: { key: Field; label: string; placeholder: string; type?: string }[] = [
-  { key: "tradingName",  label: "Trading name",     placeholder: "Vesh Electrical Services" },
+const FIELDS: { key: StringField; label: string; placeholder: string; type?: string }[] = [
+  { key: "name",         label: "Trading name",     placeholder: "Vesh Electrical Services" },
   { key: "abn",          label: "ABN",              placeholder: "XX XXX XXX XXX" },
   { key: "address",      label: "Business address", placeholder: "Unit 1 / 12 Main St, Sydney NSW 2000" },
   { key: "contactPhone", label: "Contact phone",    placeholder: "02 1234 5678" },
   { key: "contactEmail", label: "Contact email",    placeholder: "hello@vesh.com.au",    type: "email" },
-  { key: "replyToEmail", label: "Reply-to email",   placeholder: "quotes@vesh.com.au",   type: "email" },
 ];
 
 async function fileToDataUrl(file: File): Promise<string> {
@@ -38,7 +37,7 @@ export default function TenantSetup({ onBack }: TenantSetupProps) {
   const [saved, setSaved] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const setField = (key: Field, value: string) => {
+  const setField = <K extends keyof TenantConfig>(key: K, value: TenantConfig[K]) => {
     setDraft(d => ({ ...d, [key]: value }));
     setSaved(false);
   };
@@ -138,7 +137,7 @@ export default function TenantSetup({ onBack }: TenantSetupProps) {
               )}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 16, fontWeight: 800, color: "#0f172a" }}>
-                  {draft.tradingName || "Your Trading Name"}
+                  {draft.name || "Your Trading Name"}
                 </div>
                 {draft.abn && <div style={{ fontSize: 11, color: "#475569", marginTop: 2 }}>ABN: {draft.abn}</div>}
                 {previewContact && <div style={{ fontSize: 11, color: "#475569", marginTop: 2 }}>{previewContact}</div>}

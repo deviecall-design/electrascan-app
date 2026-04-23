@@ -150,10 +150,10 @@ export default function EmailUpload({
   };
 
   const shareAddress = () => {
-    const subject = encodeURIComponent("My ElectraScan inbox");
+    const subject = encodeURIComponent("My drawings inbox");
     const body = encodeURIComponent(
-      `Hi,\n\nYou can forward electrical drawings directly to my ElectraScan inbox:\n\n${inboxAddress}\n\n` +
-      `Any PDF or DWG attachment will be auto-detected and queued for AI scan.\n\nThanks,\n${userHandle.replace(/[._]/g, " ")}`,
+      `Hi,\n\nYou can forward electrical drawings directly to my drawings inbox:\n\n${inboxAddress}\n\n` +
+      `Any PDF or DWG attachment will be auto-detected and queued.\n\nThanks,\n${userHandle.replace(/[._]/g, " ")}`,
     );
     window.location.href = `mailto:?subject=${subject}&body=${body}`;
   };

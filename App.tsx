@@ -196,7 +196,7 @@ function DashboardScreen({ projects, onNewScan, onOpenProject, onOpenRateLibrary
             <div style={{ fontSize: 22, fontWeight: 800, color: C.blue, letterSpacing: "-0.03em" }}>
               Electra<span style={{ color: C.text }}>Scan</span>
             </div>
-            <div style={{ fontSize: 12, color: C.muted, marginTop: 1 }}>{tenant.tradingName}</div>
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 1 }}>{tenant.name}</div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <button onClick={onOpenSettings}
