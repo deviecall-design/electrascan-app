@@ -340,7 +340,75 @@ input:focus, select:focus { border-color: var(--blue); box-shadow: 0 0 0 2px rgb
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useEffect, useRef } = React;
+const { useState, useEffect, useRef, useMemo, createContext, useContext } = React;
+
+// ══════════════════════════════════════════════════════════════════════════
+// TENANT WHITE-LABEL SYSTEM
+// Every exported PDF / builder email / supplier BOM / milestone notification
+// uses tenant branding. ElectraScan branding NEVER appears on external outputs.
+// Internal app UI (sidebar, topbar) may still show ElectraScan branding.
+// ══════════════════════════════════════════════════════════════════════════
+const DEFAULT_TENANT = {
+  tradingName: 'Vesh Electrical Services',
+  logoDataUrl: '', // PNG/SVG data URL; empty → initials monogram
+  abn: '47 612 389 204',
+  address: '24 Union Rd, Ascot Vale VIC 3032',
+  contactEmail: 'damien@veshelectrical.com.au',
+  contactPhone: '+61 3 9376 8844',
+  emailReplyTo: 'damien@veshelectrical.com.au',
+  accentColor: '#1D6EFD',
+};
+
+const TENANT_STORAGE_KEY = 'electrascan.tenant.v1';
+
+const loadTenant = () => {
+  try {
+    const raw = localStorage.getItem(TENANT_STORAGE_KEY);
+    if (!raw) return DEFAULT_TENANT;
+    return { ...DEFAULT_TENANT, ...JSON.parse(raw) };
+  } catch { return DEFAULT_TENANT; }
+};
+const saveTenant = (t) => {
+  try { localStorage.setItem(TENANT_STORAGE_KEY, JSON.stringify(t)); } catch {}
+};
+
+const TenantContext = createContext({ tenant: DEFAULT_TENANT, setTenant: () => {} });
+const useTenant = () => useContext(TenantContext);
+
+// Tenant letterhead — applied to ALL PDF exports and email previews.
+// Never contains ElectraScan branding.
+function CompanyLetterhead({ tenant, variant = 'pdf' }) {
+  const initials = tenant.tradingName.split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+  const logo = tenant.logoDataUrl
+    ? <img src={tenant.logoDataUrl} alt="" style={{ height: 52, width: 'auto', maxWidth: 140, objectFit: 'contain', borderRadius: 6 }} />
+    : <div style={{ height: 52, width: 52, borderRadius: 8, background: tenant.accentColor, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 800, letterSpacing: 0.5 }}>{initials || '—'}</div>;
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, padding: '16px 20px', borderBottom: `2px solid ${tenant.accentColor}`, background: 'white' }}>
+      {logo}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 16, fontWeight: 800, color: '#0D1B2A', lineHeight: 1.2 }}>{tenant.tradingName}</div>
+        <div style={{ fontSize: 11, color: '#475569', marginTop: 3 }}>ABN: {tenant.abn}</div>
+        <div style={{ fontSize: 11, color: '#475569', marginTop: 2 }}>
+          {tenant.address} · {tenant.contactPhone} · {tenant.contactEmail}
+        </div>
+      </div>
+      {variant === 'email' && (
+        <div style={{ fontSize: 10, color: '#94A3B8', textAlign: 'right', flexShrink: 0 }}>
+          Reply-to<br/><strong style={{ color: '#475569' }}>{tenant.emailReplyTo}</strong>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Tenant footer for PDF exports — no ElectraScan mention.
+function CompanyFooter({ tenant }) {
+  return (
+    <div style={{ borderTop: `1px solid #E2E8F0`, padding: '10px 20px', fontSize: 10, color: '#94A3B8', textAlign: 'center', background: '#F8FAFC' }}>
+      {tenant.tradingName} · ABN {tenant.abn} · {tenant.contactEmail} · {tenant.contactPhone}
+    </div>
+  );
+}
 
 // ── Mock Data ──────────────────────────────────────────────────────────────
 const MOCK_PROJECTS = [
@@ -462,6 +530,7 @@ const NAV = [
   { id:'reports',      icon:'📈', label:'Reports'     },
   { id:'pricing',      icon:'🏪', label:'Rate Library'},
   { id:'email-upload', icon:'📧', label:'Email Upload'},
+  { id:'settings',     icon:'⚙️', label:'Settings'    },
 ];
 
 // ── TLE Wholesaler mock data (trade rates) ──────────────────────────────────
@@ -861,6 +930,7 @@ function EstimateEditor({ onNavigate }) {
   const [recordingId, setRecordingId] = useState(null);
   const [voiceInput, setVoiceInput]  = useState('');
   const [showVoice, setShowVoice]    = useState(false);
+  const [showPdfPreview, setShowPdfPreview] = useState(false);
 
   // Simulated voice transcript lines for demo
   const DEMO_TRANSCRIPTS = [
@@ -919,11 +989,44 @@ function EstimateEditor({ onNavigate }) {
         ) : (
           <div className="flex-center gap-8">
             <span className="badge badge-green">✅ Locked — 18 Mar 2026</span>
-            <button className="btn btn-ghost btn-sm">Export PDF</button>
+            <button className="btn btn-ghost btn-sm" onClick={()=>setShowPdfPreview(true)}>Export PDF</button>
             <button className="btn btn-ghost btn-sm">Export CSV</button>
           </div>
         )}
       </div>
+
+      <PdfPreviewModal
+        open={showPdfPreview}
+        onClose={()=>setShowPdfPreview(false)}
+        title="Estimate PDF — Preview"
+        subtitle="EST-2026-001-002 · Riverside Apartments"
+      >
+        <div style={{fontSize:15,fontWeight:800,color:'#0D1B2A',marginBottom:6}}>Electrical Estimate</div>
+        <div style={{fontSize:11,color:'#64748B',marginBottom:14}}>EST-2026-001-002 · Riverside Apartments · Issued 18 Mar 2026</div>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:11,marginBottom:14}}>
+          <thead><tr style={{background:'#F8FAFC'}}>
+            <th style={{textAlign:'left',padding:'6px 10px'}}>Description</th>
+            <th style={{textAlign:'center',padding:'6px 10px'}}>Qty</th>
+            <th style={{textAlign:'right',padding:'6px 10px'}}>Rate</th>
+            <th style={{textAlign:'right',padding:'6px 10px'}}>Total</th>
+          </tr></thead>
+          <tbody>
+            {items.slice(0,6).map(it=>(
+              <tr key={it.id} style={{borderBottom:'1px solid #F1F5F9'}}>
+                <td style={{padding:'5px 10px'}}>{it.desc}</td>
+                <td style={{padding:'5px 10px',textAlign:'center'}}>{it.qty}</td>
+                <td style={{padding:'5px 10px',textAlign:'right'}}>{fmt(it.rate)}</td>
+                <td style={{padding:'5px 10px',textAlign:'right',fontWeight:600}}>{fmt(it.qty*it.rate)}</td>
+              </tr>
+            ))}
+            <tr><td colSpan="4" style={{padding:'5px 10px',fontSize:10,color:'#94A3B8',fontStyle:'italic'}}>…{items.length-6} further line items…</td></tr>
+          </tbody>
+        </table>
+        <div style={{borderTop:'2px solid #0D1B2A',paddingTop:10,display:'flex',justifyContent:'space-between',fontSize:13,fontWeight:800}}>
+          <span>Total (incl. GST)</span>
+          <span>{fmt(total)}</span>
+        </div>
+      </PdfPreviewModal>
 
       {locked && (
         <div style={{background:'#f0fdf4',border:'1px solid #86efac',borderRadius:8,padding:'10px 14px',marginBottom:16,fontSize:12,color:'#166534'}}>
@@ -1133,6 +1236,7 @@ function VariationReport() {
   const base = 136200;
   const revised = base + totalDelta;
   const pctChange = (totalDelta / base * 100);
+  const [showPdfPreview, setShowPdfPreview] = useState(false);
 
   return (
     <div>
@@ -1180,10 +1284,27 @@ function VariationReport() {
           <span style={{fontSize:12,color:'#f59e0b',fontWeight:700}}>+{fmt(changedDelta)}</span>
         </div>
         <div style={{marginLeft:'auto',display:'flex',gap:8}}>
-          <button className="btn btn-ghost btn-sm">Export PDF</button>
+          <button className="btn btn-ghost btn-sm" onClick={()=>setShowPdfPreview(true)}>Export PDF</button>
           <button className="btn btn-ghost btn-sm">Export CSV</button>
         </div>
       </div>
+
+      <PdfPreviewModal
+        open={showPdfPreview}
+        onClose={()=>setShowPdfPreview(false)}
+        title="Variation Report PDF — Preview"
+        subtitle="Internal document · Riverside Apartments"
+        internal
+      >
+        <div style={{fontSize:15,fontWeight:800,color:'#0D1B2A',marginBottom:6}}>Variation Report — Internal</div>
+        <div style={{fontSize:11,color:'#64748B',marginBottom:14}}>EST-2026-001-001 → EST-2026-001-002 · Not for distribution</div>
+        <div style={{display:'flex',gap:10,marginBottom:14}}>
+          <div style={{flex:1,background:'#F8FAFC',padding:'10px 12px',borderRadius:6}}><div style={{fontSize:10,color:'#94A3B8'}}>V001 Base</div><div style={{fontSize:15,fontWeight:800}}>{fmt(base)}</div></div>
+          <div style={{flex:1,background:'#F8FAFC',padding:'10px 12px',borderRadius:6}}><div style={{fontSize:10,color:'#94A3B8'}}>Net Variation</div><div style={{fontSize:15,fontWeight:800,color:totalDelta>=0?'#EF4444':'#10B981'}}>{totalDelta>=0?'+':''}{fmt(totalDelta)}</div></div>
+          <div style={{flex:1,background:'#F8FAFC',padding:'10px 12px',borderRadius:6}}><div style={{fontSize:10,color:'#94A3B8'}}>V002 Revised</div><div style={{fontSize:15,fontWeight:800}}>{fmt(revised)}</div></div>
+        </div>
+        <div style={{fontSize:11,color:'#64748B'}}>Line-by-line deltas and risk flags would print here for your internal review.</div>
+      </PdfPreviewModal>
 
       {/* Variation table */}
       <div className="table-wrap mb-16">
@@ -2480,9 +2601,14 @@ function VendorPricing() {
 
 // ── Email Upload ────────────────────────────────────────────────────────────
 function EmailUpload({ onNavigate }) {
+  const { tenant } = useTenant();
   const [autoScan, setAutoScan]     = useState(true);
   const [scanning, setScanning]     = useState(null);
   const [scanned, setScanned]       = useState([]);
+  // Derive a tenant-scoped inbox subdomain from the trading name (no ElectraScan branding on outputs).
+  const slug = tenant.tradingName.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 20) || 'company';
+  const inboxLocal = 'drawings';
+  const inboxDomain = `${slug}.drawings.app`;
 
   const triggerScan = (id) => {
     setScanning(id);
@@ -2499,13 +2625,13 @@ function EmailUpload({ onNavigate }) {
         <button className="btn btn-primary btn-sm">📤 Upload File Manually</button>
       </div>
 
-      {/* Inbox address card */}
+      {/* Inbox address card — tenant-scoped, no ElectraScan mention externally */}
       <div style={{background:'linear-gradient(135deg,#0D1B2A 0%,#1A3A5C 100%)',borderRadius:14,padding:24,marginBottom:20,color:'white',display:'flex',alignItems:'center',gap:20,flexWrap:'wrap'}}>
         <div style={{fontSize:36}}>📧</div>
         <div style={{flex:1}}>
-          <div style={{fontSize:11,fontWeight:700,letterSpacing:'1px',textTransform:'uppercase',color:'#60A5FA',marginBottom:4}}>Your ElectraScan Inbox</div>
-          <div style={{fontSize:18,fontWeight:800,letterSpacing:'-0.5px',marginBottom:6}}>damien.callaghan<span style={{color:'#60A5FA'}}>@drawings.electrascan.app</span></div>
-          <div style={{fontSize:12,color:'#94A3B8'}}>Forward or CC this address on any email with drawing attachments. Plans are automatically detected, queued and scanned.</div>
+          <div style={{fontSize:11,fontWeight:700,letterSpacing:'1px',textTransform:'uppercase',color:'#60A5FA',marginBottom:4}}>Your Drawings Inbox</div>
+          <div style={{fontSize:18,fontWeight:800,letterSpacing:'-0.5px',marginBottom:6}}>{inboxLocal}<span style={{color:'#60A5FA'}}>@{inboxDomain}</span></div>
+          <div style={{fontSize:12,color:'#94A3B8'}}>Forward or CC this address on any email with drawing attachments. Plans are automatically detected, queued and scanned. Builders and architects see only your company name — no ElectraScan branding.</div>
         </div>
         <div style={{display:'flex',flexDirection:'column',gap:8}}>
           <button style={{background:'#1D6EFD',color:'white',border:'none',borderRadius:8,padding:'8px 16px',fontSize:12,fontWeight:700,cursor:'pointer'}}>📋 Copy Address</button>
@@ -2593,8 +2719,217 @@ function EmailUpload({ onNavigate }) {
   );
 }
 
+// Shared PDF preview modal — ALWAYS uses tenant letterhead, never ElectraScan
+function PdfPreviewModal({ open, title, subtitle, onClose, children, internal = false }) {
+  const { tenant } = useTenant();
+  if (!open) return null;
+  return (
+    <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:1500,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(4px)',padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:'#F8FAFC',borderRadius:14,width:'100%',maxWidth:640,maxHeight:'92vh',overflow:'auto',boxShadow:'0 24px 80px rgba(0,0,0,0.4)'}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 18px',background:'#0D1B2A',color:'white',borderRadius:'14px 14px 0 0'}}>
+          <div>
+            <div style={{fontSize:13,fontWeight:700}}>{title}</div>
+            <div style={{fontSize:10,color:'#94A3B8'}}>{subtitle}</div>
+          </div>
+          <div style={{display:'flex',gap:8,alignItems:'center'}}>
+            {internal && <span style={{fontSize:9,fontWeight:700,background:'#F59E0B',color:'#0D1B2A',padding:'2px 8px',borderRadius:10,letterSpacing:'1px'}}>INTERNAL ONLY</span>}
+            <button onClick={onClose} style={{background:'rgba(255,255,255,0.15)',border:'none',color:'white',width:28,height:28,borderRadius:6,cursor:'pointer',fontSize:14}}>✕</button>
+          </div>
+        </div>
+        <div style={{padding:18}}>
+          <div style={{background:'white',border:'1px solid #E2E8F0',borderRadius:8,overflow:'hidden',boxShadow:'0 2px 8px rgba(0,0,0,0.06)'}}>
+            <CompanyLetterhead tenant={tenant}/>
+            <div style={{padding:'18px 22px',minHeight:180}}>{children}</div>
+            <CompanyFooter tenant={tenant}/>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Tenant Settings / White-Label Onboarding ───────────────────────────────
+function TenantSettings() {
+  const { tenant, setTenant } = useTenant();
+  const [draft, setDraft] = useState(tenant);
+  const [saved, setSaved] = useState(false);
+  const [preview, setPreview] = useState('estimate'); // estimate | builder-email | bom | milestone
+  const fileRef = useRef(null);
+
+  const isDirty = JSON.stringify(draft) !== JSON.stringify(tenant);
+
+  const handleLogo = (file) => {
+    if (!file) return;
+    if (!/^image\/(png|svg\+xml|jpeg)$/.test(file.type)) {
+      alert('Logo must be PNG, SVG, or JPG');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setDraft(d => ({ ...d, logoDataUrl: reader.result }));
+    reader.readAsDataURL(file);
+  };
+
+  const save = () => { setTenant(draft); setSaved(true); setTimeout(() => setSaved(false), 2200); };
+  const reset = () => setDraft(tenant);
+
+  const Field = ({ label, value, onChange, placeholder, type = 'text' }) => (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', color: '#64748B', marginBottom: 5 }}>{label}</div>
+      <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+        style={{ width: '100%', padding: '8px 12px', border: '1px solid #E2E8F0', borderRadius: 8, fontSize: 13, outline: 'none', fontFamily: 'inherit' }}/>
+    </div>
+  );
+
+  return (
+    <div>
+      <div className="section-title">Company Settings</div>
+      <div className="section-sub">Your branding appears on every PDF export, builder email, supplier BOM, and milestone notification. ElectraScan branding never appears on external outputs.</div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 1fr) minmax(360px, 1.2fr)', gap: 20 }}>
+        {/* ── Editor ── */}
+        <div className="card">
+          <div className="label" style={{ marginBottom: 12 }}>Business Details</div>
+          <Field label="Trading Name" value={draft.tradingName} onChange={v => setDraft(d => ({ ...d, tradingName: v }))} placeholder="Vesh Electrical Services"/>
+          <Field label="ABN" value={draft.abn} onChange={v => setDraft(d => ({ ...d, abn: v }))} placeholder="47 612 389 204"/>
+          <Field label="Business Address" value={draft.address} onChange={v => setDraft(d => ({ ...d, address: v }))} placeholder="24 Union Rd, Ascot Vale VIC 3032"/>
+
+          <div className="label" style={{ marginBottom: 12, marginTop: 14 }}>Contact</div>
+          <Field label="Contact Email" value={draft.contactEmail} onChange={v => setDraft(d => ({ ...d, contactEmail: v }))} type="email"/>
+          <Field label="Contact Phone" value={draft.contactPhone} onChange={v => setDraft(d => ({ ...d, contactPhone: v }))}/>
+          <Field label="Email Reply-To" value={draft.emailReplyTo} onChange={v => setDraft(d => ({ ...d, emailReplyTo: v }))} type="email"/>
+
+          <div className="label" style={{ marginBottom: 12, marginTop: 14 }}>Branding</div>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', color: '#64748B', marginBottom: 5 }}>Logo (PNG / SVG / JPG)</div>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 14 }}>
+            <div style={{ width: 64, height: 64, borderRadius: 10, border: '1px dashed #CBD5E1', background: draft.logoDataUrl ? 'white' : '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+              {draft.logoDataUrl
+                ? <img src={draft.logoDataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }}/>
+                : <span style={{ fontSize: 20 }}>🏢</span>}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <input ref={fileRef} type="file" accept="image/png,image/svg+xml,image/jpeg" onChange={e => handleLogo(e.target.files?.[0])} style={{ display: 'none' }}/>
+              <button className="btn btn-secondary btn-sm" onClick={() => fileRef.current?.click()}>Upload Logo</button>
+              {draft.logoDataUrl && <button className="btn btn-ghost btn-sm" onClick={() => setDraft(d => ({ ...d, logoDataUrl: '' }))}>Remove</button>}
+            </div>
+          </div>
+
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', color: '#64748B', marginBottom: 5 }}>Accent Colour</div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14 }}>
+            <input type="color" value={draft.accentColor} onChange={e => setDraft(d => ({ ...d, accentColor: e.target.value }))} style={{ width: 44, height: 32, padding: 0, border: '1px solid #E2E8F0', borderRadius: 6 }}/>
+            <span style={{ fontSize: 12, color: '#64748B', fontFamily: 'monospace' }}>{draft.accentColor}</span>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button className="btn btn-primary" onClick={save} disabled={!isDirty}>{saved ? '✓ Saved' : 'Save Changes'}</button>
+            <button className="btn btn-ghost btn-sm" onClick={reset} disabled={!isDirty}>Discard</button>
+          </div>
+        </div>
+
+        {/* ── Preview pane ── */}
+        <div>
+          <div className="label" style={{ marginBottom: 10 }}>External Output Preview</div>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+            {[
+              ['estimate', 'Estimate PDF'],
+              ['builder-email', 'Builder Email'],
+              ['bom', 'Supplier BOM'],
+              ['milestone', 'Milestone Notice'],
+            ].map(([id, lbl]) => (
+              <button key={id} onClick={() => setPreview(id)} className={`pill ${preview===id?'active':''}`}>{lbl}</button>
+            ))}
+          </div>
+
+          {preview === 'estimate' && (
+            <div style={{ background: 'white', border: '1px solid #E2E8F0', borderRadius: 10, overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+              <CompanyLetterhead tenant={draft}/>
+              <div style={{ padding: '18px 20px' }}>
+                <div style={{ fontSize: 15, fontWeight: 800, color: '#0D1B2A' }}>Electrical Estimate</div>
+                <div style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>EST-2026-001-002 · Riverside Apartments · Issued 18 Mar 2026</div>
+                <div style={{ marginTop: 14, fontSize: 12, color: '#1E293B' }}>Total: <strong>$148,500</strong> (incl. GST)</div>
+                <div style={{ marginTop: 4, fontSize: 11, color: '#64748B' }}>Prepared for Lendlease Construction.</div>
+              </div>
+              <CompanyFooter tenant={draft}/>
+            </div>
+          )}
+
+          {preview === 'builder-email' && (
+            <div style={{ background: 'white', border: '1px solid #E2E8F0', borderRadius: 10, overflow: 'hidden' }}>
+              <CompanyLetterhead tenant={draft} variant="email"/>
+              <div style={{ padding: '18px 20px', fontSize: 12, color: '#1E293B', lineHeight: 1.6 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Subject: Revised Estimate — Riverside Apartments | EST-2026-001-002</div>
+                Hi Tom,<br/><br/>
+                {draft.tradingName} has issued a revised estimate for your project.<br/><br/>
+                <strong>Project:</strong> Riverside Apartments<br/>
+                <strong>Estimate Ref:</strong> EST-2026-001-002<br/>
+                <strong>Revision:</strong> Version 2 of 2<br/>
+                <strong>Estimate Value:</strong> $148,500 (incl. GST)<br/><br/>
+                Please review and confirm acceptance to proceed.<br/><br/>
+                <button style={{ background: draft.accentColor, color: 'white', border: 'none', borderRadius: 6, padding: '8px 14px', fontSize: 12, fontWeight: 700 }}>View & Accept Estimate</button>
+                <br/><br/>
+                <span style={{ color: '#64748B' }}>— {draft.tradingName}</span>
+              </div>
+              <CompanyFooter tenant={draft}/>
+            </div>
+          )}
+
+          {preview === 'bom' && (
+            <div style={{ background: 'white', border: '1px solid #E2E8F0', borderRadius: 10, overflow: 'hidden' }}>
+              <CompanyLetterhead tenant={draft}/>
+              <div style={{ padding: '18px 20px' }}>
+                <div style={{ fontSize: 15, fontWeight: 800, color: '#0D1B2A' }}>Bill of Materials — Supplier Request</div>
+                <div style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>Project: Riverside Apartments · Issued to Lawrence & Hanson</div>
+                <table style={{ marginTop: 14, width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                  <thead>
+                    <tr style={{ background: '#F8FAFC' }}>
+                      <th style={{ padding: '6px 10px', textAlign: 'left' }}>Code</th>
+                      <th style={{ padding: '6px 10px', textAlign: 'left' }}>Item</th>
+                      <th style={{ padding: '6px 10px', textAlign: 'right' }}>Qty</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr><td style={{ padding: '6px 10px' }}>2025WE</td><td style={{ padding: '6px 10px' }}>Clipsal 2000 GPO Double</td><td style={{ padding: '6px 10px', textAlign: 'right' }}>23</td></tr>
+                    <tr><td style={{ padding: '6px 10px' }}>BL-DL10WH</td><td style={{ padding: '6px 10px' }}>Brilliant 10W LED Downlight</td><td style={{ padding: '6px 10px', textAlign: 'right' }}>21</td></tr>
+                    <tr><td style={{ padding: '6px 10px' }}>TPS25-100</td><td style={{ padding: '6px 10px' }}>Olex TPS Cable 2.5mm 100m Coil</td><td style={{ padding: '6px 10px', textAlign: 'right' }}>5</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <CompanyFooter tenant={draft}/>
+            </div>
+          )}
+
+          {preview === 'milestone' && (
+            <div style={{ background: 'white', border: '1px solid #E2E8F0', borderRadius: 10, overflow: 'hidden' }}>
+              <CompanyLetterhead tenant={draft} variant="email"/>
+              <div style={{ padding: '18px 20px', fontSize: 12, color: '#1E293B', lineHeight: 1.6 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Subject: Milestone Invoice — Rough-in Complete</div>
+                Dear Allen Build,<br/><br/>
+                The Rough-in Complete milestone has been reached on Riverside Apartments.<br/><br/>
+                <strong>Invoice:</strong> INV-2026-012<br/>
+                <strong>Amount:</strong> $9,120 (incl. GST)<br/>
+                <strong>Payable to:</strong> {draft.tradingName}<br/>
+                <strong>ABN:</strong> {draft.abn}<br/><br/>
+                Payment terms as per contract. Any queries reply-to <strong>{draft.emailReplyTo}</strong>.<br/><br/>
+                Regards,<br/>{draft.tradingName}
+              </div>
+              <CompanyFooter tenant={draft}/>
+            </div>
+          )}
+
+          <div style={{ marginTop: 10, padding: '10px 14px', background: '#F0F9FF', border: '1px solid #BAE6FD', borderRadius: 8, fontSize: 11, color: '#0369A1', display: 'flex', alignItems: 'center', gap: 8 }}>
+            🔒 No ElectraScan branding appears on any external-facing output. Internal app UI (sidebar, dashboard) shows ElectraScan branding only to you.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── App ─────────────────────────────────────────────────────────────────────
 function App() {
+  const [tenant, setTenantState] = useState(() => loadTenant());
+  const setTenant = (t) => { setTenantState(t); saveTenant(t); };
+  const tenantCtx = useMemo(() => ({ tenant, setTenant }), [tenant]);
+
   const [page, setPage] = useState('dashboard');
   const [selectedProject, setSelectedProject] = useState(MOCK_PROJECTS[0]);
   const [navActive, setNavActive] = useState('dashboard');
@@ -2640,6 +2975,7 @@ function App() {
     'email-upload': { title: 'Email Upload',     sub: 'Forward drawings to your ElectraScan inbox' },
     approvals:      { title: 'Approvals',        sub: 'EST-2026-003 → EST-2026-004 · Allen Build' },
     reports:        { title: 'Project Reports',  sub: 'Riverside Apartments · Internal Only' },
+    settings:       { title: 'Company Settings', sub: 'White-label configuration for all external outputs' },
   }[page] || { title: 'ElectraScan', sub: '' };
 
   const renderPage = () => {
@@ -2653,19 +2989,21 @@ function App() {
       case 'email-upload':  return <EmailUpload onNavigate={navigate} />;
       case 'approvals':     return <ApprovalsScreen />;
       case 'reports':       return <ReportsScreen />;
+      case 'settings':      return <TenantSettings />;
       default:              return <Dashboard onNavigate={navigate} />;
     }
   };
 
   return (
+    <TenantContext.Provider value={tenantCtx}>
     <div className="app">
-      {/* Sidebar */}
+      {/* Sidebar — internal only, ElectraScan branding allowed here */}
       <div className="sidebar">
         <div className="sidebar-logo">
           <div className="logo-icon">⚡</div>
           <div>
             <div className="logo-text">ElectraScan</div>
-            <div className="logo-sub">Vesh Electrical</div>
+            <div className="logo-sub">{tenant.tradingName}</div>
           </div>
         </div>
         <div className="nav-section">Main</div>
@@ -2683,22 +3021,25 @@ function App() {
           </div>
         ))}
         <div className="nav-section">Tools</div>
-        {NAV.slice(6).map(n => (
+        {NAV.slice(6,8).map(n => (
           <div key={n.id} className={`nav-item ${navActive===n.id?'active':''}`}
             onClick={() => navigate(n.id)}>
             <span className="nav-icon">{n.icon}</span>{n.label}
           </div>
         ))}
-        <div className="nav-section">Quick Actions</div>
-        <div className="nav-item" onClick={() => navigate('project-detail', MOCK_PROJECTS[0])}>
-          <span className="nav-icon">📤</span> Upload Drawings
-        </div>
+        <div className="nav-section">Admin</div>
+        {NAV.slice(8).map(n => (
+          <div key={n.id} className={`nav-item ${navActive===n.id?'active':''}`}
+            onClick={() => navigate(n.id)}>
+            <span className="nav-icon">{n.icon}</span>{n.label}
+          </div>
+        ))}
         <div className="sidebar-footer">
           <div className="user-chip">
             <div className="user-avatar">DC</div>
             <div>
               <div className="user-name" style={{color:'white',fontSize:12,fontWeight:600}}>Damien Callaghan</div>
-              <div className="user-name">Vesh Electrical</div>
+              <div className="user-name">{tenant.tradingName}</div>
             </div>
           </div>
         </div>
@@ -2810,6 +3151,7 @@ function App() {
         </div>
       )}
     </div>
+    </TenantContext.Provider>
   );
 }
 
