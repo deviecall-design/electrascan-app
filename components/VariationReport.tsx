@@ -2,6 +2,8 @@ import { useMemo, useState, type ReactNode } from "react";
 import { jsPDF } from "jspdf";
 import { saveVariationReport } from "../services/variationService";
 import type { RiskFlag as DetectionRiskFlag, DetectionFlag, ComponentType } from "../analyze_pdf";
+import { useTenant } from "../contexts/TenantContext";
+import { drawTenantLetterhead, drawTenantFooter } from "./PdfLetterhead";
 
 // ─── Shared design tokens ────────────────────────────
 // Kept in sync with the `C` palette declared in App.tsx so the screen fits the
@@ -200,6 +202,7 @@ export default function VariationReport({
   onOpenScan,
   detectedRiskFlags,
 }: VariationReportProps) {
+  const { tenant } = useTenant();
   const rows = useMemo(() => diffEstimates(previous, current), [previous, current]);
 
   const addedRows = rows.filter(r => r.type === "added");
@@ -297,10 +300,11 @@ export default function VariationReport({
   const exportPDF = () => {
     const doc = new jsPDF({ unit: "pt", format: "a4" });
     const margin = 40;
-    let y = margin;
+    let y = drawTenantLetterhead(doc, tenant);
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(18);
+    doc.setTextColor(20, 20, 20);
     doc.text("Variation Report", margin, y);
     y += 22;
 
@@ -418,6 +422,12 @@ export default function VariationReport({
       }
       y += 6;
     });
+
+    const pageCount = (doc as unknown as { getNumberOfPages: () => number }).getNumberOfPages();
+    for (let p = 1; p <= pageCount; p++) {
+      doc.setPage(p);
+      drawTenantFooter(doc, tenant, { footerNote: "Internal document — not for distribution" });
+    }
 
     doc.save(`variation-${previous.number}-to-${current.number}.pdf`);
     persist();

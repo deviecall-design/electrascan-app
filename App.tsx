@@ -11,6 +11,8 @@ import ApprovalsScreen, { ApprovalEstimateLike } from "./components/ApprovalsScr
 import RateLibrary from "./components/RateLibrary";
 import EmailUpload from "./components/EmailUpload";
 import ReportsScreen from "./components/ReportsScreen";
+import TenantSetup from "./components/TenantSetup";
+import { useTenant } from "./contexts/TenantContext";
 import type { RiskFlag as DetectionRiskFlag } from "./analyze_pdf";
 
 // ─── Design tokens ─────────────────────────────
@@ -22,7 +24,7 @@ const C = {
   purple: "#7C3AED",
 };
 
-type Screen = "dashboard" | "upload" | "scanning" | "results" | "estimate" | "project" | "variation" | "approvals" | "ratelibrary" | "email" | "reports";
+type Screen = "dashboard" | "upload" | "scanning" | "results" | "estimate" | "project" | "variation" | "approvals" | "ratelibrary" | "email" | "reports" | "settings";
 type ResultTab = "schedule" | "risks";
 type ProjectStatus = "estimating" | "submitted" | "approved" | "active" | "completed";
 
@@ -151,9 +153,10 @@ const toLineItems = (components: DetectedComponent[]): LineItem[] =>
   }));
 
 // ─── Dashboard Screen ───────────────────────────
-function DashboardScreen({ projects, onNewScan, onOpenProject, onOpenRateLibrary, onOpenEmail }: {
-  projects: Project[]; onNewScan: () => void; onOpenProject: (p: Project) => void; onOpenRateLibrary: () => void; onOpenEmail: () => void;
+function DashboardScreen({ projects, onNewScan, onOpenProject, onOpenRateLibrary, onOpenEmail, onOpenSettings }: {
+  projects: Project[]; onNewScan: () => void; onOpenProject: (p: Project) => void; onOpenRateLibrary: () => void; onOpenEmail: () => void; onOpenSettings: () => void;
 }) {
+  const { tenant } = useTenant();
   const [filter, setFilter] = useState<ProjectStatus | "all">("all");
   const totalValue = projects.reduce((s, p) => s + p.contractValue, 0);
   const activeCount = projects.filter(p => p.status === "active").length;
@@ -169,9 +172,18 @@ function DashboardScreen({ projects, onNewScan, onOpenProject, onOpenRateLibrary
             <div style={{ fontSize: 22, fontWeight: 800, color: C.blue, letterSpacing: "-0.03em" }}>
               Electra<span style={{ color: C.text }}>Scan</span>
             </div>
-            <div style={{ fontSize: 12, color: C.muted, marginTop: 1 }}>Vesh Electrical Services</div>
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 1 }}>{tenant.tradingName}</div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button onClick={onOpenSettings}
+              title="Company branding & settings"
+              style={{
+                background: C.card, border: `1px solid ${C.border}`, color: C.text,
+                width: 40, height: 40, borderRadius: 12, cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18,
+              }}>
+              ⚙️
+            </button>
             <button onClick={onOpenEmail}
               title="Email Upload inbox"
               style={{
@@ -956,7 +968,7 @@ export default function App() {
   return (
     <>
       <style>{CSS}</style>
-      {screen === "dashboard" && <DashboardScreen projects={projects} onNewScan={goToScan} onOpenProject={p => { setSelectedProject(p); setScreen("project"); }} onOpenRateLibrary={() => setScreen("ratelibrary")} onOpenEmail={() => setScreen("email")} />}
+      {screen === "dashboard" && <DashboardScreen projects={projects} onNewScan={goToScan} onOpenProject={p => { setSelectedProject(p); setScreen("project"); }} onOpenRateLibrary={() => setScreen("ratelibrary")} onOpenEmail={() => setScreen("email")} onOpenSettings={() => setScreen("settings")} />}
       {screen === "project" && selectedProject && <ProjectScreen project={selectedProject} onBack={() => setScreen("dashboard")} onNewScan={goToScan} onOpenVariation={openVariation} onOpenApprovals={openApprovals} onOpenReports={(p) => { setSelectedProject(p); setScreen("reports"); }} />}
       {screen === "upload" && <UploadScreen onFile={handleFile} onBack={() => setScreen("dashboard")} error={error} />}
       {screen === "scanning" && file && <ScanningScreen fileName={file.name} />}
@@ -995,6 +1007,9 @@ export default function App() {
           projectName={selectedProject?.name}
           onBack={() => setScreen(selectedProject ? "project" : "dashboard")}
         />
+      )}
+      {screen === "settings" && (
+        <TenantSetup onBack={() => setScreen("dashboard")} />
       )}
     </>
   );

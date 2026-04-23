@@ -5,6 +5,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import { ToastProvider } from './contexts/ToastContext';
 import { LicenseProvider } from './contexts/LicenseContext';
+import { TenantProvider } from './contexts/TenantContext';
 import { suppressConsoleWarnings } from './utils/suppressWarnings';
 import { RouterProvider } from './components/Router';
 
@@ -21,9 +22,11 @@ root.render(
   <React.StrictMode>
     <ToastProvider>
       <LicenseProvider>
-        <RouterProvider>
-          <App />
-        </RouterProvider>
+        <TenantProvider>
+          <RouterProvider>
+            <App />
+          </RouterProvider>
+        </TenantProvider>
       </LicenseProvider>
     </ToastProvider>
   </React.StrictMode>
