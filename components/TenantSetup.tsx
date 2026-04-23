@@ -12,14 +12,16 @@ interface TenantSetupProps {
   onBack: () => void;
 }
 
-type StringField = "name" | "abn" | "address" | "contactPhone" | "contactEmail";
+type StringField = "name" | "abn" | "address" | "contactPhone" | "contactEmail" | "emailReplyTo";
 
-const FIELDS: { key: StringField; label: string; placeholder: string; type?: string }[] = [
+const FIELDS: { key: StringField; label: string; placeholder: string; type?: string; hint?: string }[] = [
   { key: "name",         label: "Trading name",     placeholder: "Vesh Electrical Services" },
   { key: "abn",          label: "ABN",              placeholder: "XX XXX XXX XXX" },
   { key: "address",      label: "Business address", placeholder: "Unit 1 / 12 Main St, Sydney NSW 2000" },
   { key: "contactPhone", label: "Contact phone",    placeholder: "02 1234 5678" },
   { key: "contactEmail", label: "Contact email",    placeholder: "hello@vesh.com.au",    type: "email" },
+  { key: "emailReplyTo", label: "Email reply-to",   placeholder: "admin@vesh.com.au",    type: "email",
+    hint: "Where builder replies to estimate emails land. Defaults to contact email if left blank." },
 ];
 
 async function fileToDataUrl(file: File): Promise<string> {
@@ -123,6 +125,7 @@ export default function TenantSetup({ onBack }: TenantSetupProps) {
                     fontFamily: "inherit",
                   }}
                 />
+                {f.hint && <span style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>{f.hint}</span>}
               </label>
             ))}
           </div>

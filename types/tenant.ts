@@ -8,6 +8,7 @@ export interface TenantConfig {
   accentColour: string;
   contactEmail: string;
   contactPhone: string;
+  emailReplyTo: string;
   address: string;
   abn: string;
   accountingProvider: AccountingProvider;
@@ -22,6 +23,7 @@ export const VESH_ELECTRICAL_CONFIG: TenantConfig = {
   accentColour: "#1F2937",
   contactEmail: "admin@veshelectrical.com.au",
   contactPhone: "0400 000 000",
+  emailReplyTo: "admin@veshelectrical.com.au",
   address: "123 Example St, Brisbane QLD 4000",
   abn: "00 000 000 000",
   accountingProvider: "myob",
