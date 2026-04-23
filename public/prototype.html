@@ -17,6 +17,7 @@
   --blue-lt: #60A5FA;
   --amber: #F59E0B;
   --green: #10B981;
+  --green-dk: #059669;
   --red: #EF4444;
   --purple: #8B5CF6;
   --teal: #0EA5E9;
@@ -126,12 +127,13 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg-ligh
   display: inline-flex; align-items: center; gap: 4px;
   padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600;
 }
-.badge-blue   { background: rgba(29,110,253,0.1); color: var(--blue); }
-.badge-green  { background: rgba(16,185,129,0.1); color: var(--green); }
-.badge-amber  { background: rgba(245,158,11,0.1);  color: var(--amber); }
-.badge-red    { background: rgba(239,68,68,0.1);   color: var(--red); }
-.badge-gray   { background: rgba(100,116,139,0.1); color: var(--gray-md); }
-.badge-purple { background: rgba(139,92,246,0.1);  color: var(--purple); }
+.badge-blue    { background: rgba(29,110,253,0.1); color: var(--blue); }
+.badge-green   { background: rgba(16,185,129,0.1); color: var(--green); }
+.badge-green-dk{ background: rgba(5,150,105,0.12); color: var(--green-dk); }
+.badge-amber   { background: rgba(245,158,11,0.1); color: var(--amber); }
+.badge-red     { background: rgba(239,68,68,0.1);  color: var(--red); }
+.badge-gray    { background: rgba(100,116,139,0.1);color: var(--gray-md); }
+.badge-purple  { background: rgba(139,92,246,0.1); color: var(--purple); }
 
 /* ── Section headings ── */
 .section-title { font-size: 18px; font-weight: 700; color: var(--dark-text); margin-bottom: 4px; }
@@ -172,12 +174,20 @@ tr.row-changed td { background: rgba(245,158,11,0.05); }
 .progress-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
 
 /* ── Tabs ── */
-.tabs { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 20px; }
+.tabs {
+  display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 20px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
 .tab-btn {
   padding: 10px 18px; font-size: 13px; font-weight: 600;
   color: var(--gray-md); cursor: pointer; border: none; background: none;
   border-bottom: 2px solid transparent; margin-bottom: -2px;
   transition: all 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .tab-btn:hover { color: var(--dark-text); }
 .tab-btn.active { color: var(--blue); border-bottom-color: var(--blue); }
@@ -251,11 +261,19 @@ input[type="text"], input[type="number"], select {
 input:focus, select:focus { border-color: var(--blue); box-shadow: 0 0 0 2px rgba(29,110,253,0.1); }
 
 /* ── Pill nav (mobile project tabs) ── */
-.pill-nav { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+.pill-nav {
+  display: flex; gap: 6px; margin-bottom: 16px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.pill-nav::-webkit-scrollbar { display: none; }
 .pill {
   padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600;
   cursor: pointer; border: 1.5px solid var(--border); background: white; color: var(--gray-md);
   transition: all 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .pill.active { background: var(--blue); border-color: var(--blue); color: white; }
 
@@ -415,30 +433,34 @@ const MOCK_PROJECTS = [
   {
     id: 1, name: 'Riverside Apartments', address: '42 Riverside Dr, Richmond VIC',
     client: 'Meriton Group', builder: 'Lendlease Construction',
-    status: 'active', color: '#1D6EFD',
+    status: 'active', color: '#10B981',
     versions: 2, lastEstimate: 148500, lastUpdated: '18 Mar 2026',
     description: '12-storey residential apartment complex, 84 units',
+    daysActive: 8,
   },
   {
     id: 2, name: 'Harbour View Office', address: '11 Harbour St, Docklands VIC',
     client: 'Charter Hall', builder: 'Multiplex',
-    status: 'active', color: '#10B981',
+    status: 'submitted', color: '#1D6EFD',
     versions: 1, lastEstimate: 312000, lastUpdated: '15 Mar 2026',
     description: 'Commercial office fitout, Level 3–8',
+    daysActive: 16,
   },
   {
     id: 3, name: 'Brighton Residence', address: '7 Marine Pde, Brighton VIC',
     client: 'Private Client', builder: 'Metricon Homes',
-    status: 'pending', color: '#F59E0B',
+    status: 'estimating', color: '#F59E0B',
     versions: 1, lastEstimate: 28400, lastUpdated: '10 Mar 2026',
     description: 'Custom luxury residential build',
+    daysActive: 24,
   },
   {
     id: 4, name: 'Southbank Hotel', address: '88 Southbank Blvd, Southbank VIC',
     client: 'Marriott International', builder: 'Built Environs',
-    status: 'complete', color: '#8B5CF6',
+    status: 'complete', color: '#64748B',
     versions: 4, lastEstimate: 890000, lastUpdated: '2 Feb 2026',
     description: '5-star hotel, 22 floors, 340 rooms',
+    daysActive: 12,
   },
 ];
 
@@ -506,10 +528,44 @@ const MOCK_RISKS = [
 const fmt = (n) => '$' + Number(n).toLocaleString('en-AU', { minimumFractionDigits: 0 });
 const pct = (n) => (n >= 0 ? '+' : '') + n.toFixed(1) + '%';
 
-const statusBadge = (s) => {
-  const map = { active:'badge-blue', pending:'badge-amber', complete:'badge-green', superseded:'badge-gray' };
-  return <span className={`badge ${map[s] || 'badge-gray'}`}>{s.charAt(0).toUpperCase()+s.slice(1)}</span>;
+// Canonical status palette (§5). Desktop + mobile use the same badge class so colours never diverge.
+// Status → { className, label }
+const STATUS_MAP = {
+  estimating: { cls:'badge-amber',    label:'Estimating' },
+  active:     { cls:'badge-green',    label:'Active' },
+  submitted:  { cls:'badge-blue',     label:'Submitted' },
+  approved:   { cls:'badge-green-dk', label:'Approved' },
+  pending:    { cls:'badge-amber',    label:'Pending' },
+  complete:   { cls:'badge-gray',     label:'Complete' },
+  overdue:    { cls:'badge-red',      label:'Overdue' },
+  superseded: { cls:'badge-gray',     label:'Superseded' },
 };
+const statusBadge = (s) => {
+  const meta = STATUS_MAP[s] || { cls:'badge-gray', label:s.charAt(0).toUpperCase()+s.slice(1) };
+  return <span className={`badge ${meta.cls}`}>{meta.label}</span>;
+};
+
+// Days Active RAG (§5): 0-13 default, 14-21 amber, 22+ red
+const daysActiveColor = (d) => {
+  if (d >= 22) return '#EF4444';
+  if (d >= 14) return '#F59E0B';
+  return '#64748B';
+};
+const daysActiveBg = (d) => {
+  if (d >= 22) return '#FEF2F2';
+  if (d >= 14) return '#FFFBEB';
+  return '#F8FAFC';
+};
+const DaysActiveBadge = ({ days }) => (
+  <span style={{
+    display:'inline-flex', alignItems:'center', gap:4,
+    fontSize:11, fontWeight:700,
+    padding:'3px 9px', borderRadius:20,
+    background: daysActiveBg(days),
+    color: daysActiveColor(days),
+    border: days>=14 ? `1px solid ${daysActiveColor(days)}40` : '1px solid transparent',
+  }}>⏱ {days}d active</span>
+);
 
 const confidenceBar = (v) => (
   <div style={{display:'flex',alignItems:'center',gap:6}}>
@@ -668,7 +724,7 @@ function Projects({ onNavigate }) {
         <button className="btn btn-primary">+ New Project</button>
       </div>
       <div className="pill-nav">
-        {['all','active','pending','complete'].map(f => (
+        {['all','estimating','active','submitted','approved','complete','overdue'].map(f => (
           <div key={f} className={`pill ${filter===f?'active':''}`} onClick={() => setFilter(f)}>
             {f.charAt(0).toUpperCase()+f.slice(1)}
           </div>
@@ -686,6 +742,7 @@ function Projects({ onNavigate }) {
               <div className="project-meta">{p.address}</div>
               <div className="project-meta mt-4" style={{fontSize:10}}>{p.description}</div>
               <div className="project-meta mt-4">👷 {p.builder}  ·  🏢 {p.client}</div>
+              <div style={{marginTop:8}}><DaysActiveBadge days={p.daysActive ?? 0}/></div>
               <div className="project-stats">
                 <div className="project-stat">
                   <div className="project-stat-val" style={{color:p.color}}>{p.versions}</div>
@@ -741,8 +798,9 @@ function ProjectDetail({ project, onNavigate }) {
           <div>
             <div style={{fontSize:18,fontWeight:700}}>{project.name}</div>
             <div style={{fontSize:12,color:'#64748b',marginTop:2}}>{project.address}</div>
-            <div style={{display:'flex',gap:8,marginTop:8,flexWrap:'wrap'}}>
+            <div style={{display:'flex',gap:8,marginTop:8,flexWrap:'wrap',alignItems:'center'}}>
               {statusBadge(project.status)}
+              <DaysActiveBadge days={project.daysActive ?? 0}/>
               <span className="badge badge-gray">👷 {project.builder}</span>
               <span className="badge badge-gray">🏢 {project.client}</span>
             </div>
@@ -1357,8 +1415,8 @@ function VariationReport() {
         </div>
       ))}
 
-      <div style={{marginTop:16,padding:'10px 14px',background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:8,fontSize:12,color:'#1d4ed8'}}>
-        📋 This report is ready to send. <strong>Export as PDF</strong> to attach to your revised estimate submission to the builder.
+      <div style={{marginTop:16,padding:'10px 14px',background:'#fffbeb',border:'1px solid #fde68a',borderLeft:'4px solid #F59E0B',borderRadius:8,fontSize:12,color:'#78350F'}}>
+        🔒 <strong>Internal document — not for distribution.</strong> Use this to inform your revised estimate before issuing to the builder.
       </div>
     </div>
   );
@@ -1929,12 +1987,37 @@ const REPORT_HOURS  = [
   {week:'Week 3 · 24 Mar', planned:40,actual:38,labour:3200,materials:810},
   {week:'Week 4 · 17 Mar', planned:40,actual:30,labour:2560,materials:640},
 ];
+// Milestone statuses (§9.1 standardised):
+// pending | ready-to-claim | invoiced-draft | invoiced | received
 const REPORT_MILESTONES = [
-  {label:'Rough-in Complete',   pct:25, amount:9120, status:'claimed',  claimDate:'17 Mar 2026', warning:false},
-  {label:'First Fix Complete',  pct:50, amount:9120, status:'warning',  claimDate:null,           warning:true},
-  {label:'Second Fix Complete', pct:75, amount:9120, status:'pending',  claimDate:null,           warning:false},
-  {label:'Practical Completion',pct:100,amount:9120, status:'pending',  claimDate:null,           warning:false},
+  {label:'Rough-in Complete',   pct:25, amount:9120, status:'invoiced',       claimDate:'17 Mar 2026', invoiceNo:'INV-2026-012', warning:false},
+  {label:'First Fix Complete',  pct:50, amount:9120, status:'ready-to-claim', claimDate:null,          invoiceNo:null,           warning:true},
+  {label:'Second Fix Complete', pct:75, amount:9120, status:'pending',        claimDate:null,          invoiceNo:null,           warning:false},
+  {label:'Practical Completion',pct:100,amount:9120, status:'pending',        claimDate:null,          invoiceNo:null,           warning:false},
 ];
+
+// Milestone status meta (colour + label) — (§5 RAG mapping + §9.1 terminology)
+const MILESTONE_STATUS = {
+  'pending':         { label:'Pending',          color:'#64748B', bg:'#F8FAFC', solid:false },
+  'ready-to-claim':  { label:'Ready to Claim',   color:'#F59E0B', bg:'#FFFBEB', solid:false },
+  'invoiced-draft':  { label:'Invoiced (Draft)', color:'#1D6EFD', bg:'#EFF6FF', solid:false },
+  'invoiced':        { label:'Invoiced',         color:'#1D6EFD', bg:'#DBEAFE', solid:true  },
+  'received':        { label:'Received',         color:'#10B981', bg:'#D1FAE5', solid:true  },
+};
+const MilestoneBadge = ({ status }) => {
+  const m = MILESTONE_STATUS[status] || MILESTONE_STATUS.pending;
+  return <span style={{
+    fontSize:10, fontWeight:700, padding:'3px 9px', borderRadius:20,
+    background: m.solid ? m.color : m.bg,
+    color: m.solid ? 'white' : m.color,
+    border: m.solid ? 'none' : `1px solid ${m.color}40`,
+    letterSpacing:0.2, whiteSpace:'nowrap'
+  }}>{m.label.toUpperCase()}</span>;
+};
+
+// Retention (held from final milestone) — 5% of contract, released after defect period
+const RETENTION_AMOUNT = 1824;
+const DEPOSIT_AMOUNT = 3648;
 const REPORT_OVERRUNS = [
   {item:'Copper cable surcharge',  cat:'Materials',amount:420, severity:'high',  note:'Spot market +8.2% since estimate locked'},
   {item:'Fuel & transport',        cat:'Labour',   amount:180, severity:'medium',note:'4 additional site visits beyond scope'},
@@ -1958,7 +2041,8 @@ function ReportsScreen() {
   const contingLeft   = B.contingency - totalOverrun;
   const totalPlanned  = REPORT_HOURS.reduce((s,h)=>s+h.planned,0);
   const totalActual   = REPORT_HOURS.reduce((s,h)=>s+h.actual,0);
-  const claimed       = REPORT_MILESTONES.filter(m=>m.status==='claimed').reduce((s,m)=>s+m.amount,0);
+  // "Claimed" on Overview = invoiced OR received milestones (excludes deposit which is tracked separately)
+  const claimed       = REPORT_MILESTONES.filter(m=>m.status==='invoiced' || m.status==='received').reduce((s,m)=>s+m.amount,0);
 
   // SVG Burndown chart helpers
   const CW=480, CH=130, steps=REPORT_WEEKS.length-1;
@@ -2214,32 +2298,34 @@ function ReportsScreen() {
           {payTab==='schedule' && (
             <div>
               {REPORT_MILESTONES.map((m,i)=>{
-                const statusColor = m.status==='claimed'?'#10B981':m.status==='warning'?'#F59E0B':'#94A3B8';
-                const statusBg    = m.status==='claimed'?'#F0FDF4':m.status==='warning'?'#FFFBEB':'#F8FAFC';
+                const meta = MILESTONE_STATUS[m.status];
+                const statusColor = meta.color;
+                const statusBg    = meta.bg;
                 return (
                   <div key={i} style={{background:'white',borderRadius:12,border:`1px solid ${m.warning?'#FDE68A':'#E2E8F0'}`,borderLeft:`4px solid ${statusColor}`,padding:'16px 20px',marginBottom:10,display:'flex',alignItems:'center',gap:16,flexWrap:'wrap'}}>
-                    {/* Circle */}
                     <div style={{width:52,height:52,borderRadius:26,border:`3px solid ${statusColor}`,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,background:statusBg}}>
                       <div style={{textAlign:'center'}}>
                         <div style={{fontSize:13,fontWeight:800,color:statusColor}}>{m.pct}%</div>
                       </div>
                     </div>
                     <div style={{flex:1}}>
-                      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:3}}>
+                      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:3,flexWrap:'wrap'}}>
                         <span style={{fontSize:14,fontWeight:700,color:'#1E293B'}}>{m.label}</span>
-                        {m.warning && <span style={{fontSize:10,fontWeight:700,background:'#FEF3C7',color:'#92400E',padding:'2px 7px',borderRadius:20}}>⚠️ WARNING</span>}
-                        {m.status==='claimed' && <span style={{fontSize:10,fontWeight:700,background:'#D1FAE5',color:'#065F46',padding:'2px 7px',borderRadius:20}}>✓ CLAIMED</span>}
+                        <MilestoneBadge status={m.status}/>
                       </div>
                       <div style={{fontSize:12,color:'#64748B'}}>
                         Claim amount: <strong>{fmt(m.amount)}</strong>
-                        {m.claimDate && <span style={{marginLeft:8,color:'#10B981'}}>Claimed {m.claimDate}</span>}
+                        {m.invoiceNo && <span style={{marginLeft:8,color:'#1D6EFD'}}>· {m.invoiceNo}</span>}
+                        {m.claimDate && <span style={{marginLeft:8,color:'#10B981'}}>Invoiced {m.claimDate}</span>}
                         {m.warning && <span style={{marginLeft:8,color:'#F59E0B'}}>Finance department notified</span>}
                       </div>
                     </div>
                     <div style={{flexShrink:0}}>
-                      {m.status==='claimed'
+                      {m.status==='received'
                         ? <span style={{fontSize:13,fontWeight:700,color:'#10B981'}}>✓ {fmt(m.amount)}</span>
-                        : m.status==='warning'
+                        : m.status==='invoiced'
+                        ? <span style={{fontSize:13,fontWeight:700,color:'#1D6EFD'}}>{fmt(m.amount)}</span>
+                        : m.status==='ready-to-claim'
                         ? <button style={{padding:'7px 14px',background:'#F59E0B',color:'white',border:'none',borderRadius:8,fontWeight:700,fontSize:12,cursor:'pointer'}}>Submit Claim</button>
                         : <span style={{fontSize:12,color:'#94A3B8',fontWeight:600}}>Pending</span>
                       }
@@ -2247,6 +2333,29 @@ function ReportsScreen() {
                   </div>
                 );
               })}
+
+              {/* Retention Release — 5th Payment Schedule item (§9.5) */}
+              <div style={{background:'white',borderRadius:12,border:'1px solid #FDE68A',borderLeft:'4px solid #F59E0B',padding:'16px 20px',marginBottom:10,display:'flex',alignItems:'center',gap:16,flexWrap:'wrap'}}>
+                <div style={{width:52,height:52,borderRadius:26,border:'3px solid #F59E0B',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,background:'#FFFBEB'}}>
+                  <span style={{fontSize:18}}>🔒</span>
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:3,flexWrap:'wrap'}}>
+                    <span style={{fontSize:14,fontWeight:700,color:'#1E293B'}}>Retention Release</span>
+                    <span title="Held until defect liability period ends. Typically 3–6 months post Practical Completion."
+                      style={{fontSize:10,fontWeight:700,padding:'3px 9px',borderRadius:20,background:'#FEF3C7',color:'#92400E',letterSpacing:0.2,cursor:'help'}}>
+                      RETENTION HOLDBACK
+                    </span>
+                  </div>
+                  <div style={{fontSize:12,color:'#64748B'}}>
+                    Retention Holdback — pending defect period · <strong>{fmt(RETENTION_AMOUNT)}</strong>
+                  </div>
+                </div>
+                <div style={{flexShrink:0}}>
+                  <span style={{fontSize:12,color:'#F59E0B',fontWeight:700}}>Pending</span>
+                </div>
+              </div>
+
               <div style={{background:'#F0F9FF',border:'1px solid #BAE6FD',borderRadius:10,padding:'12px 16px',fontSize:12,color:'#0369A1'}}>
                 💡 Milestone notifications trigger automatically: <strong>Finance alert at 50%</strong> remaining, <strong>warning at 25%</strong>, <strong>critical at 10%</strong>.
               </div>
@@ -2256,44 +2365,79 @@ function ReportsScreen() {
           {payTab==='deposit' && (
             <div style={{display:'flex',flexDirection:'column',gap:10}}>
               {[
-                {label:'Deposit on Signing',       pct:10, amount:3648,  status:'paid',    date:'10 Mar 2026',note:'Paid on commencement'},
-                {label:'Rough-in Milestone (25%)', pct:25, amount:9120,  status:'invoiced',date:'17 Mar 2026',note:'Invoice #INV-2026-012'},
-                {label:'First Fix Milestone (50%)',pct:25, amount:9120,  status:'pending', date:null,          note:'Pending milestone sign-off'},
-                {label:'Second Fix (75%)',          pct:25, amount:9120,  status:'pending', date:null,          note:''},
-                {label:'Retention Release',        pct:5,  amount:1824,  status:'pending', date:null,          note:'Held until defect period ends'},
-              ].map((p,i)=>(
-                <div key={i} style={{background:'white',borderRadius:10,border:'1px solid #E2E8F0',padding:'14px 18px',display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
-                  <div style={{width:36,height:36,borderRadius:8,background:p.status==='paid'?'#D1FAE5':p.status==='invoiced'?'#DBEAFE':'#F1F5F9',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0}}>
-                    {p.status==='paid'?'✅':p.status==='invoiced'?'📄':'⏳'}
+                {label:'Deposit on Signing',       pct:10, amount:DEPOSIT_AMOUNT, status:'received', date:'10 Mar 2026',note:'Paid on commencement'},
+                {label:'Rough-in Milestone (25%)', pct:25, amount:9120,           status:'invoiced', date:'17 Mar 2026',note:'Invoice #INV-2026-012'},
+                {label:'First Fix Milestone (50%)',pct:25, amount:9120,           status:'ready-to-claim', date:null, note:'Pending milestone sign-off'},
+                {label:'Second Fix (75%)',         pct:25, amount:9120,           status:'pending',  date:null,          note:''},
+                {label:'Retention Release',       pct:5,  amount:RETENTION_AMOUNT,status:'pending',  date:null,          note:'Retention Holdback — held until defect period ends',retention:true},
+              ].map((p,i)=>{
+                const meta = MILESTONE_STATUS[p.status];
+                const icon = p.status==='received'?'✅':p.status==='invoiced'?'📄':p.status==='ready-to-claim'?'🟡':p.retention?'🔒':'⏳';
+                return (
+                  <div key={i} style={{background:'white',borderRadius:10,border:`1px solid ${p.retention?'#FDE68A':'#E2E8F0'}`,borderLeft:p.retention?'4px solid #F59E0B':undefined,padding:'14px 18px',display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
+                    <div style={{width:36,height:36,borderRadius:8,background:meta.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0}}>
+                      {icon}
+                    </div>
+                    <div style={{flex:1}}>
+                      <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                        <span style={{fontSize:13,fontWeight:700,color:'#1E293B'}}>{p.label}</span>
+                        {p.retention && <span title="Held until defect liability period ends. Typically 3–6 months post Practical Completion." style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,background:'#FEF3C7',color:'#92400E',cursor:'help'}}>RETENTION HOLDBACK</span>}
+                      </div>
+                      <div style={{fontSize:11,color:'#94A3B8',marginTop:2}}>{p.note}{p.date && ` · ${p.date}`}</div>
+                    </div>
+                    <div style={{textAlign:'right'}}>
+                      <div style={{fontSize:15,fontWeight:800,color:meta.color}}>{fmt(p.amount)}</div>
+                      <MilestoneBadge status={p.status}/>
+                    </div>
                   </div>
-                  <div style={{flex:1}}>
-                    <div style={{fontSize:13,fontWeight:700,color:'#1E293B'}}>{p.label}</div>
-                    <div style={{fontSize:11,color:'#94A3B8'}}>{p.note}{p.date && ` · ${p.date}`}</div>
-                  </div>
-                  <div style={{textAlign:'right'}}>
-                    <div style={{fontSize:15,fontWeight:800,color:p.status==='paid'?'#10B981':p.status==='invoiced'?'#1D6EFD':'#94A3B8'}}>{fmt(p.amount)}</div>
-                    <div style={{fontSize:10,fontWeight:700,color:p.status==='paid'?'#10B981':p.status==='invoiced'?'#1D6EFD':'#94A3B8',textTransform:'uppercase'}}>{p.status}</div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
+
+              {/* Reconciliation note (§9.4) */}
+              <div style={{marginTop:6,padding:'12px 16px',background:'#F0F9FF',border:'1px solid #BAE6FD',borderRadius:10,fontSize:12,color:'#0369A1',lineHeight:1.5}}>
+                📘 <strong>Reconciliation note:</strong> Deposit ({fmt(DEPOSIT_AMOUNT)}) credited against contract total. Retention ({fmt(RETENTION_AMOUNT)}) held from final milestone payment.
+              </div>
             </div>
           )}
 
-          {payTab==='claims' && (
-            <div style={{background:'white',borderRadius:12,border:'1px solid #E2E8F0',padding:'16px 20px'}}>
-              <div style={{fontSize:13,fontWeight:700,color:'#1E293B',marginBottom:12}}>Claim Summary</div>
-              {[
-                {label:'Total Contract Value', val:fmt(B.total), color:'#1D6EFD'},
-                {label:'Claimed to Date',       val:fmt(claimed),  color:'#10B981'},
-                {label:'Unclaimed Remaining',   val:fmt(B.total-claimed), color:'#F59E0B'},
-              ].map((r,i)=>(
-                <div key={i} style={{display:'flex',justifyContent:'space-between',padding:'10px 0',borderBottom:i<2?'1px solid #F1F5F9':'none'}}>
-                  <span style={{fontSize:13,color:'#64748B'}}>{r.label}</span>
-                  <span style={{fontSize:15,fontWeight:800,color:r.color}}>{r.val}</span>
-                </div>
-              ))}
-            </div>
-          )}
+          {payTab==='claims' && (() => {
+            // §9.3 Claim Status — Deposit is a separate line above Progress Claims.
+            // Total Received = Deposit + confirmed (received) payments.
+            // Outstanding = Contract Value − Total Received.
+            const invoicedMilestones = REPORT_MILESTONES.filter(m => m.status === 'invoiced');
+            const receivedMilestones = REPORT_MILESTONES.filter(m => m.status === 'received');
+            const invoicedAmt = invoicedMilestones.reduce((s,m)=>s+m.amount, 0);
+            const receivedAmt = receivedMilestones.reduce((s,m)=>s+m.amount, 0);
+            const invoicedRef = invoicedMilestones.map(m => m.invoiceNo).filter(Boolean).join(', ');
+            const totalReceived = DEPOSIT_AMOUNT + receivedAmt;
+            const outstanding   = B.total - totalReceived;
+            const rows = [
+              { label:'Total Contract Value',   val:fmt(B.total),       color:'#1D6EFD', note:null, bold:true },
+              { label:'Deposit Received',        val:fmt(DEPOSIT_AMOUNT),color:'#10B981', note:'paid 10 Mar 2026' },
+              { label:'Progress Claims Invoiced',val:fmt(invoicedAmt),   color:'#1D6EFD', note:invoicedRef || '—' },
+              { label:'Progress Claims Received',val:fmt(receivedAmt),   color:receivedAmt>0?'#10B981':'#94A3B8', note:receivedAmt>0 ? null : 'awaiting payment' },
+              { sep:true },
+              { label:'Total Received to Date', val:fmt(totalReceived), color:'#10B981', bold:true },
+              { label:'Outstanding',            val:fmt(outstanding),   color:'#F59E0B', bold:true },
+            ];
+            return (
+              <div style={{background:'white',borderRadius:12,border:'1px solid #E2E8F0',padding:'16px 20px'}}>
+                <div style={{fontSize:13,fontWeight:700,color:'#1E293B',marginBottom:12}}>Claim Summary</div>
+                {rows.map((r,i)=>{
+                  if (r.sep) return <div key={i} style={{height:1,background:'#E2E8F0',margin:'8px 0'}}/>;
+                  return (
+                    <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'8px 0',borderBottom: i<rows.length-1 && !rows[i+1]?.sep ? '1px solid #F1F5F9' : 'none'}}>
+                      <div>
+                        <span style={{fontSize:13,color:'#64748B',fontWeight:r.bold?700:500}}>{r.label}</span>
+                        {r.note && <span style={{fontSize:11,color:'#94A3B8',marginLeft:8}}>({r.note})</span>}
+                      </div>
+                      <span style={{fontSize:r.bold?16:14,fontWeight:r.bold?800:600,color:r.color}}>{r.val}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -2772,13 +2916,8 @@ function TenantSettings() {
   const save = () => { setTenant(draft); setSaved(true); setTimeout(() => setSaved(false), 2200); };
   const reset = () => setDraft(tenant);
 
-  const Field = ({ label, value, onChange, placeholder, type = 'text' }) => (
-    <div style={{ marginBottom: 14 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', color: '#64748B', marginBottom: 5 }}>{label}</div>
-      <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-        style={{ width: '100%', padding: '8px 12px', border: '1px solid #E2E8F0', borderRadius: 8, fontSize: 13, outline: 'none', fontFamily: 'inherit' }}/>
-    </div>
-  );
+  const inputStyle = { width: '100%', padding: '8px 12px', border: '1px solid #E2E8F0', borderRadius: 8, fontSize: 13, outline: 'none', fontFamily: 'inherit' };
+  const fieldLabelStyle = { fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', color: '#64748B', marginBottom: 5 };
 
   return (
     <div>
@@ -2789,14 +2928,33 @@ function TenantSettings() {
         {/* ── Editor ── */}
         <div className="card">
           <div className="label" style={{ marginBottom: 12 }}>Business Details</div>
-          <Field label="Trading Name" value={draft.tradingName} onChange={v => setDraft(d => ({ ...d, tradingName: v }))} placeholder="Vesh Electrical Services"/>
-          <Field label="ABN" value={draft.abn} onChange={v => setDraft(d => ({ ...d, abn: v }))} placeholder="47 612 389 204"/>
-          <Field label="Business Address" value={draft.address} onChange={v => setDraft(d => ({ ...d, address: v }))} placeholder="24 Union Rd, Ascot Vale VIC 3032"/>
+
+          <div style={{ marginBottom: 14 }}>
+            <div style={fieldLabelStyle}>Trading Name</div>
+            <input type="text" value={draft.tradingName} onChange={e => setDraft(d => ({ ...d, tradingName: e.target.value }))} placeholder="Vesh Electrical Services" style={inputStyle}/>
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <div style={fieldLabelStyle}>ABN</div>
+            <input type="text" value={draft.abn} onChange={e => setDraft(d => ({ ...d, abn: e.target.value }))} placeholder="47 612 389 204" style={inputStyle}/>
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <div style={fieldLabelStyle}>Business Address</div>
+            <input type="text" value={draft.address} onChange={e => setDraft(d => ({ ...d, address: e.target.value }))} placeholder="24 Union Rd, Ascot Vale VIC 3032" style={inputStyle}/>
+          </div>
 
           <div className="label" style={{ marginBottom: 12, marginTop: 14 }}>Contact</div>
-          <Field label="Contact Email" value={draft.contactEmail} onChange={v => setDraft(d => ({ ...d, contactEmail: v }))} type="email"/>
-          <Field label="Contact Phone" value={draft.contactPhone} onChange={v => setDraft(d => ({ ...d, contactPhone: v }))}/>
-          <Field label="Email Reply-To" value={draft.emailReplyTo} onChange={v => setDraft(d => ({ ...d, emailReplyTo: v }))} type="email"/>
+          <div style={{ marginBottom: 14 }}>
+            <div style={fieldLabelStyle}>Contact Email</div>
+            <input type="email" value={draft.contactEmail} onChange={e => setDraft(d => ({ ...d, contactEmail: e.target.value }))} style={inputStyle}/>
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <div style={fieldLabelStyle}>Contact Phone</div>
+            <input type="text" value={draft.contactPhone} onChange={e => setDraft(d => ({ ...d, contactPhone: e.target.value }))} style={inputStyle}/>
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <div style={fieldLabelStyle}>Email Reply-To</div>
+            <input type="email" value={draft.emailReplyTo} onChange={e => setDraft(d => ({ ...d, emailReplyTo: e.target.value }))} style={inputStyle}/>
+          </div>
 
           <div className="label" style={{ marginBottom: 12, marginTop: 14 }}>Branding</div>
           <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', color: '#64748B', marginBottom: 5 }}>Logo (PNG / SVG / JPG)</div>
