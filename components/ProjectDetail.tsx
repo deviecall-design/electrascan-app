@@ -273,7 +273,7 @@ const ProjectDetail: React.FC<Props> = ({ projectId, onBack }) => {
         {tab === "upload" && (
           <UploadTab
             project={project}
-            onScanSaved={() => setTab("schedule")}
+            onScanSaved={() => setTab("estimate")}
             addScan={(scan, detection) => {
               const saved = addScanToProject(project.id, scan);
               // Auto-create/update estimate from detected components.
