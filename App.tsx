@@ -28,6 +28,28 @@ type Screen = "dashboard" | "upload" | "scanning" | "results" | "estimate" | "pr
 type ResultTab = "schedule" | "risks";
 type ProjectStatus = "estimating" | "submitted" | "approved" | "active" | "completed";
 
+// ─── Status badge palette (§5) ──────────────────
+// Hex values are locked to the spec — do not swap in C.amber/green/etc,
+// as those tokens are tuned for the dark UI and differ from the canonical
+// RAG/status palette used on badges, chips and milestone states.
+const STATUS_BADGE = {
+  estimating: { bg: "#F59E0B", fg: "#FFFFFF", label: "Estimating" },
+  active:     { bg: "#10B981", fg: "#FFFFFF", label: "Active" },
+  submitted:  { bg: "#1D6EFD", fg: "#FFFFFF", label: "Submitted" },
+  approved:   { bg: "#059669", fg: "#FFFFFF", label: "Approved" },
+  pending:    { bg: "#F59E0B", fg: "#FFFFFF", label: "Pending" },
+  complete:   { bg: "#64748B", fg: "#FFFFFF", label: "Complete" },
+  completed:  { bg: "#64748B", fg: "#FFFFFF", label: "Complete" },
+  overdue:    { bg: "#EF4444", fg: "#FFFFFF", label: "Overdue" },
+} as const;
+
+// Days Active RAG (§5): 0–13 default muted, 14–21 amber, 22+ red.
+function daysActiveColor(days: number): string {
+  if (days >= 22) return "#EF4444";
+  if (days >= 14) return "#F59E0B";
+  return "#64748B";
+}
+
 interface LineItem {
   id: string;
   description: string;
@@ -78,11 +100,11 @@ const LABELS: Record<string, string> = {
 };
 
 const STATUS_CONFIG: Record<ProjectStatus, { label: string; color: string; bg: string }> = {
-  estimating: { label: "Estimating",  color: C.amber,  bg: `${C.amber}18`  },
-  submitted:  { label: "Submitted",   color: C.blue,   bg: `${C.blue}18`   },
-  approved:   { label: "Approved",    color: C.purple, bg: `${C.purple}18` },
-  active:     { label: "Active",      color: C.green,  bg: `${C.green}18`  },
-  completed:  { label: "Completed",   color: C.muted,  bg: `${C.muted}18`  },
+  estimating: { label: STATUS_BADGE.estimating.label, color: STATUS_BADGE.estimating.bg, bg: `${STATUS_BADGE.estimating.bg}22` },
+  submitted:  { label: STATUS_BADGE.submitted.label,  color: STATUS_BADGE.submitted.bg,  bg: `${STATUS_BADGE.submitted.bg}22`  },
+  approved:   { label: STATUS_BADGE.approved.label,   color: STATUS_BADGE.approved.bg,   bg: `${STATUS_BADGE.approved.bg}22`   },
+  active:     { label: STATUS_BADGE.active.label,     color: STATUS_BADGE.active.bg,     bg: `${STATUS_BADGE.active.bg}22`     },
+  completed:  { label: STATUS_BADGE.completed.label,  color: STATUS_BADGE.completed.bg,  bg: `${STATUS_BADGE.completed.bg}22`  },
 };
 
 // ─── Mock projects ──────────────────────────────
@@ -141,6 +163,8 @@ const CSS = `
   input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;}
   input[type=number]{-moz-appearance:textfield;}
   .proj-card:active{transform:scale(0.98);}
+  .filter-tabs{display:flex;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;-ms-overflow-style:none;padding-bottom:12px;flex-wrap:nowrap;}
+  .filter-tabs::-webkit-scrollbar{display:none;height:0;width:0;}
 `;
 
 const fmt = (n: number) => `$${n.toLocaleString("en-AU")}`;
@@ -223,7 +247,7 @@ function DashboardScreen({ projects, onNewScan, onOpenProject, onOpenRateLibrary
         </div>
 
         {/* Filter tabs */}
-        <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 12 }}>
+        <div className="filter-tabs">
           {(["all", "estimating", "submitted", "approved", "active", "completed"] as const).map(f => (
             <button key={f} onClick={() => setFilter(f)} style={{
               flexShrink: 0, background: filter === f ? C.blue : C.card,
@@ -282,7 +306,7 @@ function DashboardScreen({ projects, onNewScan, onOpenProject, onOpenRateLibrary
                   {project.daysActive > 0 && (
                     <div>
                       <div style={{ fontSize: 10, color: C.muted }}>Days active</div>
-                      <div style={{ fontSize: 12, color: C.dim, fontWeight: 600 }}>{project.daysActive}</div>
+                      <div style={{ fontSize: 12, color: daysActiveColor(project.daysActive), fontWeight: 700 }}>{project.daysActive}</div>
                     </div>
                   )}
                 </div>
@@ -352,7 +376,7 @@ function ProjectScreen({ project, onBack, onNewScan, onOpenVariation, onOpenAppr
             <div style={{ fontSize: 10, color: C.muted }}>Estimates</div>
           </div>
           <div style={{ background: C.card, borderRadius: 12, padding: "10px 12px" }}>
-            <div style={{ fontSize: 18, fontWeight: 800, color: project.daysActive > 0 ? C.green : C.muted }}>
+            <div style={{ fontSize: 18, fontWeight: 800, color: project.daysActive > 0 ? daysActiveColor(project.daysActive) : C.muted }}>
               {project.daysActive > 0 ? project.daysActive : "—"}
             </div>
             <div style={{ fontSize: 10, color: C.muted }}>Days active</div>

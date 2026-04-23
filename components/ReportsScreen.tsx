@@ -168,7 +168,7 @@ export default function ReportsScreen({
         <AlertBanner color={C.red} icon="🔺" title="Overrun Alert" body={`${fmt(totalOverrun)} in unplanned costs detected (copper, fuel, insurance). ${fmt(contingLeft)} contingency remaining.`} />
 
         {/* Tab bar */}
-        <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 14, paddingBottom: 4 }}>
+        <div className="filter-tabs" style={{ marginBottom: 14 }}>
           {TABS.map(([id, lbl]) => {
             const active = tab === id;
             return (
@@ -329,7 +329,7 @@ export default function ReportsScreen({
         {/* ── MILESTONES ── */}
         {tab === "milestones" && (
           <>
-            <div style={{ display: "flex", gap: 6, marginBottom: 14, overflowX: "auto" }}>
+            <div className="filter-tabs" style={{ marginBottom: 14 }}>
               {([["schedule","Payment Schedule"],["claims","Claim Status"],["deposit","Deposit + Splits"]] as const).map(([id, lbl]) => {
                 const active = payTab === id;
                 return (

@@ -237,7 +237,7 @@ export default function RateLibrary({ onBack }: RateLibraryProps) {
 
       {/* Tabs */}
       <div style={{ padding: "12px 16px 0", background: C.bg, flexShrink: 0 }}>
-        <div style={{ display: "flex", gap: 8, overflowX: "auto" }}>
+        <div className="filter-tabs" style={{ gap: 8, paddingBottom: 0 }}>
           {([
             { id: "browse" as const,  label: "🏪 Browse",   count: WHOLESALER_CATALOGUE.length },
             { id: "library" as const, label: "📚 Library",  count: library.length },
@@ -335,7 +335,7 @@ function BrowseTab({
           outline: "none", marginBottom: 10, boxSizing: "border-box",
         }}
       />
-      <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 12, paddingBottom: 4 }}>
+      <div className="filter-tabs" style={{ marginBottom: 12 }}>
         {(["All", ...RATE_CATEGORIES] as const).map(c => {
           const active = category === c;
           return (

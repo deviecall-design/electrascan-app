@@ -572,10 +572,10 @@ export default function VariationReport({
 
         {/* Footer banner */}
         <div style={{
-          marginTop: 16, background: `${C.blue}14`, border: `1px solid ${C.blue}44`,
-          borderRadius: 12, padding: "12px 14px", fontSize: 12, color: C.blueLt, lineHeight: 1.55,
+          marginTop: 16, background: `${C.amber}14`, border: `1px solid ${C.amber}55`,
+          borderRadius: 12, padding: "12px 14px", fontSize: 12, color: C.amber, lineHeight: 1.55,
         }}>
-          📋 This report is ready to send. <strong>Export as PDF</strong> to attach to your revised estimate submission to the builder.
+          🔒 <strong>Internal document — not for distribution.</strong> Use this to inform your revised estimate before issuing to the builder.
         </div>
       </div>
 
@@ -587,7 +587,7 @@ export default function VariationReport({
             style={{ background: C.navy, border: `1px solid ${C.border}`, borderRadius: 20, padding: 22, maxWidth: 400, width: "100%" }}>
             <div style={{ fontSize: 16, fontWeight: 700, color: C.text, marginBottom: 6 }}>Add note to risk flag</div>
             <div style={{ fontSize: 12, color: C.muted, marginBottom: 14, lineHeight: 1.6 }}>
-              Notes are included with the variation report when exported as PDF and sent to the builder.
+              Notes are saved to this internal report so you can reference them when preparing the revised builder-facing estimate.
             </div>
             <textarea
               autoFocus value={noteDraft} onChange={e => setNoteDraft(e.target.value)}

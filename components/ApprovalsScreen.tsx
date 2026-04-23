@@ -343,7 +343,7 @@ export default function ApprovalsScreen({
         )}
 
         {/* Tabs */}
-        <div style={{ display: "flex", gap: 8, marginBottom: 14, overflowX: "auto" }}>
+        <div className="filter-tabs" style={{ gap: 8, marginBottom: 14, paddingBottom: 0 }}>
           {([
             { id: "audit" as const,     label: "📋 Audit Trail", count: audit.length },
             { id: "estimates" as const, label: "💰 Estimates",   count: priorEstimate ? 2 : 1 },
