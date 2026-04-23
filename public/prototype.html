@@ -366,6 +366,30 @@ const { useState, useEffect, useRef, useMemo, createContext, useContext } = Reac
 // uses tenant branding. ElectraScan branding NEVER appears on external outputs.
 // Internal app UI (sidebar, topbar) may still show ElectraScan branding.
 // ══════════════════════════════════════════════════════════════════════════
+// Default categories (§4.5) — tenants can customise.
+// Each category carries its own extension attribute schema for the JSONB meta field.
+const DEFAULT_CATEGORIES = [
+  { id:'power',       label:'Power (GPO, switches)',           meta:['phase','amperage','ipRating'] },
+  { id:'lighting',    label:'Lighting (downlights, strips)',   meta:['wattage','colourTemp','dimmable','driverIncluded'] },
+  { id:'automation',  label:'Automation (blinds, curtains)',   meta:['brand','model','zones','programmingHours','commissioning'] },
+  { id:'av-data',     label:'AV / Data',                       meta:['cableType','patchPanel','rackSpace'] },
+  { id:'security',    label:'Security (CCTV, access)',         meta:['cameraType','storage','nvrRequired'] },
+  { id:'solar',       label:'Solar / Battery',                 meta:['kw','panels','inverterBrand','cecApproved'] },
+  { id:'ev',          label:'EV Charging',                     meta:['amperage','smartCharging','loadBalancing'] },
+  { id:'switchboard', label:'Switchboard',                     meta:['phases','ways','mainSwitchRating'] },
+];
+
+// Line-item types (§4.2)
+const LINE_ITEM_TYPES = [
+  { id:'unit',         label:'Unit rate',    units:['EA','LM','M²'],   canAttachQuote:false },
+  { id:'lump-sum',     label:'Lump sum',     units:['LS'],              canAttachQuote:true  },
+  { id:'day-rate',     label:'Day rate',     units:['DAY'],             canAttachQuote:true  },
+  { id:'labour',       label:'Labour rate',  units:['HR','DAY'],        canAttachQuote:false },
+  { id:'sub-contract', label:'Sub-contract', units:['LS'],              canAttachQuote:true  },
+  { id:'allowance',    label:'Allowance',    units:['LS'],              canAttachQuote:false },
+];
+const LINE_ITEM_TYPE_MAP = Object.fromEntries(LINE_ITEM_TYPES.map(t => [t.id, t]));
+
 const DEFAULT_TENANT = {
   tradingName: 'Vesh Electrical Services',
   logoDataUrl: '', // PNG/SVG data URL; empty → initials monogram
@@ -375,6 +399,7 @@ const DEFAULT_TENANT = {
   contactPhone: '+61 3 9376 8844',
   emailReplyTo: 'damien@veshelectrical.com.au',
   accentColor: '#1D6EFD',
+  categories: DEFAULT_CATEGORIES,
 };
 
 const TENANT_STORAGE_KEY = 'electrascan.tenant.v1';
@@ -383,7 +408,10 @@ const loadTenant = () => {
   try {
     const raw = localStorage.getItem(TENANT_STORAGE_KEY);
     if (!raw) return DEFAULT_TENANT;
-    return { ...DEFAULT_TENANT, ...JSON.parse(raw) };
+    const parsed = JSON.parse(raw);
+    // Backfill categories for older saved tenants.
+    const categories = Array.isArray(parsed.categories) && parsed.categories.length ? parsed.categories : DEFAULT_CATEGORIES;
+    return { ...DEFAULT_TENANT, ...parsed, categories };
   } catch { return DEFAULT_TENANT; }
 };
 const saveTenant = (t) => {
@@ -491,19 +519,71 @@ const MOCK_COMPONENTS = [
   { id:13,room:'Main Switchboard', type:'MSB — 3-Phase 63A',           qty:1, ref:'S-01', confidence:99 },
 ];
 
+// Line items use the JSONB-ready schema (§4.1). Core fixed columns + meta blob.
+// Fields: id, desc, unit, qty, rate, labour, mat, category, lineItemType,
+//   rateAtEstimateDate (rate snapshot when estimate was locked — §4.3),
+//   supplierId, componentGroupId (composite grouping — §4.4),
+//   quoteAttachmentUrl (optional, for custom items), meta (flexible JSONB)
+const ESTIMATE_LOCK_DATE = '2026-03-18';
 const MOCK_LINE_ITEMS = [
-  { id:1, desc:'Double Power Point (GPO) — Installed', unit:'EA', qty:23, rate:85,  labour:45, mat:40 },
-  { id:2, desc:'LED Downlight — Installed & Connected', unit:'EA', qty:21, rate:95,  labour:55, mat:40 },
-  { id:3, desc:'Rangehood Circuit — Dedicated Run',    unit:'EA', qty:1,  rate:320, labour:180,mat:140},
-  { id:4, desc:'Dishwasher — Dedicated Circuit',       unit:'EA', qty:1,  rate:280, labour:160,mat:120},
-  { id:5, desc:'Exhaust Fan — Supply & Install',       unit:'EA', qty:2,  rate:220, labour:120,mat:100},
-  { id:6, desc:'Shaver Point / LED Mirror Circuit',    unit:'EA', qty:2,  rate:190, labour:110,mat:80 },
-  { id:7, desc:'EV Charger Point 32A — Installed',     unit:'EA', qty:1,  rate:1850,labour:950,mat:900},
-  { id:8, desc:'Garage Door Opener Circuit',           unit:'EA', qty:1,  rate:180, labour:100,mat:80 },
-  { id:9, desc:'External GPO Weatherproof IP56',       unit:'EA', qty:4,  rate:160, labour:90, mat:70 },
-  { id:10,desc:'MSB 3-Phase 63A — Supply & Install',   unit:'EA', qty:1,  rate:4200,labour:2200,mat:2000},
-  { id:11,desc:'Cable Runs — Main Board to Circuits',  unit:'LM', qty:420,rate:8,   labour:5,  mat:3 },
-  { id:12,desc:'Conduit & Accessories',                unit:'LM', qty:180,rate:6,   labour:3,  mat:3 },
+  { id:1,  desc:'Double Power Point (GPO) — Installed', unit:'EA', qty:23, rate:85,  labour:45, mat:40,
+    category:'power',    lineItemType:'unit',    rateAtEstimateDate:85,  supplierId:'LH-AU',  componentGroupId:null,
+    meta:{ phase:1, amperage:10, ipRating:'IP20' } },
+  { id:2,  desc:'LED Downlight — Installed & Connected', unit:'EA', qty:21, rate:95, labour:55, mat:40,
+    category:'lighting', lineItemType:'unit',    rateAtEstimateDate:95,  supplierId:'LH-AU',  componentGroupId:null,
+    meta:{ wattage:10, colourTemp:'3000K', dimmable:true, driverIncluded:true } },
+  { id:3,  desc:'Rangehood Circuit — Dedicated Run',    unit:'EA', qty:1,  rate:320, labour:180,mat:140,
+    category:'power',    lineItemType:'unit',    rateAtEstimateDate:320, supplierId:'LH-AU',  componentGroupId:null, meta:{ phase:1, amperage:15 } },
+  { id:4,  desc:'Dishwasher — Dedicated Circuit',       unit:'EA', qty:1,  rate:280, labour:160,mat:120,
+    category:'power',    lineItemType:'unit',    rateAtEstimateDate:280, supplierId:'LH-AU',  componentGroupId:null, meta:{ phase:1, amperage:10 } },
+  { id:5,  desc:'Exhaust Fan — Supply & Install',       unit:'EA', qty:2,  rate:220, labour:120,mat:100,
+    category:'lighting', lineItemType:'unit',    rateAtEstimateDate:220, supplierId:'LH-AU',  componentGroupId:null, meta:{ wattage:25 } },
+  { id:6,  desc:'Shaver Point / LED Mirror Circuit',    unit:'EA', qty:2,  rate:190, labour:110,mat:80,
+    category:'lighting', lineItemType:'unit',    rateAtEstimateDate:190, supplierId:'LH-AU',  componentGroupId:null, meta:{ ipRating:'IP44' } },
+  { id:7,  desc:'EV Charger Point 32A — Installed',     unit:'EA', qty:1,  rate:1850,labour:950,mat:900,
+    category:'ev',       lineItemType:'unit',    rateAtEstimateDate:1850,supplierId:'TURKS',  componentGroupId:null,
+    meta:{ amperage:32, smartCharging:true, loadBalancing:false } },
+  { id:8,  desc:'Garage Door Opener Circuit',           unit:'EA', qty:1,  rate:180, labour:100,mat:80,
+    category:'power',    lineItemType:'unit',    rateAtEstimateDate:180, supplierId:'LH-AU',  componentGroupId:null, meta:{ phase:1, amperage:10 } },
+  { id:9,  desc:'External GPO Weatherproof IP56',       unit:'EA', qty:4,  rate:160, labour:90, mat:70,
+    category:'power',    lineItemType:'unit',    rateAtEstimateDate:160, supplierId:'LH-AU',  componentGroupId:null, meta:{ phase:1, amperage:10, ipRating:'IP56' } },
+  { id:10, desc:'MSB 3-Phase 63A — Supply & Install',   unit:'EA', qty:1,  rate:4200,labour:2200,mat:2000,
+    category:'switchboard', lineItemType:'unit', rateAtEstimateDate:4200,supplierId:'TURKS',  componentGroupId:null,
+    meta:{ phases:3, ways:24, mainSwitchRating:63 } },
+  { id:11, desc:'Cable Runs — Main Board to Circuits',  unit:'LM', qty:420,rate:8,   labour:5,  mat:3,
+    category:'power',    lineItemType:'unit',    rateAtEstimateDate:8,   supplierId:'LH-AU',  componentGroupId:null, meta:{} },
+  { id:12, desc:'Conduit & Accessories',                unit:'LM', qty:180,rate:6,   labour:3,  mat:3,
+    category:'power',    lineItemType:'unit',    rateAtEstimateDate:6,   supplierId:'LH-AU',  componentGroupId:null, meta:{} },
+
+  // Example: Composite group — Somfy blind motor system (§4.4). One parent, multiple SKUs.
+  { id:13, desc:'Blind Motor — Somfy Glydea Ultra 35',  unit:'EA', qty:3, rate:480, labour:120, mat:360,
+    category:'automation', lineItemType:'unit', rateAtEstimateDate:480, supplierId:'SOMFY',    componentGroupId:'grp-blinds-mstr',
+    meta:{ brand:'Somfy', model:'Glydea Ultra 35', zones:1, commissioning:true, warrantyYears:5 } },
+  { id:14, desc:'Blind Track — 2.4m Motorised Track',   unit:'EA', qty:3, rate:180, labour:40,  mat:140,
+    category:'automation', lineItemType:'unit', rateAtEstimateDate:180, supplierId:'SOMFY',    componentGroupId:'grp-blinds-mstr',
+    meta:{ brand:'Somfy', model:'Glydea-Track-2.4m' } },
+  { id:15, desc:'Blind Remote — 5-Channel',             unit:'EA', qty:3, rate:85,  labour:0,   mat:85,
+    category:'automation', lineItemType:'unit', rateAtEstimateDate:85,  supplierId:'SOMFY',    componentGroupId:'grp-blinds-mstr',
+    meta:{ brand:'Somfy', model:'Situo-5-RTS' } },
+  { id:16, desc:'Blind Programming & Commissioning',    unit:'HR', qty:4, rate:140, labour:140, mat:0,
+    category:'automation', lineItemType:'labour', rateAtEstimateDate:140,supplierId:null,      componentGroupId:'grp-blinds-mstr',
+    meta:{ programmingHours:4, commissioning:true } },
+
+  // Example: Sub-contract item with attached quote PDF (§4.2)
+  { id:17, desc:'Fire Alarm Sub-contract — ACME Fire',  unit:'LS', qty:1, rate:4850, labour:0, mat:0,
+    category:'security', lineItemType:'sub-contract', rateAtEstimateDate:4850, supplierId:'ACME-FIRE', componentGroupId:null,
+    meta:{ subcontractor:'ACME Fire Systems Pty Ltd', quoteRef:'QTE-4421' },
+    quoteAttachmentUrl:'ACME-Fire-QTE-4421.pdf' },
+
+  // Example: Provisional allowance — TBC at time of estimate
+  { id:18, desc:'Pool Equipment Allowance (TBC)',       unit:'LS', qty:1, rate:1800, labour:0, mat:0,
+    category:'power',    lineItemType:'allowance', rateAtEstimateDate:1800, supplierId:null, componentGroupId:null,
+    meta:{ provisional:true, confirmationRequired:true } },
+
+  // Example: Day-rate for equipment hire
+  { id:19, desc:'Scissor Lift EWP — Daily Hire',        unit:'DAY', qty:2, rate:380, labour:0, mat:380,
+    category:'power',    lineItemType:'day-rate', rateAtEstimateDate:380, supplierId:'KENNARDS', componentGroupId:null,
+    meta:{ equipment:'Scissor lift 6m', access:'Void lighting install' } },
 ];
 
 const MOCK_VARIATION = [
@@ -590,6 +670,8 @@ const NAV = [
 ];
 
 // ── TLE Wholesaler mock data (trade rates) ──────────────────────────────────
+// All TLE products map to lineItemType='unit' and carry a meta JSONB blob.
+// The top-level `category` is the canonical tenant-configurable id from DEFAULT_CATEGORIES.
 const TLE_CATEGORIES = ['All','Power Points','Lighting','Switchboard','Cabling','Data & Communications'];
 const TLE_PRODUCTS = [
   // Power Points
@@ -979,6 +1061,7 @@ function ProjectDetail({ project, onNavigate }) {
 
 // ── Estimate Editor ────────────────────────────────────────────────────────
 function EstimateEditor({ onNavigate }) {
+  const { tenant } = useTenant();
   const [items, setItems] = useState(MOCK_LINE_ITEMS.map(i => ({...i, note:''})));
   const [margin, setMargin] = useState(15);
   const [locked, setLocked] = useState(false);
@@ -1023,8 +1106,41 @@ function EstimateEditor({ onNavigate }) {
   };
   const addItem = () => {
     const newId = Math.max(...items.map(i=>i.id)) + 1;
-    setItems(prev => [...prev, {id:newId, desc:'New Line Item', unit:'EA', qty:1, rate:0, labour:0, mat:0}]);
+    setItems(prev => [...prev, {
+      id:newId, desc:'New Line Item', unit:'EA', qty:1, rate:0, labour:0, mat:0,
+      category:'power', lineItemType:'unit',
+      rateAtEstimateDate:0, supplierId:null, componentGroupId:null,
+      meta:{},
+    }]);
     setEditId(newId);
+  };
+
+  // Custom line item modal state — supports optional quote PDF attachment (§4.2)
+  const [showCustomModal, setShowCustomModal] = useState(false);
+  const [customDraft, setCustomDraft] = useState({
+    desc:'', lineItemType:'lump-sum', unit:'LS', qty:1, rate:0,
+    category:'power', supplierId:'', quoteFileName:'',
+  });
+  const saveCustomItem = () => {
+    const newId = Math.max(...items.map(i=>i.id)) + 1;
+    setItems(prev => [...prev, {
+      id: newId,
+      desc: customDraft.desc || 'Custom Line Item',
+      unit: customDraft.unit,
+      qty: Number(customDraft.qty) || 1,
+      rate: Number(customDraft.rate) || 0,
+      labour: 0,
+      mat: Number(customDraft.rate) || 0,
+      category: customDraft.category,
+      lineItemType: customDraft.lineItemType,
+      rateAtEstimateDate: Number(customDraft.rate) || 0,
+      supplierId: customDraft.supplierId || null,
+      componentGroupId: null,
+      quoteAttachmentUrl: customDraft.quoteFileName || null,
+      meta: { custom:true, createdAt: new Date().toISOString() },
+    }]);
+    setShowCustomModal(false);
+    setCustomDraft({ desc:'', lineItemType:'lump-sum', unit:'LS', qty:1, rate:0, category:'power', supplierId:'', quoteFileName:'' });
   };
   const removeItem = (id) => setItems(prev => prev.filter(i => i.id !== id));
 
@@ -1099,7 +1215,8 @@ function EstimateEditor({ onNavigate }) {
             <table>
               <thead>
                 <tr>
-                  <th style={{width:'36%'}}>Description</th>
+                  <th style={{width:'30%'}}>Description</th>
+                  <th>Type</th>
                   <th>Unit</th>
                   <th style={{textAlign:'right'}}>Qty</th>
                   <th style={{textAlign:'right'}}>Rate</th>
@@ -1108,7 +1225,11 @@ function EstimateEditor({ onNavigate }) {
                 </tr>
               </thead>
               <tbody>
-                {items.map(item => (
+                {items.map(item => {
+                  const typeMeta = LINE_ITEM_TYPE_MAP[item.lineItemType] || LINE_ITEM_TYPE_MAP.unit;
+                  const inGroup  = !!item.componentGroupId;
+                  const rateDrifted = item.rateAtEstimateDate != null && item.rate !== item.rateAtEstimateDate;
+                  return (
                   <React.Fragment key={item.id}>
                   <tr onClick={() => !locked && setEditId(editId===item.id?null:item.id)}
                     style={{cursor:locked?'default':'pointer'}}>
@@ -1116,13 +1237,29 @@ function EstimateEditor({ onNavigate }) {
                       {editId === item.id && !locked ? (
                         <input type="text" value={item.desc} onChange={e => updateItem(item.id,'desc',e.target.value)} onClick={e=>e.stopPropagation()}/>
                       ) : (
-                        <span style={{fontSize:12}}>{item.desc}</span>
+                        <div>
+                          <div style={{fontSize:12,display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+                            {inGroup && <span title={`Composite group ${item.componentGroupId}`} style={{fontSize:10,padding:'1px 6px',borderRadius:10,background:'#EDE9FE',color:'#5B21B6',fontWeight:700,cursor:'help'}}>🔗 GROUP</span>}
+                            {item.quoteAttachmentUrl && <span title={`Quote attached: ${item.quoteAttachmentUrl}`} style={{fontSize:10,padding:'1px 6px',borderRadius:10,background:'#DBEAFE',color:'#1D4ED8',fontWeight:700,cursor:'help'}}>📎 QUOTE</span>}
+                            <span>{item.desc}</span>
+                          </div>
+                          {item.supplierId && <div style={{fontSize:10,color:'#94A3B8',marginTop:2}}>Supplier: {item.supplierId}</div>}
+                        </div>
                       )}
                     </td>
                     <td>
                       {editId === item.id && !locked ? (
-                        <select value={item.unit} onChange={e => updateItem(item.id,'unit',e.target.value)} onClick={e=>e.stopPropagation()} style={{width:60}}>
-                          <option>EA</option><option>LM</option><option>LS</option><option>HR</option>
+                        <select value={item.lineItemType} onChange={e => updateItem(item.id,'lineItemType',e.target.value)} onClick={e=>e.stopPropagation()} style={{width:130,fontSize:11}}>
+                          {LINE_ITEM_TYPES.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+                        </select>
+                      ) : (
+                        <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:10,background:'#F1F5F9',color:'#475569',whiteSpace:'nowrap'}}>{typeMeta.label}</span>
+                      )}
+                    </td>
+                    <td>
+                      {editId === item.id && !locked ? (
+                        <select value={item.unit} onChange={e => updateItem(item.id,'unit',e.target.value)} onClick={e=>e.stopPropagation()} style={{width:70}}>
+                          {typeMeta.units.map(u => <option key={u} value={u}>{u}</option>)}
                         </select>
                       ) : item.unit}
                     </td>
@@ -1134,7 +1271,12 @@ function EstimateEditor({ onNavigate }) {
                     <td style={{textAlign:'right'}}>
                       {editId === item.id && !locked ? (
                         <input type="number" value={item.rate} onChange={e => updateItem(item.id,'rate',e.target.value)} onClick={e=>e.stopPropagation()} style={{width:72,textAlign:'right'}}/>
-                      ) : fmt(item.rate)}
+                      ) : (
+                        <div style={{display:'inline-flex',flexDirection:'column',alignItems:'flex-end',gap:2}}>
+                          <span>{fmt(item.rate)}</span>
+                          {rateDrifted && <span title={`Rate at estimate date: ${fmt(item.rateAtEstimateDate)}`} style={{fontSize:9,color:'#F59E0B',fontWeight:700,cursor:'help'}}>was {fmt(item.rateAtEstimateDate)}</span>}
+                        </div>
+                      )}
                     </td>
                     <td style={{textAlign:'right',fontWeight:600}}>{fmt(item.qty * item.rate)}</td>
                     {!locked && (
@@ -1154,7 +1296,7 @@ function EstimateEditor({ onNavigate }) {
                   </tr>
                   {(item.note || recordingId===item.id) && (
                     <tr style={{background:'#F0F9FF'}}>
-                      <td colSpan={locked?5:6} style={{padding:'6px 10px'}}>
+                      <td colSpan={locked?6:7} style={{padding:'6px 10px'}}>
                         <div style={{display:'flex',alignItems:'center',gap:8}}>
                           <span style={{fontSize:12}}>🎤</span>
                           {recordingId===item.id ? (
@@ -1173,19 +1315,95 @@ function EstimateEditor({ onNavigate }) {
                     </tr>
                   )}
                   </React.Fragment>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
           {!locked && (
-            <div style={{display:'flex',gap:8,marginTop:8,alignItems:'center'}}>
+            <div style={{display:'flex',gap:8,marginTop:8,alignItems:'center',flexWrap:'wrap'}}>
               <button className="btn btn-ghost btn-sm" onClick={addItem}>+ Add Line Item</button>
+              <button className="btn btn-ghost btn-sm" onClick={()=>setShowCustomModal(true)}>+ Custom Line Item</button>
               <button
                 onClick={()=>{ if(!recording) startRecording(items[0].id); }}
                 style={{display:'flex',alignItems:'center',gap:6,padding:'6px 12px',background:recording?'#FEE2E2':'#F1F5F9',border:`1px solid ${recording?'#EF4444':'#E2E8F0'}`,borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer',color:recording?'#EF4444':'#64748B',transition:'all 0.2s'}}>
                 <span style={{fontSize:14}}>{recording?'⏹':'🎤'}</span>
                 {recording?'Stop Recording':'Voice Note'}
               </button>
+            </div>
+          )}
+
+          {/* Custom line item modal — supports optional quote PDF attachment (§4.2) */}
+          {showCustomModal && (
+            <div onClick={()=>setShowCustomModal(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:1500,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(4px)',padding:20}}>
+              <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:14,padding:24,maxWidth:520,width:'100%',maxHeight:'90vh',overflow:'auto',boxShadow:'0 24px 80px rgba(0,0,0,0.4)'}}>
+                <div style={{fontSize:16,fontWeight:800,marginBottom:4,color:'#0D1B2A'}}>Add Custom Line Item</div>
+                <div style={{fontSize:12,color:'#64748B',marginBottom:16}}>Non-catalogue items — direct-sourced, sub-contract, day rates, allowances.</div>
+
+                <div style={{marginBottom:12}}>
+                  <div style={{fontSize:11,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase',color:'#64748B',marginBottom:5}}>Description</div>
+                  <input type="text" value={customDraft.desc} onChange={e=>setCustomDraft(d=>({...d,desc:e.target.value}))} placeholder="e.g. Bespoke pendant fitting — custom order" style={{width:'100%',padding:'8px 12px',border:'1px solid #E2E8F0',borderRadius:8,fontSize:13,outline:'none'}}/>
+                </div>
+
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
+                  <div>
+                    <div style={{fontSize:11,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase',color:'#64748B',marginBottom:5}}>Line Item Type</div>
+                    <select value={customDraft.lineItemType} onChange={e=>{
+                      const t = LINE_ITEM_TYPE_MAP[e.target.value];
+                      setCustomDraft(d=>({...d,lineItemType:e.target.value, unit:t.units[0]}));
+                    }} style={{width:'100%',padding:'8px 12px',border:'1px solid #E2E8F0',borderRadius:8,fontSize:13,background:'white'}}>
+                      {LINE_ITEM_TYPES.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <div style={{fontSize:11,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase',color:'#64748B',marginBottom:5}}>Category</div>
+                    <select value={customDraft.category} onChange={e=>setCustomDraft(d=>({...d,category:e.target.value}))} style={{width:'100%',padding:'8px 12px',border:'1px solid #E2E8F0',borderRadius:8,fontSize:13,background:'white'}}>
+                      {tenant.categories.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:12}}>
+                  <div>
+                    <div style={{fontSize:11,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase',color:'#64748B',marginBottom:5}}>Unit</div>
+                    <select value={customDraft.unit} onChange={e=>setCustomDraft(d=>({...d,unit:e.target.value}))} style={{width:'100%',padding:'8px 12px',border:'1px solid #E2E8F0',borderRadius:8,fontSize:13,background:'white'}}>
+                      {(LINE_ITEM_TYPE_MAP[customDraft.lineItemType]?.units || ['EA']).map(u => <option key={u} value={u}>{u}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <div style={{fontSize:11,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase',color:'#64748B',marginBottom:5}}>Qty</div>
+                    <input type="number" value={customDraft.qty} onChange={e=>setCustomDraft(d=>({...d,qty:e.target.value}))} style={{width:'100%',padding:'8px 12px',border:'1px solid #E2E8F0',borderRadius:8,fontSize:13}}/>
+                  </div>
+                  <div>
+                    <div style={{fontSize:11,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase',color:'#64748B',marginBottom:5}}>Rate</div>
+                    <input type="number" value={customDraft.rate} onChange={e=>setCustomDraft(d=>({...d,rate:e.target.value}))} style={{width:'100%',padding:'8px 12px',border:'1px solid #E2E8F0',borderRadius:8,fontSize:13}}/>
+                  </div>
+                </div>
+
+                <div style={{marginBottom:12}}>
+                  <div style={{fontSize:11,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase',color:'#64748B',marginBottom:5}}>Supplier (optional)</div>
+                  <input type="text" value={customDraft.supplierId} onChange={e=>setCustomDraft(d=>({...d,supplierId:e.target.value}))} placeholder="e.g. ACME Fire Systems" style={{width:'100%',padding:'8px 12px',border:'1px solid #E2E8F0',borderRadius:8,fontSize:13,outline:'none'}}/>
+                </div>
+
+                {LINE_ITEM_TYPE_MAP[customDraft.lineItemType]?.canAttachQuote && (
+                  <div style={{marginBottom:16,padding:'12px 14px',background:'#F0F9FF',border:'1px solid #BAE6FD',borderRadius:8}}>
+                    <div style={{fontSize:11,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase',color:'#0369A1',marginBottom:6}}>Supplier Quote PDF (optional)</div>
+                    <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+                      <input type="file" accept="application/pdf" onChange={e=>{
+                        const f = e.target.files?.[0];
+                        if (f) setCustomDraft(d=>({...d,quoteFileName:f.name}));
+                      }} style={{fontSize:12}}/>
+                      {customDraft.quoteFileName && <span style={{fontSize:11,color:'#0369A1'}}>📎 {customDraft.quoteFileName}</span>}
+                    </div>
+                    <div style={{fontSize:10,color:'#64748B',marginTop:6}}>Attach the supplier's written quote so it's audit-traceable on the estimate.</div>
+                  </div>
+                )}
+
+                <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>setShowCustomModal(false)}>Cancel</button>
+                  <button className="btn btn-primary" onClick={saveCustomItem} disabled={!customDraft.desc.trim()}>Add to Estimate</button>
+                </div>
+              </div>
             </div>
           )}
 
@@ -2977,7 +3195,27 @@ function TenantSettings() {
             <span style={{ fontSize: 12, color: '#64748B', fontFamily: 'monospace' }}>{draft.accentColor}</span>
           </div>
 
-          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <div className="label" style={{ marginBottom: 12, marginTop: 14 }}>Component Categories (§4.5)</div>
+          <div style={{ fontSize: 11, color: '#64748B', marginBottom: 10 }}>Categories are tenant-configurable. These drive the JSONB <code style={{background:'#F1F5F9',padding:'1px 4px',borderRadius:3,fontSize:10}}>meta</code> schema for every component and line item.</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
+            {draft.categories.map((c, i) => (
+              <div key={c.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 10px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 8 }}>
+                <input type="text" value={c.label} onChange={e => {
+                  const next = [...draft.categories]; next[i] = { ...c, label: e.target.value };
+                  setDraft(d => ({ ...d, categories: next }));
+                }} style={{ flex: 1, padding: '5px 8px', border: '1px solid #E2E8F0', borderRadius: 6, fontSize: 12 }}/>
+                <span style={{ fontSize: 10, color: '#94A3B8', fontFamily: 'monospace' }}>{c.id}</span>
+                <button onClick={() => setDraft(d => ({ ...d, categories: d.categories.filter(x => x.id !== c.id) }))}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#EF4444', fontSize: 14 }}>✕</button>
+              </div>
+            ))}
+          </div>
+          <button className="btn btn-ghost btn-sm" onClick={() => {
+            const id = 'cat-' + Date.now().toString(36);
+            setDraft(d => ({ ...d, categories: [...d.categories, { id, label: 'New category', meta: [] }] }));
+          }}>+ Add Category</button>
+
+          <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
             <button className="btn btn-primary" onClick={save} disabled={!isDirty}>{saved ? '✓ Saved' : 'Save Changes'}</button>
             <button className="btn btn-ghost btn-sm" onClick={reset} disabled={!isDirty}>Discard</button>
           </div>
