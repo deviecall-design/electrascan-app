@@ -10,9 +10,14 @@ import VariationReport, { VariationEstimateLike } from "./components/VariationRe
 import ApprovalsScreen, { ApprovalEstimateLike } from "./components/ApprovalsScreen";
 import RateLibrary from "./components/RateLibrary";
 import EmailUpload from "./components/EmailUpload";
+import ReportsIndexScreen from "./components/ReportsIndexScreen";
 import ReportsScreen from "./components/ReportsScreen";
 import TenantSetup from "./components/TenantSetup";
+import DashboardScreen from "./components/DashboardScreen";
+import ProjectsScreen from "./components/ProjectsScreen";
+import ProjectDetail from "./components/ProjectDetail";
 import { useTenant } from "./contexts/TenantContext";
+import { useAppRouter } from "./components/Router";
 import type { RiskFlag as DetectionRiskFlag } from "./analyze_pdf";
 
 // ─── Design tokens ─────────────────────────────
@@ -176,8 +181,8 @@ const toLineItems = (components: DetectedComponent[]): LineItem[] =>
     lineTotal: c.line_total, locked: false, fromDetection: true,
   }));
 
-// ─── Dashboard Screen ───────────────────────────
-function DashboardScreen({ projects, onNewScan, onOpenProject, onOpenRateLibrary, onOpenEmail, onOpenSettings }: {
+// ─── Dashboard Screen (legacy — replaced by components/DashboardScreen.tsx) ───
+function LegacyDashboardScreen({ projects, onNewScan, onOpenProject, onOpenRateLibrary, onOpenEmail, onOpenSettings }: {
   projects: Project[]; onNewScan: () => void; onOpenProject: (p: Project) => void; onOpenRateLibrary: () => void; onOpenEmail: () => void; onOpenSettings: () => void;
 }) {
   const { tenant } = useTenant();
@@ -861,6 +866,10 @@ function EstimateEditor({ result, fileName, onBack }: {
 
 // ─── Root App ───────────────────────────────────
 export default function App() {
+  const { route, navigate } = useAppRouter();
+  const { tenant } = useTenant();
+  // `screen` is the legacy screen state used for upload/scanning/results/variation
+  // etc. Keep it but let the app route drive dashboard/projects/project-detail.
   const [screen, setScreen] = useState<Screen>("dashboard");
   const [file, setFile] = useState<File | null>(null);
   const [result, setResult] = useState<DetectionResult | null>(null);
@@ -989,10 +998,66 @@ export default function App() {
     setScreen("estimate");
   };
 
+  // Legacy screens (upload, scanning, variation, approvals, etc.) render when
+  // active. Otherwise the app route drives the primary navigation between
+  // Dashboard (4.1), Projects (4.2), and Project Detail (4.3).
+  const legacyActive =
+    screen === "upload" ||
+    screen === "scanning" ||
+    screen === "results" ||
+    screen === "estimate" ||
+    screen === "variation" ||
+    screen === "approvals" ||
+    screen === "ratelibrary" ||
+    screen === "email" ||
+    screen === "reports" ||
+    screen === "settings" ||
+    screen === "project"; // legacy MOCK_PROJECTS detail screen
+
   return (
     <>
       <style>{CSS}</style>
-      {screen === "dashboard" && <DashboardScreen projects={projects} onNewScan={goToScan} onOpenProject={p => { setSelectedProject(p); setScreen("project"); }} onOpenRateLibrary={() => setScreen("ratelibrary")} onOpenEmail={() => setScreen("email")} onOpenSettings={() => setScreen("settings")} />}
+
+      {/* New app routes (ProjectContext-backed) */}
+      {!legacyActive && route.name === "dashboard" && (
+        <DashboardScreen
+          onOpenProjects={() => navigate({ name: "projects" })}
+          onOpenProject={p => navigate({ name: "project-detail", id: p.id })}
+          onNewProject={() => navigate({ name: "projects" })}
+          onNewScan={goToScan}
+          onOpenRateLibrary={() => navigate({ name: "rate-library" })}
+          onOpenReports={() => navigate({ name: "reports" })}
+          onOpenEmail={() => navigate({ name: "email-inbox" })}
+          onOpenSettings={() => setScreen("settings")}
+        />
+      )}
+      {!legacyActive && route.name === "projects" && (
+        <ProjectsScreen
+          onBack={() => navigate({ name: "dashboard" })}
+          onOpenProject={p => navigate({ name: "project-detail", id: p.id })}
+        />
+      )}
+      {!legacyActive && route.name === "project-detail" && (
+        <ProjectDetail
+          projectId={route.id}
+          onBack={() => navigate({ name: "projects" })}
+        />
+      )}
+      {!legacyActive && route.name === "rate-library" && (
+        <RateLibrary onBack={() => navigate({ name: "dashboard" })} />
+      )}
+      {!legacyActive && route.name === "reports" && (
+        <ReportsIndexScreen onBack={() => navigate({ name: "dashboard" })} />
+      )}
+      {!legacyActive && route.name === "email-inbox" && (
+        <EmailUpload
+          tenantSlug={tenant.id}
+          onBack={() => navigate({ name: "dashboard" })}
+          onUploadManual={goToScan}
+        />
+      )}
+
+      {/* Legacy mock-data project detail (still used by variation / approvals flows) */}
       {screen === "project" && selectedProject && <ProjectScreen project={selectedProject} onBack={() => setScreen("dashboard")} onNewScan={goToScan} onOpenVariation={openVariation} onOpenApprovals={openApprovals} onOpenReports={(p) => { setSelectedProject(p); setScreen("reports"); }} />}
       {screen === "upload" && <UploadScreen onFile={handleFile} onBack={() => setScreen("dashboard")} error={error} />}
       {screen === "scanning" && file && <ScanningScreen fileName={file.name} />}

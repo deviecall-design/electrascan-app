@@ -59,6 +59,8 @@ export interface VariationReportProps {
   current: VariationEstimateLike;
   onBack: () => void;
   onOpenScan?: () => void;
+  /** When true, suppress the screen's own header + bottom nav so it can be embedded in a tab. */
+  embedded?: boolean;
   /**
    * Risk flags emitted by the detection pipeline for the *current* drawing
    * version. Each flag has the shape:
@@ -201,6 +203,7 @@ export default function VariationReport({
   onBack,
   onOpenScan,
   detectedRiskFlags,
+  embedded = false,
 }: VariationReportProps) {
   const { tenant } = useTenant();
   const rows = useMemo(() => diffEstimates(previous, current), [previous, current]);
@@ -434,22 +437,31 @@ export default function VariationReport({
   };
 
   return (
-    <div style={{ height: "100vh", background: C.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      {/* Header */}
-      <div style={{ background: C.navy, borderBottom: `1px solid ${C.border}`, padding: "14px 18px", flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-          <button onClick={onBack}
-            style={{ background: "none", border: "none", color: C.muted, fontSize: 13, cursor: "pointer", padding: 0 }}>
-            ← Back
-          </button>
-          <div style={{ fontSize: 11, color: C.muted }}>{previous.number} → {current.number}</div>
+    <div style={{
+      height: embedded ? "auto" : "100vh",
+      minHeight: embedded ? 400 : undefined,
+      background: C.bg,
+      display: "flex",
+      flexDirection: "column",
+      overflow: embedded ? "visible" : "hidden",
+    }}>
+      {/* Header — hidden when embedded in a tab */}
+      {!embedded && (
+        <div style={{ background: C.navy, borderBottom: `1px solid ${C.border}`, padding: "14px 18px", flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+            <button onClick={onBack}
+              style={{ background: "none", border: "none", color: C.muted, fontSize: 13, cursor: "pointer", padding: 0 }}>
+              ← Back
+            </button>
+            <div style={{ fontSize: 11, color: C.muted }}>{previous.number} → {current.number}</div>
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: C.text, letterSpacing: "-0.02em" }}>Variation Report</div>
+          <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{projectName}</div>
         </div>
-        <div style={{ fontSize: 18, fontWeight: 800, color: C.text, letterSpacing: "-0.02em" }}>Variation Report</div>
-        <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{projectName}</div>
-      </div>
+      )}
 
       {/* Content */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "14px 16px 96px" }}>
+      <div style={{ flex: 1, overflowY: embedded ? "visible" : "auto", padding: embedded ? 0 : "14px 16px 96px" }}>
         {/* Banner */}
         <div style={{
           background: `linear-gradient(135deg, ${C.navy}, #1A3A5C)`,
@@ -612,27 +624,29 @@ export default function VariationReport({
         </div>
       )}
 
-      {/* Bottom nav */}
-      <div style={{
-        position: "fixed", bottom: 0, left: 0, right: 0, background: C.navy, borderTop: `1px solid ${C.border}`,
-        display: "flex", padding: "8px 12px", paddingBottom: "calc(8px + env(safe-area-inset-bottom, 0px))",
-      }}>
-        <button onClick={onBack}
-          style={{ flex: 1, background: "none", border: "none", padding: "8px 0", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-          <div style={{ fontSize: 20 }}>🏠</div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: C.muted }}>Project</div>
-        </button>
-        <button onClick={onOpenScan}
-          style={{ flex: 1, background: "none", border: "none", padding: "4px 0", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-          <div style={{ width: 44, height: 44, borderRadius: "50%", background: C.blue, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, marginTop: -10, boxShadow: `0 4px 20px ${C.blue}66` }}>⚡</div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: C.blue }}>Scan</div>
-        </button>
-        <button style={{ flex: 1, background: "none", border: "none", padding: "8px 0", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-          <div style={{ fontSize: 20, opacity: 0.9 }}>📊</div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: C.blue }}>Variation</div>
-          <div style={{ width: 20, height: 2, background: C.blue, borderRadius: 1 }} />
-        </button>
-      </div>
+      {/* Bottom nav — hidden when embedded in a tab */}
+      {!embedded && (
+        <div style={{
+          position: "fixed", bottom: 0, left: 0, right: 0, background: C.navy, borderTop: `1px solid ${C.border}`,
+          display: "flex", padding: "8px 12px", paddingBottom: "calc(8px + env(safe-area-inset-bottom, 0px))",
+        }}>
+          <button onClick={onBack}
+            style={{ flex: 1, background: "none", border: "none", padding: "8px 0", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+            <div style={{ fontSize: 20 }}>🏠</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: C.muted }}>Project</div>
+          </button>
+          <button onClick={onOpenScan}
+            style={{ flex: 1, background: "none", border: "none", padding: "4px 0", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+            <div style={{ width: 44, height: 44, borderRadius: "50%", background: C.blue, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, marginTop: -10, boxShadow: `0 4px 20px ${C.blue}66` }}>⚡</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: C.blue }}>Scan</div>
+          </button>
+          <button style={{ flex: 1, background: "none", border: "none", padding: "8px 0", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+            <div style={{ fontSize: 20, opacity: 0.9 }}>📊</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: C.blue }}>Variation</div>
+            <div style={{ width: 20, height: 2, background: C.blue, borderRadius: 1 }} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

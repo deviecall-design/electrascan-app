@@ -6,6 +6,8 @@ import App from './App';
 import { ToastProvider } from './contexts/ToastContext';
 import { LicenseProvider } from './contexts/LicenseContext';
 import { TenantProvider } from './contexts/TenantContext';
+import { ProjectProvider } from './contexts/ProjectContext';
+import { RateLibraryProvider } from './contexts/RateLibraryContext';
 import { suppressConsoleWarnings } from './utils/suppressWarnings';
 import { RouterProvider } from './components/Router';
 
@@ -23,9 +25,13 @@ root.render(
     <ToastProvider>
       <LicenseProvider>
         <TenantProvider>
-          <RouterProvider>
-            <App />
-          </RouterProvider>
+          <ProjectProvider>
+            <RateLibraryProvider>
+              <RouterProvider>
+                <App />
+              </RouterProvider>
+            </RateLibraryProvider>
+          </ProjectProvider>
         </TenantProvider>
       </LicenseProvider>
     </ToastProvider>

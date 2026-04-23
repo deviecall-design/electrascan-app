@@ -19,6 +19,8 @@ export interface EmailUploadProps {
   userHandle?: string;
   /** User's primary email address — used to key per-user prefs in Supabase. */
   userEmail?: string;
+  /** Tenant slug used to build the inbox address: drawings@{slug}.electrascan.app. */
+  tenantSlug?: string;
   /** Called when the user opts to scan manually (kicks off the existing Upload flow). */
   onUploadManual?: () => void;
   onBack: () => void;
@@ -85,10 +87,14 @@ const fileIcon = (kind: "pdf" | "image") => kind === "pdf" ? "📄" : "🖼️";
 export default function EmailUpload({
   userHandle = "damien.callaghan",
   userEmail = "damien@veshelectrical.com.au",
+  tenantSlug = "vesh",
   onUploadManual,
   onBack,
 }: EmailUploadProps) {
-  const inboxAddress = `${userHandle}@drawings.electrascan.app`;
+  const inboxAddress = `drawings@${tenantSlug}.electrascan.app`;
+  const devMode =
+    typeof window !== "undefined" &&
+    window.localStorage.getItem("electrascan_dev_mode") === "true";
 
   const [inbox, setInbox] = useState<IncomingEmail[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -98,7 +104,8 @@ export default function EmailUpload({
   const [scanningIds, setScanningIds] = useState<Set<string>>(new Set());
   const timersRef = useRef<Record<string, number>>({});
 
-  // Hydrate inbox + prefs on mount.
+  // Hydrate inbox + prefs on mount. In dev mode the seed inbox provides demo
+  // data; production shows an empty state until emails actually arrive.
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -109,8 +116,10 @@ export default function EmailUpload({
       if (!alive) return;
       if (emailsRes.ok && emailsRes.emails.length > 0) {
         setInbox(emailsRes.emails);
-      } else {
+      } else if (devMode) {
         setInbox(SEED_INBOX);
+      } else {
+        setInbox([]);
       }
       if (prefRes.ok) setAutoScan(prefRes.autoScan);
       setLoaded(true);
@@ -121,7 +130,23 @@ export default function EmailUpload({
       Object.values(timersRef.current).forEach(id => window.clearTimeout(id));
       timersRef.current = {};
     };
-  }, [inboxAddress, userEmail]);
+  }, [inboxAddress, userEmail, devMode]);
+
+  const simulateReceive = () => {
+    const now = new Date();
+    const mock: IncomingEmail = {
+      id: `mock-${now.getTime()}`,
+      from: "builder@allenbuild.com.au",
+      subject: `Simulated drawing — ${now.toLocaleTimeString("en-AU")}`,
+      file: `Simulated-${now.getTime()}.pdf`,
+      fileKind: "pdf",
+      pages: 4,
+      received: now.toISOString(),
+      status: "queued",
+      project: "Unassigned",
+    };
+    setInbox(prev => [mock, ...prev]);
+  };
 
   // Auto-scan toggle side-effect: when turning ON, kick any queued emails
   // through the simulated scan so the badge state stays consistent.
@@ -236,7 +261,7 @@ export default function EmailUpload({
             </div>
           </div>
           <div style={{ fontSize: 15, fontWeight: 800, color: C.text, letterSpacing: "-0.02em", marginBottom: 6, wordBreak: "break-all" as const }}>
-            {userHandle}<span style={{ color: C.blueLt }}>@drawings.electrascan.app</span>
+            drawings<span style={{ color: C.blueLt }}>@{tenantSlug}.electrascan.app</span>
           </div>
           <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.55, marginBottom: 12 }}>
             Forward or CC this address on any email with drawing attachments. Plans are automatically detected, queued and scanned.
@@ -330,7 +355,7 @@ export default function EmailUpload({
         ) : inbox.length === 0 ? (
           <div style={{ textAlign: "center" as const, padding: "48px 20px", color: C.muted }}>
             <div style={{ fontSize: 40, marginBottom: 10 }}>📭</div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>Inbox empty</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>No drawings received yet</div>
             <div style={{ fontSize: 12, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
               Forward a drawing email to <strong style={{ color: C.blueLt }}>{inboxAddress}</strong> to see it here.
             </div>
@@ -339,6 +364,18 @@ export default function EmailUpload({
           inbox.map(e => (
             <InboxRow key={e.id} email={e} onScan={() => triggerScan(e.id)} />
           ))
+        )}
+
+        {devMode && (
+          <button
+            onClick={simulateReceive}
+            style={{
+              width: "100%", marginTop: 12,
+              background: C.card, border: `1px dashed ${C.border}`,
+              color: C.dim, fontSize: 12, fontWeight: 700, padding: "12px", borderRadius: 12, cursor: "pointer",
+            }}>
+            🧪 Simulate Receive (dev only)
+          </button>
         )}
       </div>
 

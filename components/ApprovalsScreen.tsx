@@ -46,6 +46,12 @@ export interface ApprovalsScreenProps {
   /** Actor name used to sign new approval actions. Defaults to the builder. */
   actor?: { name: string; role: ApprovalRole };
   onBack: () => void;
+  /** When true, omit the screen's own header + bottom nav so it can be embedded in a tab. */
+  embedded?: boolean;
+  /** When set, persist audit entries to localStorage under this key instead of (or in addition to) Supabase. */
+  localStorageKey?: string;
+  /** Fires whenever approval status transitions (used to sync to ProjectContext). */
+  onStatusChange?: (status: "pending" | "approved" | "rejected") => void;
 }
 
 // ─── Mock defaults ────────────────────────────────
@@ -133,6 +139,9 @@ export default function ApprovalsScreen({
   initialStatus = "pending",
   actor = { name: "Tom Allen", role: "Builder" },
   onBack,
+  embedded = false,
+  localStorageKey,
+  onStatusChange,
 }: ApprovalsScreenProps) {
   const roster = parties ?? DEFAULT_PARTIES;
   const [status, setStatus] = useState<"pending" | "approved">(initialStatus);
@@ -148,9 +157,28 @@ export default function ApprovalsScreen({
   const [approvedBy, setApprovedBy] = useState<{ name: string; role: ApprovalRole; ts: string; signature: string } | null>(null);
 
   // Fetch remote audit; seed if empty/unreachable.
+  // When `localStorageKey` is provided, prefer localStorage over Supabase so
+  // the audit trail is durable across reloads without a cloud round-trip.
   useEffect(() => {
     let alive = true;
     (async () => {
+      if (localStorageKey && typeof window !== "undefined") {
+        try {
+          const raw = window.localStorage.getItem(localStorageKey);
+          if (raw) {
+            const parsed = JSON.parse(raw) as ApprovalAuditEntry[];
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              if (alive) {
+                setAudit(parsed);
+                setLoaded(true);
+              }
+              return;
+            }
+          }
+        } catch {
+          // fall through to supabase / seed
+        }
+      }
       const res = await fetchApprovalAudit(currentEstimate.id);
       if (!alive) return;
       if (res.ok && res.entries.length > 0) {
@@ -161,7 +189,17 @@ export default function ApprovalsScreen({
       setLoaded(true);
     })();
     return () => { alive = false; };
-  }, [currentEstimate.id]);
+  }, [currentEstimate.id, localStorageKey]);
+
+  // Mirror audit into localStorage whenever it changes (when a key is set).
+  useEffect(() => {
+    if (!localStorageKey || typeof window === "undefined" || !loaded) return;
+    try {
+      window.localStorage.setItem(localStorageKey, JSON.stringify(audit));
+    } catch {
+      // storage full / unavailable
+    }
+  }, [audit, localStorageKey, loaded]);
 
   const submittedDelta = priorEstimate ? currentEstimate.total - priorEstimate.total : undefined;
 
@@ -205,6 +243,7 @@ export default function ApprovalsScreen({
     setApprovedBy({ name: actor.name, role: actor.role, ts: now.toISOString(), signature });
     setShowApprove(false);
     setApprovalComment("");
+    onStatusChange?.("approved");
   };
 
   const confirmReturn = async () => {
@@ -218,6 +257,7 @@ export default function ApprovalsScreen({
     setShowReturn(false);
     setReturnReason("");
     setReturnReasonError(false);
+    onStatusChange?.("rejected");
   };
 
   const handleSendForApproval = async () => {
@@ -251,27 +291,45 @@ export default function ApprovalsScreen({
   const stepStates = useMemo(() => computeStepStates(audit, status), [audit, status]);
 
   return (
-    <div style={{ height: "100vh", background: C.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      {/* Header */}
-      <div style={{ background: C.navy, borderBottom: `1px solid ${C.border}`, padding: "14px 18px", flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-          <button onClick={onBack}
-            style={{ background: "none", border: "none", color: C.muted, fontSize: 13, cursor: "pointer", padding: 0 }}>
-            ← Back
-          </button>
+    <div style={{
+      height: embedded ? "auto" : "100vh",
+      minHeight: embedded ? 400 : undefined,
+      background: C.bg,
+      display: "flex",
+      flexDirection: "column",
+      overflow: embedded ? "visible" : "hidden",
+    }}>
+      {/* Header — hidden in embedded mode so ProjectDetail's tabs own the chrome */}
+      {!embedded && (
+        <div style={{ background: C.navy, borderBottom: `1px solid ${C.border}`, padding: "14px 18px", flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+            <button onClick={onBack}
+              style={{ background: "none", border: "none", color: C.muted, fontSize: 13, cursor: "pointer", padding: 0 }}>
+              ← Back
+            </button>
+            <button onClick={exportAuditLog}
+              style={{ background: "none", border: `1px solid ${C.border}`, color: C.muted, fontSize: 11, padding: "5px 10px", borderRadius: 8, cursor: "pointer" }}>
+              Export Audit Log
+            </button>
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: C.text, letterSpacing: "-0.02em" }}>Approval Workflow</div>
+          <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+            {projectSummary ?? projectName} · {priorEstimate ? `${priorEstimate.number} → ` : ""}{currentEstimate.number}
+          </div>
+        </div>
+      )}
+
+      {embedded && (
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
           <button onClick={exportAuditLog}
             style={{ background: "none", border: `1px solid ${C.border}`, color: C.muted, fontSize: 11, padding: "5px 10px", borderRadius: 8, cursor: "pointer" }}>
             Export Audit Log
           </button>
         </div>
-        <div style={{ fontSize: 18, fontWeight: 800, color: C.text, letterSpacing: "-0.02em" }}>Approval Workflow</div>
-        <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
-          {projectSummary ?? projectName} · {priorEstimate ? `${priorEstimate.number} → ` : ""}{currentEstimate.number}
-        </div>
-      </div>
+      )}
 
       {/* Content */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "14px 16px 96px" }}>
+      <div style={{ flex: 1, overflowY: embedded ? "visible" : "auto", padding: embedded ? 0 : "14px 16px 96px" }}>
         {/* Status banner */}
         {status === "pending" ? (
           <div style={{
@@ -480,27 +538,29 @@ export default function ApprovalsScreen({
         </div>
       )}
 
-      {/* Bottom nav */}
-      <div style={{
-        position: "fixed" as const, bottom: 0, left: 0, right: 0, background: C.navy, borderTop: `1px solid ${C.border}`,
-        display: "flex", padding: "8px 12px", paddingBottom: "calc(8px + env(safe-area-inset-bottom, 0px))",
-      }}>
-        <button onClick={onBack}
-          style={{ flex: 1, background: "none", border: "none", padding: "8px 0", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-          <div style={{ fontSize: 20 }}>🏠</div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: C.muted }}>Back</div>
-        </button>
-        <button onClick={exportAuditLog}
-          style={{ flex: 1, background: "none", border: "none", padding: "4px 0", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-          <div style={{ width: 44, height: 44, borderRadius: "50%", background: C.blue, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, marginTop: -10, boxShadow: `0 4px 20px ${C.blue}66` }}>📤</div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: C.blue }}>Export</div>
-        </button>
-        <button style={{ flex: 1, background: "none", border: "none", padding: "8px 0", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-          <div style={{ fontSize: 20, opacity: 0.9 }}>✅</div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: C.blue }}>Approvals</div>
-          <div style={{ width: 20, height: 2, background: C.blue, borderRadius: 1 }} />
-        </button>
-      </div>
+      {/* Bottom nav — hidden in embedded mode */}
+      {!embedded && (
+        <div style={{
+          position: "fixed" as const, bottom: 0, left: 0, right: 0, background: C.navy, borderTop: `1px solid ${C.border}`,
+          display: "flex", padding: "8px 12px", paddingBottom: "calc(8px + env(safe-area-inset-bottom, 0px))",
+        }}>
+          <button onClick={onBack}
+            style={{ flex: 1, background: "none", border: "none", padding: "8px 0", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+            <div style={{ fontSize: 20 }}>🏠</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: C.muted }}>Back</div>
+          </button>
+          <button onClick={exportAuditLog}
+            style={{ flex: 1, background: "none", border: "none", padding: "4px 0", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+            <div style={{ width: 44, height: 44, borderRadius: "50%", background: C.blue, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, marginTop: -10, boxShadow: `0 4px 20px ${C.blue}66` }}>📤</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: C.blue }}>Export</div>
+          </button>
+          <button style={{ flex: 1, background: "none", border: "none", padding: "8px 0", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+            <div style={{ fontSize: 20, opacity: 0.9 }}>✅</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: C.blue }}>Approvals</div>
+            <div style={{ width: 20, height: 2, background: C.blue, borderRadius: 1 }} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

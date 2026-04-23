@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  fetchLibrary, fetchSyncLog, upsertLibraryItem, removeLibraryItem, appendSyncLog,
+  fetchSyncLog,
   RATE_CATEGORIES,
-  type LibraryItem, type RateCategory, type SyncLogEntry, type WholesalerProduct,
+  type RateCategory, type SyncLogEntry, type WholesalerProduct,
 } from "../services/rateLibraryService";
+import { useRateLibrary, type CustomLibraryItem } from "../contexts/RateLibraryContext";
+
+type LibraryItem = CustomLibraryItem;
 
 // ─── Design tokens (mirror App.tsx) ──────────────
 const C = {
@@ -91,30 +94,28 @@ export default function RateLibrary({ onBack }: RateLibraryProps) {
   const [tab, setTab] = useState<"browse" | "library" | "history">("browse");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<RateCategory | "All">("All");
-  const [library, setLibrary] = useState<LibraryItem[]>([]);
+  const { items: library, addItem: ctxAddItem, updateItem: ctxUpdateItem, removeItem: ctxRemoveItem } = useRateLibrary();
   const [history, setHistory] = useState<SyncLogEntry[]>([]);
   const [lastSync, setLastSync] = useState<string | null>(null);
-  const [syncing, setSyncing] = useState(false);
-  const [syncPct, setSyncPct] = useState(0);
-  const [syncStatus, setSyncStatus] = useState<"idle" | "ok" | "local">("idle");
+  const [syncStatus, setSyncStatus] = useState<"idle" | "ok" | "local" | "toast">("idle");
+  const [syncToastMsg, setSyncToastMsg] = useState<string>("");
+  const [showCustom, setShowCustom] = useState(false);
 
-  // Hydrate from Supabase on mount; fall back to local defaults if unavailable.
+  // Hydrate sync log from Supabase if available; always fall back to a seed entry.
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [libRes, logRes] = await Promise.all([fetchLibrary(), fetchSyncLog()]);
+      const logRes = await fetchSyncLog();
       if (!alive) return;
-      if (libRes.ok) setLibrary(libRes.items);
-      if (logRes.ok) {
+      if (logRes.ok && logRes.entries.length > 0) {
         setHistory(logRes.entries);
-        if (logRes.entries.length > 0) setLastSync(logRes.entries[0].ts);
+        setLastSync(logRes.entries[0].ts);
       } else {
-        // Seed a single "last synced today" entry so the header shows plausible UX.
         const nowIso = new Date().toISOString();
         setHistory([{
-          id: "seed-1", ts: nowIso, source: "TLE Electrical",
+          id: "seed-1", ts: nowIso, source: "Simpro",
           productsCount: WHOLESALER_CATALOGUE.length, status: "success",
-          note: "Scheduled nightly trade-price sync (seed data · no cloud sync).",
+          note: "Catalogue synced (seed data · Simpro connector pending).",
         }]);
         setLastSync(nowIso);
       }
@@ -137,64 +138,60 @@ export default function RateLibrary({ onBack }: RateLibraryProps) {
     });
   }, [search, category]);
 
-  const addItem = async (p: WholesalerProduct) => {
+  const addItem = (p: WholesalerProduct) => {
     const item: LibraryItem = { ...p, myRate: Number((p.rrp * DEFAULT_MARKUP_OVER_RRP).toFixed(2)) };
-    setLibrary(prev => [...prev.filter(x => x.productId !== p.productId), item]);
-    const res = await upsertLibraryItem(item);
-    setSyncStatus(res.ok ? "ok" : "local");
+    ctxAddItem(item);
+    setSyncStatus("ok");
     window.setTimeout(() => setSyncStatus("idle"), 1600);
   };
 
-  const removeItem = async (productId: string) => {
-    setLibrary(prev => prev.filter(x => x.productId !== productId));
-    const res = await removeLibraryItem(productId);
-    setSyncStatus(res.ok ? "ok" : "local");
+  const removeItem = (productId: string) => {
+    ctxRemoveItem(productId);
+    setSyncStatus("ok");
     window.setTimeout(() => setSyncStatus("idle"), 1600);
   };
 
-  const updateRate = async (productId: string, myRate: number) => {
+  const updateRate = (productId: string, myRate: number) => {
     const clean = Math.max(0, Number.isFinite(myRate) ? myRate : 0);
-    setLibrary(prev => prev.map(x => x.productId === productId ? { ...x, myRate: clean } : x));
-    const target = library.find(x => x.productId === productId);
-    if (target) {
-      const res = await upsertLibraryItem({ ...target, myRate: clean });
-      setSyncStatus(res.ok ? "ok" : "local");
-      window.setTimeout(() => setSyncStatus("idle"), 1600);
-    }
+    ctxUpdateItem(productId, { myRate: clean });
+    setSyncStatus("ok");
+    window.setTimeout(() => setSyncStatus("idle"), 1600);
   };
 
+  // Simpro sync is a placeholder until the integration ships (§10). Surface a
+  // toast so users know the button is wired but the connector isn't live yet.
   const triggerSync = () => {
-    if (syncing) return;
-    setSyncing(true);
-    setSyncPct(0);
-    const iv = window.setInterval(() => {
-      setSyncPct(p => {
-        if (p >= 100) {
-          window.clearInterval(iv);
-          finishSync();
-          return 100;
-        }
-        return Math.min(100, p + 4);
-      });
-    }, 60);
+    setSyncToastMsg("Simpro sync not yet connected — catalogue is up to date");
+    setSyncStatus("toast");
+    window.setTimeout(() => setSyncStatus("idle"), 2800);
   };
 
-  const finishSync = async () => {
-    const nowIso = new Date().toISOString();
-    const entry: Omit<SyncLogEntry, "id"> = {
-      ts: nowIso,
-      source: "TLE Electrical",
-      productsCount: WHOLESALER_CATALOGUE.length,
-      status: "success",
-      note: `Synced ${WHOLESALER_CATALOGUE.length} trade prices. User rates preserved.`,
+  const addCustomItem = (input: {
+    name: string;
+    category: RateCategory;
+    unit: "EA" | "LM" | "COIL" | "HR" | "LS";
+    trade: number;
+    marginPct: number;
+  }) => {
+    const sell = Number((input.trade * (1 + input.marginPct / 100)).toFixed(2));
+    const id = `CUSTOM-${Date.now().toString(36).toUpperCase()}`;
+    const item: LibraryItem = {
+      productId: id,
+      code: id.replace("CUSTOM-", ""),
+      name: input.name,
+      brand: "Custom",
+      category: input.category,
+      trade: input.trade,
+      rrp: sell,
+      unit: (["EA", "LM", "COIL"].includes(input.unit) ? input.unit : "EA") as LibraryItem["unit"],
+      myRate: sell,
+      custom: true,
+      marginPct: input.marginPct,
     };
-    setHistory(prev => [{ ...entry, id: `local-${Date.now()}` }, ...prev]);
-    setLastSync(nowIso);
-    setSyncing(false);
-    setSyncPct(0);
-    const res = await appendSyncLog({ source: entry.source, productsCount: entry.productsCount, status: entry.status, note: entry.note });
-    setSyncStatus(res.ok ? "ok" : "local");
-    window.setTimeout(() => setSyncStatus("idle"), 2200);
+    ctxAddItem(item);
+    setShowCustom(false);
+    setSyncStatus("ok");
+    window.setTimeout(() => setSyncStatus("idle"), 1600);
   };
 
   return (
@@ -211,28 +208,27 @@ export default function RateLibrary({ onBack }: RateLibraryProps) {
           </div>
         </div>
         <div style={{ fontSize: 18, fontWeight: 800, color: C.text, letterSpacing: "-0.02em" }}>Rate Library</div>
-        <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>TLE Electrical Wholesaler · B2B trade pricing</div>
+        <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>Wholesaler catalogue · custom rates · Simpro integration pending</div>
 
-        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          <button onClick={triggerSync} disabled={syncing}
+        <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+          <button onClick={triggerSync}
             style={{
-              flex: 2, background: syncing ? C.card : C.blue, border: `1px solid ${C.blue}`,
+              flex: 2, minWidth: 160,
+              background: C.blue, border: `1px solid ${C.blue}`,
               color: "#fff", fontSize: 13, fontWeight: 700, padding: "10px", borderRadius: 10,
-              cursor: syncing ? "progress" : "pointer", opacity: syncing ? 0.8 : 1,
+              cursor: "pointer",
             }}>
-            {syncing ? `Syncing… ${syncPct}%` : "🔄 Sync TLE Prices"}
+            🔄 Sync (Simpro)
           </button>
-          <button
-            style={{ flex: 1, background: "none", border: `1px solid ${C.border}`, color: C.muted, fontSize: 12, padding: "10px", borderRadius: 10, cursor: "pointer" }}
-            title="Multi-wholesaler support coming soon">
-            ＋ Wholesaler
+          <button onClick={() => setShowCustom(true)}
+            style={{
+              flex: 1, minWidth: 140,
+              background: "none", border: `1px solid ${C.border}`,
+              color: C.text, fontSize: 12, fontWeight: 700, padding: "10px", borderRadius: 10, cursor: "pointer",
+            }}>
+            ＋ Add Custom Rate
           </button>
         </div>
-        {syncing && (
-          <div style={{ height: 4, background: C.border, borderRadius: 2, marginTop: 8, overflow: "hidden" }}>
-            <div style={{ width: `${syncPct}%`, height: "100%", background: C.blue, transition: "width 0.06s linear" }} />
-          </div>
-        )}
       </div>
 
       {/* Tabs */}
@@ -261,9 +257,13 @@ export default function RateLibrary({ onBack }: RateLibraryProps) {
         {syncStatus !== "idle" && (
           <div style={{
             fontSize: 11, marginTop: 8, textAlign: "center" as const,
-            color: syncStatus === "ok" ? C.green : C.amber,
+            color: syncStatus === "ok" ? C.green : syncStatus === "toast" ? C.amber : C.amber,
           }}>
-            {syncStatus === "ok" ? "Saved to rate library" : "Saved locally · cloud sync unavailable"}
+            {syncStatus === "ok"
+              ? "Saved to rate library"
+              : syncStatus === "toast"
+                ? syncToastMsg
+                : "Saved locally · cloud sync unavailable"}
           </div>
         )}
       </div>
@@ -285,6 +285,11 @@ export default function RateLibrary({ onBack }: RateLibraryProps) {
           <HistoryTab entries={history} />
         )}
       </div>
+
+      {/* Custom Rate modal */}
+      {showCustom && (
+        <CustomRateModal onClose={() => setShowCustom(false)} onSave={addCustomItem} />
+      )}
 
       {/* Bottom nav */}
       <div style={{
@@ -565,6 +570,139 @@ function CategoryTag({ category }: { category: RateCategory }) {
       fontSize: 9, fontWeight: 800, padding: "2px 6px", borderRadius: 4,
       background: `${c}22`, color: c, letterSpacing: "0.3px", textTransform: "uppercase" as const,
     }}>{category}</span>
+  );
+}
+
+// ─── Custom Rate Modal ──────────────────────────
+function CustomRateModal({
+  onClose,
+  onSave,
+}: {
+  onClose: () => void;
+  onSave: (input: {
+    name: string;
+    category: RateCategory;
+    unit: "EA" | "LM" | "COIL" | "HR" | "LS";
+    trade: number;
+    marginPct: number;
+  }) => void;
+}) {
+  const [name, setName] = useState("");
+  const [category, setCategory] = useState<RateCategory>("Power Points");
+  const [unit, setUnit] = useState<"EA" | "LM" | "COIL" | "HR" | "LS">("EA");
+  const [trade, setTrade] = useState<number>(0);
+  const [marginPct, setMarginPct] = useState<number>(25);
+
+  const sell = Number((Math.max(0, trade) * (1 + Math.max(0, marginPct) / 100)).toFixed(2));
+  const valid = name.trim().length > 0 && trade > 0;
+
+  const inputStyle: React.CSSProperties = {
+    width: "100%", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8,
+    padding: "8px 10px", color: C.text, fontSize: 13, outline: "none", boxSizing: "border-box" as const,
+  };
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed" as const, inset: 0, zIndex: 300, background: "rgba(0,0,0,0.72)",
+        display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+      }}>
+      <div onClick={e => e.stopPropagation()}
+        style={{
+          background: C.navy, border: `1px solid ${C.border}`, borderRadius: 20,
+          padding: 22, maxWidth: 420, width: "100%",
+        }}>
+        <div style={{ fontSize: 16, fontWeight: 700, color: C.text, marginBottom: 14 }}>
+          Add Custom Rate
+        </div>
+        <div style={{ fontSize: 12, color: C.muted, marginBottom: 14, lineHeight: 1.55 }}>
+          Enter a line item you supply directly (e.g. a bespoke fitting or sub-contractor
+          day rate). It will be added to your library and available as a line item
+          in any estimate.
+        </div>
+
+        <Field label="NAME">
+          <input value={name} onChange={e => setName(e.target.value)}
+            placeholder="e.g. Architectural pendant — imported"
+            style={inputStyle} />
+        </Field>
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <Field label="CATEGORY">
+            <select value={category} onChange={e => setCategory(e.target.value as RateCategory)} style={inputStyle}>
+              {RATE_CATEGORIES.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="UNIT">
+            <select value={unit} onChange={e => setUnit(e.target.value as typeof unit)} style={inputStyle}>
+              <option value="EA">EA</option>
+              <option value="LM">LM</option>
+              <option value="COIL">COIL</option>
+              <option value="HR">HR</option>
+              <option value="LS">LS</option>
+            </select>
+          </Field>
+        </div>
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <Field label="TRADE PRICE ($)">
+            <input type="number" min={0} step={0.01} value={trade}
+              onChange={e => setTrade(Number(e.target.value) || 0)}
+              style={inputStyle} />
+          </Field>
+          <Field label="MARGIN (%)">
+            <input type="number" min={0} step={1} value={marginPct}
+              onChange={e => setMarginPct(Number(e.target.value) || 0)}
+              style={inputStyle} />
+          </Field>
+        </div>
+
+        <div style={{
+          background: `${C.green}14`, border: `1px solid ${C.green}44`,
+          borderRadius: 10, padding: "10px 12px", fontSize: 13, color: C.green, fontWeight: 700,
+          display: "flex", justifyContent: "space-between",
+        }}>
+          <span>Sell price</span>
+          <span>${sell.toFixed(2)}</span>
+        </div>
+
+        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+          <button onClick={onClose}
+            style={{ flex: 1, background: "none", border: `1px solid ${C.border}`, color: C.muted,
+              fontSize: 13, padding: "10px", borderRadius: 10, cursor: "pointer" }}>
+            Cancel
+          </button>
+          <button
+            disabled={!valid}
+            onClick={() => valid && onSave({ name: name.trim(), category, unit, trade, marginPct })}
+            style={{
+              flex: 2, background: valid ? C.blue : C.card,
+              color: valid ? "#fff" : C.muted, border: "none",
+              fontSize: 13, fontWeight: 700, padding: "10px", borderRadius: 10,
+              cursor: valid ? "pointer" : "not-allowed",
+            }}>
+            Add to Library
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div style={{ marginBottom: 10, flex: 1 }}>
+      <div style={{
+        fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: 0.6,
+        marginBottom: 4, textTransform: "uppercase" as const,
+      }}>
+        {label}
+      </div>
+      {children}
+    </div>
   );
 }
 
