@@ -6,25 +6,34 @@ import {
   type ProjectStatus,
 } from "../contexts/ProjectContext";
 
+/**
+ * ProjectsScreen (light theme — renders inside AppShell).
+ * Content-only: the page title, subtitle, and "+ New Project" button
+ * are delivered via AppShell's topbarActions slot from App.tsx.
+ */
+
 const C = {
-  bg: "#0A1628",
-  navy: "#0F1E35",
-  card: "#132240",
-  blue: "#1D6EFD",
-  green: "#00C48C",
-  amber: "#FFB020",
-  red: "#FF4D4D",
-  text: "#EDF2FF",
-  muted: "#5C7A9E",
-  border: "#1A3358",
-  dim: "#8BA4C4",
+  card:    "#FFFFFF",
+  border:  "#E2E8F0",
+  bgLight: "#F0F4F8",
+  dark:    "#1E293B",
+  grayMd:  "#64748B",
+  grayLt:  "#94A3B8",
+  blue:    "#1D6EFD",
+  green:   "#10B981",
+  amber:   "#F59E0B",
+  red:     "#EF4444",
+  purple:  "#8B5CF6",
 };
 
 type Filter = "all" | ProjectStatus;
 
 interface Props {
-  onBack: () => void;
+  onBack?: () => void;
   onOpenProject: (project: Project) => void;
+  /** External trigger for the "New Project" modal — so the topbar button in AppShell can open it. */
+  openCreate?: boolean;
+  onCloseCreate?: () => void;
 }
 
 const fmtDate = (iso: string) => {
@@ -39,11 +48,32 @@ const fmtDate = (iso: string) => {
   }
 };
 
-const ProjectsScreen: React.FC<Props> = ({ onBack, onOpenProject }) => {
+function statusAccent(status: string): string {
+  switch (status) {
+    case "Active":  return C.blue;
+    case "Won":     return C.green;
+    case "Lost":    return C.red;
+    case "On Hold": return C.amber;
+    default:        return C.purple;
+  }
+}
+
+const ProjectsScreen: React.FC<Props> = ({
+  onOpenProject,
+  openCreate,
+  onCloseCreate,
+}) => {
   const { projects, createProject } = useProjects();
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
   const [showCreate, setShowCreate] = useState(false);
+
+  // Allow parent (AppShell topbar) to open the create modal via a prop.
+  const createOpen = openCreate || showCreate;
+  const closeCreate = () => {
+    setShowCreate(false);
+    onCloseCreate?.();
+  };
 
   const filters: Filter[] = ["all", "Active", "Won", "Lost", "On Hold"];
 
@@ -71,79 +101,9 @@ const ProjectsScreen: React.FC<Props> = ({ onBack, onOpenProject }) => {
   };
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: C.bg,
-        display: "flex",
-        flexDirection: "column",
-        color: C.text,
-      }}
-    >
-      {/* Header */}
-      <div
-        style={{
-          background: C.navy,
-          borderBottom: `1px solid ${C.border}`,
-          padding: "16px 20px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-          flexWrap: "wrap",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <button
-            onClick={onBack}
-            style={{
-              background: "transparent",
-              border: `1px solid ${C.border}`,
-              color: C.muted,
-              fontSize: 13,
-              padding: "6px 10px",
-              borderRadius: 8,
-              cursor: "pointer",
-            }}
-          >
-            ← Back
-          </button>
-          <div>
-            <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.02em" }}>Projects</div>
-            <div style={{ fontSize: 12, color: C.muted }}>
-              {projects.length} total · {counts.Active} active
-            </div>
-          </div>
-        </div>
-        <button
-          onClick={() => setShowCreate(true)}
-          style={{
-            background: C.blue,
-            color: "#fff",
-            border: "none",
-            padding: "10px 16px",
-            fontSize: 13,
-            fontWeight: 700,
-            borderRadius: 10,
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-          }}
-        >
-          <span style={{ fontSize: 16 }}>＋</span> New Project
-        </button>
-      </div>
-
-      {/* Controls */}
-      <div
-        style={{
-          padding: "16px 20px 0",
-          display: "flex",
-          flexDirection: "column",
-          gap: 12,
-        }}
-      >
+    <div>
+      {/* Controls row: search + filter pills */}
+      <div style={{ marginBottom: 18 }}>
         <input
           value={query}
           onChange={e => setQuery(e.target.value)}
@@ -152,23 +112,16 @@ const ProjectsScreen: React.FC<Props> = ({ onBack, onOpenProject }) => {
             width: "100%",
             background: C.card,
             border: `1px solid ${C.border}`,
-            borderRadius: 10,
-            padding: "10px 14px",
-            color: C.text,
-            fontSize: 14,
+            borderRadius: 8,
+            padding: "9px 12px",
+            color: C.dark,
+            fontSize: 13,
             outline: "none",
+            marginBottom: 12,
           }}
         />
-        <div
-          className="filter-tabs"
-          style={{
-            display: "flex",
-            gap: 8,
-            overflowX: "auto",
-            scrollbarWidth: "none",
-            paddingBottom: 4,
-          }}
-        >
+
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {filters.map(f => {
             const isActive = filter === f;
             return (
@@ -178,14 +131,14 @@ const ProjectsScreen: React.FC<Props> = ({ onBack, onOpenProject }) => {
                 style={{
                   flexShrink: 0,
                   background: isActive ? C.blue : C.card,
-                  border: `1px solid ${isActive ? C.blue : C.border}`,
-                  color: isActive ? "#fff" : C.muted,
+                  border: `1.5px solid ${isActive ? C.blue : C.border}`,
+                  color: isActive ? "#fff" : C.grayMd,
                   fontSize: 12,
                   fontWeight: 600,
                   padding: "6px 14px",
                   borderRadius: 20,
                   cursor: "pointer",
-                  textTransform: "capitalize",
+                  transition: "all 0.15s",
                 }}
               >
                 {f === "all" ? `All (${counts.all})` : `${f} (${counts[f]})`}
@@ -196,64 +149,61 @@ const ProjectsScreen: React.FC<Props> = ({ onBack, onOpenProject }) => {
       </div>
 
       {/* Grid */}
-      <div style={{ padding: "18px 20px 40px", flex: 1 }}>
-        {visible.length === 0 ? (
-          <div
-            style={{
-              marginTop: 40,
-              textAlign: "center",
-              background: C.card,
-              border: `1px dashed ${C.border}`,
-              borderRadius: 16,
-              padding: "48px 20px",
-            }}
-          >
-            <div style={{ fontSize: 40, marginBottom: 10 }}>📁</div>
-            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>
-              {projects.length === 0
-                ? "No projects yet — create your first one"
-                : "No projects match your filter"}
-            </div>
-            {projects.length === 0 && (
-              <button
-                onClick={() => setShowCreate(true)}
-                style={{
-                  marginTop: 14,
-                  background: C.blue,
-                  color: "#fff",
-                  border: "none",
-                  padding: "10px 18px",
-                  fontSize: 13,
-                  fontWeight: 700,
-                  borderRadius: 10,
-                  cursor: "pointer",
-                }}
-              >
-                ＋ New Project
-              </button>
-            )}
+      {visible.length === 0 ? (
+        <div
+          style={{
+            textAlign: "center",
+            background: C.card,
+            border: `1px dashed ${C.border}`,
+            borderRadius: 12,
+            padding: "56px 20px",
+          }}
+        >
+          <div style={{ fontSize: 40, marginBottom: 10 }}>📁</div>
+          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4, color: C.dark }}>
+            {projects.length === 0
+              ? "No projects yet — create your first one"
+              : "No projects match your filter"}
           </div>
-        ) : (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
-              gap: 12,
-            }}
-          >
-            {visible.map(p => (
-              <ProjectCard key={p.id} project={p} onClick={() => onOpenProject(p)} />
-            ))}
-          </div>
-        )}
-      </div>
+          {projects.length === 0 && (
+            <button
+              onClick={() => setShowCreate(true)}
+              style={{
+                marginTop: 14,
+                background: C.blue,
+                color: "#fff",
+                border: "none",
+                padding: "10px 18px",
+                fontSize: 13,
+                fontWeight: 700,
+                borderRadius: 8,
+                cursor: "pointer",
+              }}
+            >
+              ＋ New Project
+            </button>
+          )}
+        </div>
+      ) : (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+            gap: 16,
+          }}
+        >
+          {visible.map(p => (
+            <ProjectCard key={p.id} project={p} onClick={() => onOpenProject(p)} />
+          ))}
+        </div>
+      )}
 
-      {showCreate && (
+      {createOpen && (
         <CreateProjectModal
-          onClose={() => setShowCreate(false)}
+          onClose={closeCreate}
           onCreate={input => {
             const created = createProject(input);
-            setShowCreate(false);
+            closeCreate();
             onOpenProject(created);
           }}
         />
@@ -264,6 +214,9 @@ const ProjectsScreen: React.FC<Props> = ({ onBack, onOpenProject }) => {
 
 const ProjectCard: React.FC<{ project: Project; onClick: () => void }> = ({ project, onClick }) => {
   const palette = statusPalette(project.status);
+  const accent = statusAccent(project.status);
+  const latestEstimate = project.estimates[project.estimates.length - 1];
+
   return (
     <button
       onClick={onClick}
@@ -271,56 +224,88 @@ const ProjectCard: React.FC<{ project: Project; onClick: () => void }> = ({ proj
         textAlign: "left",
         background: C.card,
         border: `1px solid ${C.border}`,
-        borderRadius: 14,
-        padding: 16,
+        borderRadius: 12,
+        padding: 0,
         cursor: "pointer",
-        color: C.text,
-        display: "flex",
-        flexDirection: "column",
-        gap: 10,
+        color: C.dark,
+        overflow: "hidden",
+        transition: "transform 0.15s, box-shadow 0.15s",
+      }}
+      onMouseEnter={e => {
+        e.currentTarget.style.transform = "translateY(-2px)";
+        e.currentTarget.style.boxShadow = "0 6px 24px rgba(0,0,0,0.1)";
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.transform = "translateY(0)";
+        e.currentTarget.style.boxShadow = "none";
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>{project.name}</div>
-          <div style={{ fontSize: 12, color: C.muted }}>
-            {project.clientName || "No client"}
+      <div style={{ height: 4, background: accent }} />
+      <div style={{ padding: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 8 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4, color: C.dark, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {project.name}
+            </div>
+            <div style={{ fontSize: 11, color: C.grayMd, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {project.clientName || "No client"}
+            </div>
           </div>
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              padding: "3px 9px",
+              borderRadius: 20,
+              background: `${palette.bg}18`,
+              color: palette.bg,
+              alignSelf: "flex-start",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {palette.label}
+          </div>
+        </div>
+        <div style={{ fontSize: 11, color: C.grayLt, minHeight: 14, marginBottom: 10 }}>
+          {project.address || "No address"}
         </div>
         <div
           style={{
-            fontSize: 11,
-            fontWeight: 700,
-            padding: "3px 10px",
-            borderRadius: 20,
-            background: palette.bg,
-            color: palette.fg,
-            alignSelf: "flex-start",
-            whiteSpace: "nowrap",
+            display: "flex",
+            gap: 12,
+            paddingTop: 12,
+            borderTop: `1px solid ${C.border}`,
           }}
         >
-          {palette.label}
+          <Stat val={String(project.scans.length)} label="Versions" />
+          <Stat
+            val={latestEstimate ? String(latestEstimate.lineItems.length) : "—"}
+            label="Last Estimate"
+          />
+          <Stat val={fmtDate(project.updatedAt)} label="Updated" />
         </div>
-      </div>
-      <div style={{ fontSize: 12, color: C.dim, minHeight: 16 }}>
-        {project.address || "No address"}
-      </div>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          paddingTop: 10,
-          borderTop: `1px solid ${C.border}`,
-          fontSize: 11,
-          color: C.muted,
-        }}
-      >
-        <div>{project.estimates.length} estimates</div>
-        <div>Updated {fmtDate(project.updatedAt)}</div>
       </div>
     </button>
   );
 };
+
+const Stat: React.FC<{ val: string; label: string }> = ({ val, label }) => (
+  <div style={{ textAlign: "center", flex: 1, minWidth: 0 }}>
+    <div
+      style={{
+        fontSize: 13,
+        fontWeight: 700,
+        color: C.dark,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {val}
+    </div>
+    <div style={{ fontSize: 10, color: C.grayMd, marginTop: 2 }}>{label}</div>
+  </div>
+);
 
 const CreateProjectModal: React.FC<{
   onClose: () => void;
@@ -345,28 +330,27 @@ const CreateProjectModal: React.FC<{
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(4,8,20,0.75)",
+        background: "rgba(15,23,42,0.5)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         padding: 20,
-        zIndex: 50,
+        zIndex: 500,
       }}
     >
       <div
         style={{
-          background: C.navy,
+          background: C.card,
           border: `1px solid ${C.border}`,
-          borderRadius: 16,
-          padding: 20,
+          borderRadius: 12,
+          padding: 24,
           width: "100%",
-          maxWidth: 420,
-          color: C.text,
+          maxWidth: 440,
+          color: C.dark,
+          boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
         }}
       >
-        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>
-          New Project
-        </div>
+        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 14 }}>New Project</div>
 
         <Field label="Project name *">
           <input
@@ -406,17 +390,18 @@ const CreateProjectModal: React.FC<{
           </select>
         </Field>
 
-        <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
+        <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
           <button
             onClick={onClose}
             style={{
               flex: 1,
               background: "transparent",
-              color: C.muted,
+              color: C.grayMd,
               border: `1px solid ${C.border}`,
-              borderRadius: 10,
+              borderRadius: 8,
               padding: "10px 14px",
               fontSize: 13,
+              fontWeight: 600,
               cursor: "pointer",
             }}
           >
@@ -427,10 +412,10 @@ const CreateProjectModal: React.FC<{
             onClick={() => valid && onCreate({ name, clientName, address, status })}
             style={{
               flex: 1,
-              background: valid ? C.blue : C.card,
-              color: valid ? "#fff" : C.muted,
+              background: valid ? C.blue : C.border,
+              color: valid ? "#fff" : C.grayMd,
               border: "none",
-              borderRadius: 10,
+              borderRadius: 8,
               padding: "10px 14px",
               fontSize: 13,
               fontWeight: 700,
@@ -447,19 +432,28 @@ const CreateProjectModal: React.FC<{
 
 const inputStyle: React.CSSProperties = {
   width: "100%",
-  background: C.card,
+  background: "#FFFFFF",
   border: `1px solid ${C.border}`,
-  borderRadius: 10,
-  padding: "10px 12px",
-  color: C.text,
-  fontSize: 14,
+  borderRadius: 8,
+  padding: "9px 12px",
+  color: C.dark,
+  fontSize: 13,
   outline: "none",
 };
 
 const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
-  <div style={{ marginBottom: 10 }}>
-    <div style={{ fontSize: 11, color: C.muted, marginBottom: 4, fontWeight: 700, letterSpacing: 0.4 }}>
-      {label.toUpperCase()}
+  <div style={{ marginBottom: 12 }}>
+    <div
+      style={{
+        fontSize: 11,
+        color: C.grayMd,
+        marginBottom: 6,
+        fontWeight: 700,
+        letterSpacing: 0.4,
+        textTransform: "uppercase",
+      }}
+    >
+      {label}
     </div>
     {children}
   </div>

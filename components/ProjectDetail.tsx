@@ -23,18 +23,19 @@ import {
   type DetectedComponent,
 } from "../analyze_pdf";
 
+// Light-theme palette (renders inside AppShell's light content area).
 const C = {
-  bg: "#0A1628",
-  navy: "#0F1E35",
-  card: "#132240",
+  bg: "#F0F4F8",
+  navy: "#0D1B2A",
+  card: "#FFFFFF",
   blue: "#1D6EFD",
-  green: "#00C48C",
-  amber: "#FFB020",
-  red: "#FF4D4D",
-  text: "#EDF2FF",
-  muted: "#5C7A9E",
-  border: "#1A3358",
-  dim: "#8BA4C4",
+  green: "#10B981",
+  amber: "#F59E0B",
+  red: "#EF4444",
+  text: "#1E293B",
+  muted: "#64748B",
+  border: "#E2E8F0",
+  dim: "#94A3B8",
 };
 
 type Tab = "overview" | "upload" | "estimate" | "schedule" | "approvals" | "variations";
@@ -90,7 +91,7 @@ const ProjectDetail: React.FC<Props> = ({ projectId, onBack }) => {
 
   if (!project) {
     return (
-      <div style={{ padding: 40, background: C.bg, minHeight: "100vh", color: C.muted }}>
+      <div style={{ padding: 40, color: C.muted }}>
         Project not found.
         <button
           onClick={onBack}
@@ -121,62 +122,23 @@ const ProjectDetail: React.FC<Props> = ({ projectId, onBack }) => {
   const latestScan = project.scans[project.scans.length - 1];
 
   return (
-    <div style={{ minHeight: "100vh", background: C.bg, color: C.text }}>
-      {/* Top bar */}
+    <div>
+      {/* Project name + status header (sits inside AppShell's light content) */}
       <div
         style={{
-          background: C.navy,
-          borderBottom: `1px solid ${C.border}`,
-          padding: "14px 20px",
+          background: C.card,
+          border: `1px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "16px 20px",
+          marginBottom: 16,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          flexWrap: "wrap",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 12,
-            flexWrap: "wrap",
-          }}
-        >
-          <button
-            onClick={onBack}
-            style={{
-              background: "transparent",
-              border: `1px solid ${C.border}`,
-              color: C.muted,
-              padding: "6px 12px",
-              borderRadius: 8,
-              cursor: "pointer",
-              fontSize: 13,
-            }}
-          >
-            ← Projects
-          </button>
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <select
-              value={project.status}
-              onChange={e => setStatus(e.target.value as ProjectStatus)}
-              style={{
-                background: palette.bg,
-                color: palette.fg,
-                border: "none",
-                padding: "5px 10px",
-                borderRadius: 20,
-                fontSize: 12,
-                fontWeight: 700,
-                cursor: "pointer",
-              }}
-            >
-              {["Active", "Won", "Lost", "On Hold"].map(s => (
-                <option key={s} value={s} style={{ color: "#000" }}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-        <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
           {editingName ? (
             <input
               autoFocus
@@ -192,12 +154,12 @@ const ProjectDetail: React.FC<Props> = ({ projectId, onBack }) => {
               }}
               style={{
                 flex: 1,
-                background: C.card,
+                background: "#fff",
                 color: C.text,
                 border: `1px solid ${C.border}`,
-                padding: "8px 12px",
+                padding: "6px 10px",
                 borderRadius: 8,
-                fontSize: 20,
+                fontSize: 18,
                 fontWeight: 700,
               }}
             />
@@ -209,29 +171,53 @@ const ProjectDetail: React.FC<Props> = ({ projectId, onBack }) => {
               }}
               title="Click to rename"
               style={{
-                fontSize: 22,
-                fontWeight: 800,
-                letterSpacing: "-0.02em",
+                fontSize: 20,
+                fontWeight: 700,
+                letterSpacing: "-0.01em",
                 cursor: "pointer",
+                color: C.text,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
               }}
             >
               {project.name}
-              <span style={{ fontSize: 12, color: C.muted, marginLeft: 8, fontWeight: 400 }}>
-                ✎
-              </span>
+              <span style={{ fontSize: 12, color: C.dim, fontWeight: 400 }}>✎</span>
             </div>
           )}
         </div>
+        <select
+          value={project.status}
+          onChange={e => setStatus(e.target.value as ProjectStatus)}
+          style={{
+            background: palette.bg,
+            color: palette.fg,
+            border: "none",
+            padding: "6px 12px",
+            borderRadius: 20,
+            fontSize: 12,
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          {["Active", "Won", "Lost", "On Hold"].map(s => (
+            <option key={s} value={s} style={{ color: "#000" }}>
+              {s}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* Tabs */}
       <div
         style={{
-          background: C.navy,
-          borderBottom: `1px solid ${C.border}`,
+          background: C.card,
+          border: `1px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "0 8px",
+          marginBottom: 16,
           display: "flex",
-          gap: 4,
-          padding: "0 20px",
+          gap: 0,
           overflowX: "auto",
           scrollbarWidth: "none",
         }}
@@ -253,11 +239,12 @@ const ProjectDetail: React.FC<Props> = ({ projectId, onBack }) => {
               background: "transparent",
               border: "none",
               color: tab === id ? C.blue : C.muted,
-              padding: "12px 14px",
+              padding: "12px 18px",
               fontSize: 13,
-              fontWeight: 700,
+              fontWeight: 600,
               cursor: "pointer",
               borderBottom: `2px solid ${tab === id ? C.blue : "transparent"}`,
+              whiteSpace: "nowrap",
             }}
           >
             {label}
@@ -266,7 +253,7 @@ const ProjectDetail: React.FC<Props> = ({ projectId, onBack }) => {
       </div>
 
       {/* Tab content */}
-      <div style={{ padding: "20px 20px 40px" }}>
+      <div>
         {tab === "overview" && (
           <OverviewTab project={project} latestEstimate={latestEstimate} latestScan={latestScan} />
         )}
@@ -812,7 +799,7 @@ const UploadTab: React.FC<{
               if (f) handleFile(f);
             }}
             style={{
-              background: drag ? "#0D2347" : C.card,
+              background: drag ? "rgba(29,110,253,0.04)" : C.card,
               border: `2px dashed ${drag ? C.blue : C.border}`,
               borderRadius: 18,
               padding: "40px 20px",

@@ -7,6 +7,7 @@ export type AppRoute =
   | { name: 'dashboard' }
   | { name: 'projects' }
   | { name: 'project-detail'; id: string }
+  | { name: 'approvals' }
   | { name: 'rate-library' }
   | { name: 'reports' }
   | { name: 'email-inbox' };
@@ -29,6 +30,7 @@ const RouterContext = createContext<RouterContextType | undefined>(undefined);
 function routeToHash(r: AppRoute): string {
   if (r.name === 'dashboard') return '#/';
   if (r.name === 'projects') return '#/projects';
+  if (r.name === 'approvals') return '#/approvals';
   if (r.name === 'rate-library') return '#/rate-library';
   if (r.name === 'reports') return '#/reports';
   if (r.name === 'email-inbox') return '#/email-inbox';
@@ -43,6 +45,7 @@ function hashToRoute(hash: string): AppRoute {
     if (parts[1]) return { name: 'project-detail', id: parts[1] };
     return { name: 'projects' };
   }
+  if (parts[0] === 'approvals') return { name: 'approvals' };
   if (parts[0] === 'rate-library') return { name: 'rate-library' };
   if (parts[0] === 'reports') return { name: 'reports' };
   if (parts[0] === 'email-inbox') return { name: 'email-inbox' };

@@ -16,8 +16,10 @@ import TenantSetup from "./components/TenantSetup";
 import DashboardScreen from "./components/DashboardScreen";
 import ProjectsScreen from "./components/ProjectsScreen";
 import ProjectDetail from "./components/ProjectDetail";
+import AppShell from "./components/AppShell";
 import { useTenant } from "./contexts/TenantContext";
 import { useAppRouter } from "./components/Router";
+import { useProjects, type Project as CtxProject } from "./contexts/ProjectContext";
 import type { RiskFlag as DetectionRiskFlag } from "./analyze_pdf";
 
 // ─── Design tokens ─────────────────────────────
@@ -174,6 +176,17 @@ const CSS = `
 
 const fmt = (n: number) => `$${n.toLocaleString("en-AU")}`;
 const fmtK = (n: number) => n >= 1000 ? `$${(n/1000).toFixed(1)}k` : fmt(n);
+
+// Greeting helpers used by AppShell topbar on Dashboard.
+function greetingFor(d: Date): string {
+  const h = d.getHours();
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  return "Good evening";
+}
+function firstNameOf(fullName: string): string {
+  return fullName.trim().split(/\s+/)[0] || "there";
+}
 const toLineItems = (components: DetectedComponent[]): LineItem[] =>
   components.map((c, i) => ({
     id: `li-${i}`, description: c.catalogue_item_name ?? LABELS[c.type] ?? c.type,
@@ -864,10 +877,84 @@ function EstimateEditor({ result, fileName, onBack }: {
   );
 }
 
+// ─── Approvals index (light theme, renders inside AppShell) ─────
+// Lists projects that have estimates so the user can drill into a
+// project's Approvals tab. Keeps the top-level Approvals nav useful
+// without duplicating the full approval workflow screen.
+function ApprovalsIndex({ projects, onOpenProject }: {
+  projects: CtxProject[];
+  onOpenProject: (id: string) => void;
+}) {
+  const withEstimates = projects.filter(p => p.estimates.length > 0);
+  if (withEstimates.length === 0) {
+    return (
+      <div style={{
+        background: "#FFFFFF", border: "1px dashed #E2E8F0", borderRadius: 12,
+        padding: "48px 20px", textAlign: "center", color: "#64748B",
+      }}>
+        <div style={{ fontSize: 40, marginBottom: 10 }}>✅</div>
+        <div style={{ fontSize: 15, fontWeight: 700, color: "#1E293B", marginBottom: 4 }}>No approvals yet</div>
+        <div style={{ fontSize: 12 }}>Create an estimate inside a project to start the approval workflow.</div>
+      </div>
+    );
+  }
+  const statusLabel = (s?: string) => {
+    if (s === "approved") return { label: "Approved", color: "#10B981" };
+    if (s === "rejected") return { label: "Rejected", color: "#EF4444" };
+    return { label: "Pending", color: "#F59E0B" };
+  };
+  return (
+    <div style={{
+      background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 12, overflow: "hidden",
+    }}>
+      <div style={{
+        display: "grid", gridTemplateColumns: "2fr 1.5fr 1fr 1fr auto",
+        padding: "10px 16px", fontSize: 11, fontWeight: 700, color: "#64748B",
+        letterSpacing: 0.6, textTransform: "uppercase", borderBottom: "1px solid #E2E8F0",
+        background: "#F0F4F8",
+      }}>
+        <div>Project</div><div>Client</div><div>Latest Estimate</div><div>Approval</div><div />
+      </div>
+      {withEstimates.map((p, i) => {
+        const latest = p.estimates[p.estimates.length - 1];
+        const s = statusLabel(p.approvalStatus);
+        return (
+          <div key={p.id} style={{
+            display: "grid", gridTemplateColumns: "2fr 1.5fr 1fr 1fr auto",
+            padding: "12px 16px", alignItems: "center", fontSize: 13, gap: 8,
+            borderBottom: i < withEstimates.length - 1 ? "1px solid #E2E8F0" : "none",
+          }}>
+            <div style={{ fontWeight: 600, color: "#1E293B" }}>{p.name}</div>
+            <div style={{ color: "#64748B" }}>{p.clientName || "—"}</div>
+            <div style={{ color: "#1E293B", fontWeight: 600 }}>{latest.number}</div>
+            <div>
+              <span style={{
+                fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 20,
+                background: `${s.color}18`, color: s.color,
+              }}>{s.label}</span>
+            </div>
+            <div>
+              <button
+                onClick={() => onOpenProject(p.id)}
+                style={{
+                  background: "transparent", border: "1px solid #1D6EFD",
+                  color: "#1D6EFD", padding: "5px 12px", fontSize: 12, fontWeight: 700,
+                  borderRadius: 7, cursor: "pointer",
+                }}
+              >Review</button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Root App ───────────────────────────────────
 export default function App() {
   const { route, navigate } = useAppRouter();
   const { tenant } = useTenant();
+  const { projects: ctxProjects } = useProjects();
   // `screen` is the legacy screen state used for upload/scanning/results/variation
   // etc. Keep it but let the app route drive dashboard/projects/project-detail.
   const [screen, setScreen] = useState<Screen>("dashboard");
@@ -876,6 +963,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>(MOCK_PROJECTS);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [showCreateProject, setShowCreateProject] = useState(false);
   const [variationPair, setVariationPair] = useState<{
     projectName: string;
     previous: VariationEstimateLike;
@@ -1018,43 +1106,152 @@ export default function App() {
     <>
       <style>{CSS}</style>
 
-      {/* New app routes (ProjectContext-backed) */}
+      {/* New app routes (ProjectContext-backed) — wrapped in AppShell */}
       {!legacyActive && route.name === "dashboard" && (
-        <DashboardScreen
-          onOpenProjects={() => navigate({ name: "projects" })}
-          onOpenProject={p => navigate({ name: "project-detail", id: p.id })}
-          onNewProject={() => navigate({ name: "projects" })}
+        <AppShell
+          activeRoute="dashboard"
+          pageTitle={`${greetingFor(new Date())}, ${firstNameOf(tenant.name)}`}
+          pageSubtitle={tenant.name}
+          onNavigate={navigate}
           onNewScan={goToScan}
-          onOpenRateLibrary={() => navigate({ name: "rate-library" })}
-          onOpenReports={() => navigate({ name: "reports" })}
-          onOpenEmail={() => navigate({ name: "email-inbox" })}
-          onOpenSettings={() => setScreen("settings")}
-        />
+          topbarActions={
+            <button
+              onClick={() => setScreen("settings")}
+              title="Company settings"
+              style={{
+                background: "transparent",
+                border: "1px solid #E2E8F0",
+                color: "#64748B",
+                width: 34,
+                height: 34,
+                borderRadius: 8,
+                cursor: "pointer",
+                fontSize: 14,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              ⚙️
+            </button>
+          }
+        >
+          <DashboardScreen
+            onOpenProjects={() => navigate({ name: "projects" })}
+            onOpenProject={p => navigate({ name: "project-detail", id: p.id })}
+            onNewProject={() => {
+              navigate({ name: "projects" });
+              setShowCreateProject(true);
+            }}
+            onNewScan={goToScan}
+            onOpenRateLibrary={() => navigate({ name: "rate-library" })}
+            onOpenReports={() => navigate({ name: "reports" })}
+            onOpenEmail={() => navigate({ name: "email-inbox" })}
+            onOpenSettings={() => setScreen("settings")}
+          />
+        </AppShell>
       )}
       {!legacyActive && route.name === "projects" && (
-        <ProjectsScreen
-          onBack={() => navigate({ name: "dashboard" })}
-          onOpenProject={p => navigate({ name: "project-detail", id: p.id })}
-        />
+        <AppShell
+          activeRoute="projects"
+          pageTitle="Projects"
+          pageSubtitle={`${ctxProjects.length} total · ${ctxProjects.filter(p => p.status === "Active").length} active`}
+          onNavigate={navigate}
+          onNewScan={goToScan}
+          topbarActions={
+            <button
+              onClick={() => setShowCreateProject(true)}
+              style={{
+                background: "#1D6EFD",
+                color: "#fff",
+                border: "none",
+                padding: "7px 14px",
+                fontSize: 12,
+                fontWeight: 600,
+                borderRadius: 7,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              <span style={{ fontSize: 14 }}>＋</span> New Project
+            </button>
+          }
+        >
+          <ProjectsScreen
+            onOpenProject={p => navigate({ name: "project-detail", id: p.id })}
+            openCreate={showCreateProject}
+            onCloseCreate={() => setShowCreateProject(false)}
+          />
+        </AppShell>
       )}
       {!legacyActive && route.name === "project-detail" && (
-        <ProjectDetail
-          projectId={route.id}
-          onBack={() => navigate({ name: "projects" })}
-        />
+        <AppShell
+          activeRoute="project-detail"
+          pageTitle={
+            ctxProjects.find(p => p.id === route.id)?.name || "Project"
+          }
+          pageSubtitle={ctxProjects.find(p => p.id === route.id)?.clientName || undefined}
+          onNavigate={navigate}
+          onNewScan={goToScan}
+        >
+          <ProjectDetail
+            projectId={route.id}
+            onBack={() => navigate({ name: "projects" })}
+          />
+        </AppShell>
+      )}
+      {!legacyActive && route.name === "approvals" && (
+        <AppShell
+          activeRoute="approvals"
+          pageTitle="Approvals"
+          pageSubtitle="Track estimate sign-off across your projects"
+          onNavigate={navigate}
+          onNewScan={goToScan}
+        >
+          <ApprovalsIndex
+            projects={ctxProjects}
+            onOpenProject={id => navigate({ name: "project-detail", id })}
+          />
+        </AppShell>
       )}
       {!legacyActive && route.name === "rate-library" && (
-        <RateLibrary onBack={() => navigate({ name: "dashboard" })} />
+        <AppShell
+          activeRoute="rate-library"
+          pageTitle="Rate Library"
+          pageSubtitle="Wholesaler pricing + your custom rates"
+          onNavigate={navigate}
+          onNewScan={goToScan}
+        >
+          <RateLibrary onBack={() => navigate({ name: "dashboard" })} />
+        </AppShell>
       )}
       {!legacyActive && route.name === "reports" && (
-        <ReportsIndexScreen onBack={() => navigate({ name: "dashboard" })} />
+        <AppShell
+          activeRoute="reports"
+          pageTitle="Reports"
+          pageSubtitle="Budget, burndown, hours, milestones"
+          onNavigate={navigate}
+          onNewScan={goToScan}
+        >
+          <ReportsIndexScreen onBack={() => navigate({ name: "dashboard" })} />
+        </AppShell>
       )}
       {!legacyActive && route.name === "email-inbox" && (
-        <EmailUpload
-          tenantSlug={tenant.id}
-          onBack={() => navigate({ name: "dashboard" })}
-          onUploadManual={goToScan}
-        />
+        <AppShell
+          activeRoute="email-inbox"
+          pageTitle="Email Upload"
+          pageSubtitle="Forward drawings into ElectraScan by email"
+          onNavigate={navigate}
+          onNewScan={goToScan}
+        >
+          <EmailUpload
+            tenantSlug={tenant.id}
+            onBack={() => navigate({ name: "dashboard" })}
+            onUploadManual={goToScan}
+          />
+        </AppShell>
       )}
 
       {/* Legacy mock-data project detail (still used by variation / approvals flows) */}
