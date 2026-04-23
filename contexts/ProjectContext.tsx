@@ -96,6 +96,21 @@ export interface Project {
 // ─── Persistence ────────────────────────────────────────────
 const STORAGE_KEY = "electrascan_projects";
 
+const VALID_STATUSES: ProjectStatus[] = ["Active", "Won", "Lost", "On Hold"];
+
+function isValidProject(p: unknown): p is Project {
+  if (!p || typeof p !== "object") return false;
+  const o = p as Record<string, unknown>;
+  return (
+    typeof o.id === "string" &&
+    typeof o.name === "string" &&
+    typeof o.clientName === "string" &&
+    VALID_STATUSES.includes(o.status as ProjectStatus) &&
+    Array.isArray(o.scans) &&
+    Array.isArray(o.estimates)
+  );
+}
+
 function safeLoad(): Project[] {
   if (typeof window === "undefined") return [];
   try {
@@ -103,7 +118,7 @@ function safeLoad(): Project[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed as Project[];
+    return (parsed as unknown[]).filter(isValidProject);
   } catch {
     return [];
   }
