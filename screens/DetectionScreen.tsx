@@ -29,7 +29,14 @@ export default function DetectionScreen() {
       <PageHeader
         title="Scans"
         sub="Upload a floor plan and let Claude turn it into a costed estimate."
-        cta={<PrimaryButton icon={<Plus size={15} strokeWidth={2.5} />}>New scan</PrimaryButton>}
+        cta={
+          <PrimaryButton
+            icon={<Plus size={15} strokeWidth={2.5} />}
+            onClick={() => navigate("/detection/new")}
+          >
+            New scan
+          </PrimaryButton>
+        }
       />
 
       <Card>
@@ -45,10 +52,11 @@ export default function DetectionScreen() {
             </tr>
           </thead>
           <tbody>
-            {SCANS.map(s => (
+            {SCANS.map((s, i) => (
               <tr
                 key={s.f}
                 className="es-row"
+                onClick={() => navigate(`/detection/scan-${i + 1}`)}
                 style={{
                   borderTop: `1px solid ${C.border}`,
                   transition: "background-color 120ms",

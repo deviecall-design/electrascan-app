@@ -28,6 +28,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import DesktopShell from "./components/desktop/DesktopShell";
 import DashboardScreen from "./screens/DashboardScreen";
 import DetectionScreen from "./screens/DetectionScreen";
+import ScanDetailScreen from "./screens/ScanDetailScreen";
 import EstimateScreen from "./screens/EstimateScreen";
 import PricingScheduleScreen from "./screens/PricingScheduleScreen";
 import VariationReportScreen from "./screens/VariationReportScreen";
@@ -42,6 +43,7 @@ export default function DesktopApp() {
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard"         element={<DashboardScreen />} />
           <Route path="/detection"         element={<DetectionScreen />} />
+          <Route path="/detection/:id"     element={<ScanDetailScreen />} />
           <Route path="/estimate"          element={<EstimateScreen />} />
           <Route path="/pricing-schedule"  element={<PricingScheduleScreen />} />
           <Route path="/variation-report"  element={<VariationReportScreen />} />

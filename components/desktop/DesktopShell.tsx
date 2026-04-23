@@ -342,7 +342,7 @@ function TopBar() {
         {/* Primary CTA — New scan */}
         <button
           className="es-btn-primary"
-          onClick={() => navigate("/detection")}
+          onClick={() => navigate("/detection/new")}
           style={{
             fontFamily: FONT.heading,
             fontSize: 14,

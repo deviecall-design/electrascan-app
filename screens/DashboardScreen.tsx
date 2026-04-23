@@ -115,7 +115,7 @@ export default function DashboardScreen() {
                 progress={s.progress}
                 stage={s.stage}
                 divider={i > 0}
-                onClick={() => navigate("/detection")}
+                onClick={() => navigate(`/detection/scan-${i + 1}`)}
               />
             ))}
           </Card>
