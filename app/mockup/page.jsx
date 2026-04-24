@@ -75,6 +75,71 @@ const DETECTED_ITEMS = [
   { id: 10, symbol: 'LT',  qty: 2,  desc: 'Pendant light (kitchen)',    rate: 'LT-005',  conf: 0.65, x: 240, y: 120 },
 ];
 
+// Group real DetectedComponent.type values into the 3-letter symbol codes
+// the mockup floor plan uses for badges.
+const TYPE_TO_SYMBOL = {
+  GPO_STANDARD: 'GPO', GPO_DOUBLE: 'GPO', GPO_WEATHERPROOF: 'GPO', GPO_USB: 'GPO',
+  DOWNLIGHT_RECESSED: 'LT', PENDANT_FEATURE: 'LT',
+  EXHAUST_FAN: 'FN',
+  SWITCHING_STANDARD: 'SW', SWITCHING_DIMMER: 'SW', SWITCHING_2WAY: 'SW',
+  SWITCHBOARD_MAIN: 'DB', SWITCHBOARD_SUB: 'DB',
+  AC_SPLIT: 'AC', AC_DUCTED: 'AC',
+  DATA_CAT6: 'DC', DATA_TV: 'DC',
+  SECURITY_CCTV: 'SE', SECURITY_INTERCOM: 'SE', SECURITY_ALARM: 'SA',
+  EV_CHARGER: 'EV', POOL_OUTDOOR: 'EX', GATE_ACCESS: 'EX',
+  AUTOMATION_HUB: 'AU',
+};
+
+const TYPE_LABELS = {
+  GPO_STANDARD: 'Power Point', GPO_DOUBLE: 'Double Power Point',
+  GPO_WEATHERPROOF: 'Weatherproof GPO', GPO_USB: 'USB Power Point',
+  DOWNLIGHT_RECESSED: 'Downlight', PENDANT_FEATURE: 'Pendant Light',
+  EXHAUST_FAN: 'Exhaust Fan',
+  SWITCHING_STANDARD: 'Light Switch', SWITCHING_DIMMER: 'Dimmer Switch', SWITCHING_2WAY: '2-Way Switch',
+  SWITCHBOARD_MAIN: 'Main Switchboard', SWITCHBOARD_SUB: 'Sub Board',
+  AC_SPLIT: 'Split System AC', AC_DUCTED: 'Ducted AC',
+  DATA_CAT6: 'Data Point', DATA_TV: 'TV/Data Point',
+  SECURITY_CCTV: 'CCTV Camera', SECURITY_INTERCOM: 'Intercom', SECURITY_ALARM: 'Alarm Sensor',
+  EV_CHARGER: 'EV Charger', POOL_OUTDOOR: 'Pool Equipment', GATE_ACCESS: 'Gate/Access',
+  AUTOMATION_HUB: 'Home Automation',
+};
+
+// Spread N items deterministically across the floor plan rectangle so the
+// badges don't overlap. Floor plan viewBox is 520x380 with the room rect
+// at (30,40)-(490,350).
+function gridPosition(index, total) {
+  const cols = Math.max(1, Math.ceil(Math.sqrt(total * 1.4)));
+  const rows = Math.max(1, Math.ceil(total / cols));
+  const col = index % cols;
+  const row = Math.floor(index / cols);
+  const x = 60 + (col + 0.5) * (400 / cols);
+  const y = 70 + (row + 0.5) * (260 / rows);
+  return { x: Math.round(x), y: Math.round(y) };
+}
+
+// Convert a DetectionResult from analyze_pdf.ts into the item shape the
+// mockup's StepDetecting / StepReview / StepQuote already render.
+function mapDetectionToItems(result) {
+  if (!result?.components?.length) return null;
+  return result.components.map((c, i) => {
+    const pos = gridPosition(i, result.components.length);
+    return {
+      id: i + 1,
+      symbol: TYPE_TO_SYMBOL[c.type] ?? 'EL',
+      qty: c.quantity,
+      desc: c.catalogue_item_name || TYPE_LABELS[c.type] || c.type,
+      rate: `CV-${c.type}`,
+      conf: Math.max(0, Math.min(1, (c.confidence ?? 0) / 100)),
+      x: pos.x,
+      y: pos.y,
+      unitPrice: c.unit_price ?? 0,
+      lineTotal: c.line_total ?? 0,
+      room: c.room,
+      flags: c.flags ?? [],
+    };
+  });
+}
+
 const ESTIMATES = [
   { r: 'EST-2026-0142', client: 'Bondi Tower Residences',   value: 28450, status: 'sent',     days: 2  },
   { r: 'EST-2026-0141', client: 'Martin Place Partners',    value: 14900, status: 'approved', days: 5  },
@@ -344,19 +409,26 @@ function ScanDetailView({ go }) {
   const [detection, setDetection] = useState(null);
   const [uploadedFile, setUploadedFile] = useState(null);
 
+  // Real detection items if available, otherwise the mockup demo set so the
+  // wizard still renders something for design QA without an API key.
+  const items = useMemo(
+    () => mapDetectionToItems(detection) ?? DETECTED_ITEMS,
+    [detection],
+  );
+
   useEffect(() => {
     if (step !== 2) return;
     setRevealed(0);
     const id = setInterval(() => {
       setRevealed((n) => {
-        if (n >= DETECTED_ITEMS.length) { clearInterval(id); return n; }
+        if (n >= items.length) { clearInterval(id); return n; }
         return n + 1;
       });
     }, 380);
     return () => clearInterval(id);
-  }, [step]);
+  }, [step, items]);
 
-  const allDetected = revealed >= DETECTED_ITEMS.length;
+  const allDetected = revealed >= items.length;
 
   return (
     <div className="anim-in">
@@ -380,9 +452,9 @@ function ScanDetailView({ go }) {
           onDetected={(file, result) => { setUploadedFile(file); setDetection(result); }}
         />
       )}
-      {step === 2 && <StepDetecting revealed={revealed} onNext={() => setStep(3)} ready={allDetected} />}
-      {step === 3 && <StepReview onNext={() => setStep(4)} onBack={() => setStep(2)} />}
-      {step === 4 && <StepQuote onBack={() => setStep(3)} />}
+      {step === 2 && <StepDetecting items={items} revealed={revealed} onNext={() => setStep(3)} ready={allDetected} />}
+      {step === 3 && <StepReview items={items} onNext={() => setStep(4)} onBack={() => setStep(2)} />}
+      {step === 4 && <StepQuote items={items} onBack={() => setStep(3)} />}
     </div>
   );
 }
@@ -490,8 +562,8 @@ function StepUpload({ onNext, onDetected }) {
   );
 }
 
-function StepDetecting({ revealed, onNext, ready }) {
-  const items = DETECTED_ITEMS.slice(0, revealed);
+function StepDetecting({ items, revealed, onNext, ready }) {
+  const visible = items.slice(0, revealed);
   return (
     <div className="anim-in" style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 24 }}>
       <div style={{ backgroundColor: C.bgPaper, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden', position: 'relative' }}>
@@ -505,30 +577,32 @@ function StepDetecting({ revealed, onNext, ready }) {
           </div>
           <span style={{ fontFamily: fontMono, fontSize: 11, color: C.textSubtle }}>Level 2 · Page 3/5</span>
         </div>
-        <FloorPlan items={items} />
+        <FloorPlan items={visible} />
       </div>
 
       <div>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
           <h3 style={{ fontFamily: fontHeading, fontSize: 15, fontWeight: 600, margin: 0 }}>
-            Detected items <span style={{ color: C.textSubtle, fontWeight: 400 }}>({revealed}/{DETECTED_ITEMS.length})</span>
+            Detected items <span style={{ color: C.textSubtle, fontWeight: 400 }}>({revealed}/{items.length})</span>
           </h3>
           {!ready && <Loader2 size={14} className="spin" color={C.orange} />}
         </div>
         <div style={{ backgroundColor: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden' }}>
-          {items.map((it, i) => (
+          {visible.map((it, i) => (
             <div key={it.id} className="anim-in" style={{ padding: '12px 16px', borderTop: i > 0 ? `1px solid ${C.border}` : 'none', display: 'flex', alignItems: 'center', gap: 12 }}>
               <SymbolBadge symbol={it.symbol} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontFamily: fontHeading, fontSize: 13, fontWeight: 500 }}>
                   {it.desc} <span style={{ color: C.textSubtle, fontWeight: 400 }}>× {it.qty}</span>
                 </div>
-                <div style={{ fontSize: 12, color: C.textMuted, fontStyle: 'italic' }}>matched {it.rate}</div>
+                <div style={{ fontSize: 12, color: C.textMuted, fontStyle: 'italic' }}>
+                  {it.room ? `${it.room} · ` : ''}matched {it.rate}
+                </div>
               </div>
               <ConfPill c={it.conf} />
             </div>
           ))}
-          {items.length === 0 && (
+          {visible.length === 0 && (
             <div style={{ padding: 24, textAlign: 'center', color: C.textSubtle, fontStyle: 'italic', fontSize: 13 }}>Waiting for first symbols…</div>
           )}
         </div>
@@ -543,8 +617,10 @@ function StepDetecting({ revealed, onNext, ready }) {
   );
 }
 
-function StepReview({ onNext, onBack }) {
-  const [items, setItems] = useState(DETECTED_ITEMS);
+function StepReview({ items: itemsProp, onNext, onBack }) {
+  const [items, setItems] = useState(itemsProp);
+  useEffect(() => { setItems(itemsProp); }, [itemsProp]);
+
   const needsReview = items.filter((i) => i.conf < 0.8).length;
   const toggle = (id) => setItems((arr) => arr.map((i) => i.id === id ? { ...i, _ok: !i._ok } : i));
 
@@ -567,9 +643,12 @@ function StepReview({ onNext, onBack }) {
           </thead>
           <tbody>
             {items.map((it) => {
-              const rate = RATE_LIBRARY.find((r) => r.code === it.rate);
-              const unit = rate ? rate.rate + rate.labour : 0;
-              const total = unit * it.qty;
+              // Real detection items carry unitPrice/lineTotal directly. Mock
+              // items don't, so fall back to the hardcoded rate library lookup.
+              const libRate = RATE_LIBRARY.find((r) => r.code === it.rate);
+              const unit = it.unitPrice ?? (libRate ? libRate.rate + libRate.labour : 0);
+              const total = it.lineTotal ?? unit * it.qty;
+              const rateLabel = libRate?.description ?? (it.room ? `${it.room}` : '');
               return (
                 <tr key={it.id} className="es-row" style={{ borderTop: `1px solid ${C.border}` }}>
                   <Td>
@@ -581,12 +660,14 @@ function StepReview({ onNext, onBack }) {
                   <Td>{it.desc}</Td>
                   <Td>
                     <span style={{ fontFamily: fontMono, fontSize: 12, color: C.textMuted }}>{it.rate}</span>
-                    <span style={{ color: C.textSubtle, margin: '0 6px' }}>·</span>
-                    <span style={{ fontSize: 13 }}>{rate?.description}</span>
+                    {rateLabel && <>
+                      <span style={{ color: C.textSubtle, margin: '0 6px' }}>·</span>
+                      <span style={{ fontSize: 13 }}>{rateLabel}</span>
+                    </>}
                   </Td>
                   <Td align="right" mono>{it.qty}</Td>
-                  <Td align="right" mono>${unit}</Td>
-                  <Td align="right" mono><B>${total.toLocaleString()}</B></Td>
+                  <Td align="right" mono>${Math.round(unit).toLocaleString()}</Td>
+                  <Td align="right" mono><B>${Math.round(total).toLocaleString()}</B></Td>
                   <Td><ConfPill c={it.conf} withBar /></Td>
                 </tr>
               );
@@ -603,14 +684,16 @@ function StepReview({ onNext, onBack }) {
   );
 }
 
-function StepQuote({ onBack }) {
-  const subtotal = useMemo(() => DETECTED_ITEMS.reduce((sum, it) => {
+function StepQuote({ items, onBack }) {
+  const subtotal = useMemo(() => Math.round(items.reduce((sum, it) => {
+    if (it.lineTotal != null) return sum + it.lineTotal;
     const r = RATE_LIBRARY.find((x) => x.code === it.rate);
     return sum + (r ? (r.rate + r.labour) * it.qty : 0);
-  }, 0), []);
+  }, 0)), [items]);
   const margin = Math.round(subtotal * 0.18);
   const gst = Math.round((subtotal + margin) * 0.1);
   const total = subtotal + margin + gst;
+  const totalQty = items.reduce((s, it) => s + (it.qty ?? 0), 0);
 
   const rows = [
     { d: 'Power outlets (GPO + WP)',            t: subtotal * 0.12 },
@@ -682,7 +765,7 @@ function StepQuote({ onBack }) {
         <div style={{ backgroundColor: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20 }}>
           <div style={{ fontFamily: fontHeading, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.textSubtle, marginBottom: 6 }}>Quoted total</div>
           <div style={{ fontFamily: fontHeading, fontSize: 36, fontWeight: 600, letterSpacing: '-0.02em', lineHeight: 1 }}>${total.toLocaleString()}</div>
-          <div style={{ fontSize: 13, color: C.textMuted, fontStyle: 'italic', marginTop: 8 }}>incl. GST · 68 items · 18% margin</div>
+          <div style={{ fontSize: 13, color: C.textMuted, fontStyle: 'italic', marginTop: 8 }}>incl. GST · {totalQty} items · 18% margin</div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 20 }}>
             <MiniStat label="Materials" v={`$${Math.round(subtotal * 0.55).toLocaleString()}`} />
