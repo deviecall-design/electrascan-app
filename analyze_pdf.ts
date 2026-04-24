@@ -237,6 +237,7 @@ Return ONLY valid JSON:
 async function pdfToImages(file: File): Promise<string[]> {
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
+  console.log(`[ElectraScan v4] pdfToImages: ${pdf.numPages} page(s) in ${file.name}`);
   const images: string[] = [];
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
@@ -252,6 +253,17 @@ async function pdfToImages(file: File): Promise<string[]> {
 
 function extractJSON(raw: string): string {
   return raw.replace(/^```(?:json)?\s*/im, "").replace(/\s*```$/im, "").trim();
+}
+
+// Pick the first text block out of a Claude Messages response. Older
+// callers assumed content[0] was always text; with tool use or
+// multi-modal outputs the text can sit at a later index.
+function firstTextBlock(content: Anthropic.ContentBlock[] | undefined): string {
+  if (!content) return "";
+  for (const block of content) {
+    if (block.type === "text") return block.text;
+  }
+  return "";
 }
 
 // ─────────────────────────────────────────────
@@ -483,34 +495,56 @@ export async function detectElectricalComponents(
     LEGEND_SYSTEM_PROMPT.trim().length > 0;
 
   if (!legendContentValid) {
-    console.warn("[ElectraScan v4] Skipping legend extraction: empty content blocks (no pages or empty prompt).");
-  } else try {
-    const r = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 2000,
-      system: LEGEND_SYSTEM_PROMPT,
-      messages: [{
-        role: "user",
-        content: [
-          ...imageBlocks,
-          { type: "text", text: legendUserText },
-        ],
-      }],
+    console.error("[ElectraScan v4] Pass 1 skipped: empty content blocks.", {
+      imageBlocks: imageBlocks.length,
+      userTextLen: legendUserText.trim().length,
+      systemLen: LEGEND_SYSTEM_PROMPT.trim().length,
     });
-    rawLegendResponse = r.content[0].type === "text" ? r.content[0].text : "";
-    const parsed = JSON.parse(extractJSON(rawLegendResponse));
-    legendFound = parsed.legend_found ?? false;
-    scaleDetected = parsed.scale_detected ?? "unknown";
-    legendItems = enrichLegendItems(parsed.items ?? [], priceOverrides);
+  } else {
+    try {
+      const r = await client.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 2000,
+        system: LEGEND_SYSTEM_PROMPT,
+        messages: [{
+          role: "user",
+          content: [
+            ...imageBlocks,
+            { type: "text", text: legendUserText },
+          ],
+        }],
+      });
+      const blockTypes = r.content.map(b => b.type);
+      rawLegendResponse = firstTextBlock(r.content);
+      console.log(`[ElectraScan v4] Pass 1 response: stop=${r.stop_reason}, blocks=[${blockTypes.join(",")}], textLen=${rawLegendResponse.length}`);
+      if (!rawLegendResponse) {
+        console.error("[ElectraScan v4] Pass 1 returned no text block. Full content:", r.content);
+      } else {
+        const extracted = extractJSON(rawLegendResponse);
+        try {
+          const parsed = JSON.parse(extracted);
+          legendFound = parsed.legend_found ?? false;
+          scaleDetected = parsed.scale_detected ?? "unknown";
+          legendItems = enrichLegendItems(parsed.items ?? [], priceOverrides);
 
-    const legendSubtotal = legendItems.filter(l => l.in_electrical_scope && l.catalogue_price)
-      .reduce((s, l) => s + (l.catalogue_price! * l.quantity), 0);
-    console.log(`[ElectraScan v4] Legend: ${legendItems.length} items, $${legendSubtotal.toLocaleString()} subtotal`);
-    legendItems.filter(l => l.in_electrical_scope).forEach(l => {
-      console.log(`  [${l.symbol_visual}] ${l.symbol_description}: ${l.quantity} EA @ $${l.catalogue_price}`);
-    });
-  } catch (err) {
-    console.warn("[ElectraScan v4] Legend extraction failed:", err);
+          const legendSubtotal = legendItems.filter(l => l.in_electrical_scope && l.catalogue_price)
+            .reduce((s, l) => s + (l.catalogue_price! * l.quantity), 0);
+          console.log(`[ElectraScan v4] Legend: ${legendItems.length} items, $${legendSubtotal.toLocaleString()} subtotal, legend_found=${legendFound}`);
+          legendItems.filter(l => l.in_electrical_scope).forEach(l => {
+            console.log(`  [${l.symbol_visual}] ${l.symbol_description}: ${l.quantity} EA @ $${l.catalogue_price}`);
+          });
+        } catch (parseErr) {
+          console.error("[ElectraScan v4] Pass 1 JSON parse failed:", parseErr);
+          console.error("[ElectraScan v4] Pass 1 raw response (first 1500 chars):", rawLegendResponse.slice(0, 1500));
+        }
+      }
+    } catch (err) {
+      console.error("[ElectraScan v4] Pass 1 API call failed:", err);
+    }
+  }
+
+  if (legendItems.length === 0) {
+    console.warn("[ElectraScan v4] Pass 1 yielded zero legend items — Pass 2 will run without a symbol decoder.");
   }
 
   // ── PASS 2: Floor plan scan with symbol decoder ─
@@ -526,34 +560,55 @@ export async function detectElectricalComponents(
     floorPlanSystem.trim().length > 0;
 
   if (!floorPlanContentValid) {
-    console.warn("[ElectraScan v4] Skipping floor plan scan: empty content blocks (no pages or empty prompt).");
-  } else try {
-    const r = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 4096,
-      system: floorPlanSystem,
-      messages: [{
-        role: "user",
-        content: [
-          ...imageBlocks,
-          { type: "text", text: floorPlanUserText },
-        ],
-      }],
+    console.error("[ElectraScan v4] Pass 2 skipped: empty content blocks.", {
+      imageBlocks: imageBlocks.length,
+      userTextLen: floorPlanUserText.trim().length,
+      systemLen: floorPlanSystem.trim().length,
     });
-    rawResponse = r.content[0].type === "text" ? r.content[0].text : "";
-    const parsed = JSON.parse(extractJSON(rawResponse));
-    if (parsed.scale_detected && scaleDetected === "unknown") scaleDetected = parsed.scale_detected;
-    roomComponents = parsed.components ?? [];
-    console.log(`[ElectraScan v4] Room distribution: ${roomComponents.length} entries across rooms`);
-  } catch (err) {
-    console.warn("[ElectraScan v4] Room scan failed:", err);
+  } else {
+    try {
+      const r = await client.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 4096,
+        system: floorPlanSystem,
+        messages: [{
+          role: "user",
+          content: [
+            ...imageBlocks,
+            { type: "text", text: floorPlanUserText },
+          ],
+        }],
+      });
+      const blockTypes = r.content.map(b => b.type);
+      rawResponse = firstTextBlock(r.content);
+      console.log(`[ElectraScan v4] Pass 2 response: stop=${r.stop_reason}, blocks=[${blockTypes.join(",")}], textLen=${rawResponse.length}`);
+      if (!rawResponse) {
+        console.error("[ElectraScan v4] Pass 2 returned no text block. Full content:", r.content);
+      } else {
+        try {
+          const parsed = JSON.parse(extractJSON(rawResponse));
+          if (parsed.scale_detected && scaleDetected === "unknown") scaleDetected = parsed.scale_detected;
+          roomComponents = parsed.components ?? [];
+          console.log(`[ElectraScan v4] Room distribution: ${roomComponents.length} entries across rooms`);
+        } catch (parseErr) {
+          console.error("[ElectraScan v4] Pass 2 JSON parse failed:", parseErr);
+          console.error("[ElectraScan v4] Pass 2 raw response (first 1500 chars):", rawResponse.slice(0, 1500));
+        }
+      }
+    } catch (err) {
+      console.error("[ElectraScan v4] Pass 2 API call failed:", err);
+    }
   }
 
   const components = buildComponents(legendItems, roomComponents);
   const riskFlags = generateRiskFlags(components);
   const estimateSubtotal = components.reduce((s, c) => s + c.line_total, 0);
 
-  console.log(`[ElectraScan v4] Complete: ${components.length} items, $${estimateSubtotal.toLocaleString()}`);
+  if (components.length === 0) {
+    console.error(`[ElectraScan v4] Complete: 0 items. Diagnostic — legendItems=${legendItems.length}, roomComponents=${roomComponents.length}, legendFound=${legendFound}. Downstream wizard will fall back to mock data.`);
+  } else {
+    console.log(`[ElectraScan v4] Complete: ${components.length} items, $${estimateSubtotal.toLocaleString()}`);
+  }
 
   return {
     drawing_version: drawingVersion,
