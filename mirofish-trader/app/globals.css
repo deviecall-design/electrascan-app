@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html, body {
+  background: theme('colors.bg');
+  color: theme('colors.ink');
+}
+
+.panel {
+  @apply bg-panel border border-border rounded-lg;
+}
+
+.num {
+  @apply font-mono tabular-nums;
+}
