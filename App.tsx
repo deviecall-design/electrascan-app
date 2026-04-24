@@ -16,6 +16,21 @@ import MockupApp from "./app/mockup/page.jsx";
 import type { RiskFlag as DetectionRiskFlag } from "./analyze_pdf";
 import { useAuth } from "./contexts/AuthContext";
 import { saveScan } from "./services/scanService";
+import { fetchPriceMap, seedRateLibraryFromVeshCatalogue } from "./services/rateLibraryService";
+
+async function getPriceMapWithSeed() {
+  let map = await fetchPriceMap();
+  if (map.size === 0) {
+    const seed = await seedRateLibraryFromVeshCatalogue();
+    if (seed.ok) {
+      console.log(`[App] Seeded rate_library with ${seed.inserted} catalogue items`);
+      map = await fetchPriceMap();
+    } else {
+      console.warn("[App] Auto-seed of rate_library failed:", seed.error);
+    }
+  }
+  return map;
+}
 
 // ─── Design tokens ─────────────────────────────
 const C = {
@@ -876,7 +891,8 @@ function AuthedApp() {
   const handleFile = async (f: File) => {
     setFile(f); setError(null); setScreen("scanning");
     try {
-      const d = await detectElectricalComponents(f, "001");
+      const priceMap = await getPriceMapWithSeed();
+      const d = await detectElectricalComponents(f, "001", undefined, priceMap);
       setResult(d); setScreen("results");
       saveScan({
         file_name: f.name,

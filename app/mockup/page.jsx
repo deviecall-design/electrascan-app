@@ -8,6 +8,7 @@ import {
   AlertCircle, Keyboard, Bot, Copy
 } from 'lucide-react';
 import { detectElectricalComponents } from '../../analyze_pdf';
+import { fetchPriceMap, seedRateLibraryFromVeshCatalogue } from '../../services/rateLibraryService';
 
 const C = {
   bg: '#faf9f5', bgSoft: '#f4f2ea', bgCard: '#ffffff', bgPaper: '#fcfbf7',
@@ -502,7 +503,17 @@ function StepUpload({ onNext, onDetected }) {
     setError(null);
     setFileName(file.name);
     try {
-      const result = await detectElectricalComponents(file, '001');
+      let priceMap = await fetchPriceMap();
+      if (priceMap.size === 0) {
+        const seed = await seedRateLibraryFromVeshCatalogue();
+        if (seed.ok) {
+          console.log(`[Detection] Seeded rate_library with ${seed.inserted} catalogue items`);
+          priceMap = await fetchPriceMap();
+        } else {
+          console.warn('[Detection] Auto-seed failed:', seed.error);
+        }
+      }
+      const result = await detectElectricalComponents(file, '001', undefined, priceMap);
       onDetected?.(file, result);
       onNext();
     } catch (err) {

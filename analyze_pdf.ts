@@ -307,10 +307,17 @@ function matchToVesh(description: string): {
 // ENRICH LEGEND ITEMS
 // ─────────────────────────────────────────────
 
-function enrichLegendItems(rawItems: any[]): LegendItem[] {
+function enrichLegendItems(
+  rawItems: any[],
+  priceOverrides?: Map<string, number>,
+): LegendItem[] {
   return rawItems.map(item => {
     const { catalogueItem, price, componentType, automationFlag } =
       matchToVesh(item.symbol_description ?? "");
+    // Static catalogue resolves the symbol; the DB rate_library overrides
+    // the price by catalogue_id when the contractor has a my_rate set.
+    const overriddenPrice =
+      catalogueItem && priceOverrides?.get(catalogueItem.id);
     return {
       symbol_description: item.symbol_description ?? "",
       symbol_visual: item.symbol_visual ?? "unknown symbol",
@@ -318,7 +325,7 @@ function enrichLegendItems(rawItems: any[]): LegendItem[] {
       unit: item.unit ?? "EA",
       mapped_type: componentType,
       catalogue_id: catalogueItem?.id ?? null,
-      catalogue_price: price,
+      catalogue_price: overriddenPrice ?? price,
       in_electrical_scope: item.in_electrical_scope !== false,
       automation_flag: automationFlag,
       notes: item.notes ?? "",
@@ -447,7 +454,8 @@ function generateRiskFlags(components: DetectedComponent[]): RiskFlag[] {
 export async function detectElectricalComponents(
   file: File,
   drawingVersion: string = "001",
-  apiKey?: string
+  apiKey?: string,
+  priceOverrides?: Map<string, number>
 ): Promise<DetectionResult> {
   const client = new Anthropic({
     apiKey: apiKey ?? (import.meta as any).env.VITE_ANTHROPIC_API_KEY,
@@ -493,7 +501,7 @@ export async function detectElectricalComponents(
     const parsed = JSON.parse(extractJSON(rawLegendResponse));
     legendFound = parsed.legend_found ?? false;
     scaleDetected = parsed.scale_detected ?? "unknown";
-    legendItems = enrichLegendItems(parsed.items ?? []);
+    legendItems = enrichLegendItems(parsed.items ?? [], priceOverrides);
 
     const legendSubtotal = legendItems.filter(l => l.in_electrical_scope && l.catalogue_price)
       .reduce((s, l) => s + (l.catalogue_price! * l.quantity), 0);

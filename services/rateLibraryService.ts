@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient';
+import { VESH_CATALOGUE } from '../vesh_catalogue';
 
 // Rate Library persistence.
 //
@@ -18,6 +19,7 @@ import { supabase } from './supabaseClient';
 //   rrp numeric,                -- wholesaler RRP
 //   unit text,                  -- 'EA' | 'LM' | 'COIL'
 //   my_rate numeric,            -- contractor's applied rate (drives estimates)
+//   catalogue_id text,          -- join key from vesh_catalogue.ts (e.g. "GPO_DOUBLE_STANDARD")
 //   updated_at timestamptz default now()
 //
 // Table 2 — rate_library_sync_log (audit of sync events):
@@ -186,5 +188,77 @@ export async function appendSyncLog(entry: Omit<SyncLogEntry, 'id' | 'ts'> & { t
   } catch (e) {
     console.warn('[rateLibraryService] unreachable:', e);
     return { ok: false as const, error: e instanceof Error ? e.message : 'unknown' };
+  }
+}
+
+// ─── Detection price-of-record lookup ────────────────
+// Returns a { catalogue_id → my_rate } map for the signed-in user. The
+// detection engine uses this to override the static vesh_catalogue.ts price
+// with the contractor's current `my_rate` on each match. Empty map means
+// either the user hasn't seeded yet or no rows have a catalogue_id — in
+// either case the static price stands.
+export async function fetchPriceMap(): Promise<Map<string, number>> {
+  try {
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData.user) return new Map();
+    const { data, error } = await supabase
+      .from('rate_library')
+      .select('catalogue_id, my_rate')
+      .not('catalogue_id', 'is', null);
+    if (error) {
+      console.warn('[rateLibraryService] price map fetch skipped:', error.message);
+      return new Map();
+    }
+    const map = new Map<string, number>();
+    for (const row of data ?? []) {
+      const id = row.catalogue_id as string | null;
+      const rate = Number(row.my_rate);
+      if (id && Number.isFinite(rate) && rate > 0) map.set(id, rate);
+    }
+    return map;
+  } catch (e) {
+    console.warn('[rateLibraryService] price map unreachable:', e);
+    return new Map();
+  }
+}
+
+// ─── Seed from vesh_catalogue.ts ─────────────────────
+// One-shot upsert of the static Vesh catalogue into rate_library, keyed
+// by product_id = catalogue_id. Idempotent — running twice does no harm.
+// my_rate defaults to the static `price`; the contractor edits it via the
+// Rate Library UI afterwards. RLS scopes everything to the signed-in user.
+export async function seedRateLibraryFromVeshCatalogue(): Promise<
+  { ok: true; inserted: number } | { ok: false; error: string }
+> {
+  try {
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData.user) return { ok: false, error: 'Not signed in.' };
+
+    const rows = VESH_CATALOGUE.map(item => ({
+      product_id: item.id,
+      catalogue_id: item.id,
+      code: item.id,
+      name: item.name,
+      brand: 'Vesh',
+      category: item.category,
+      trade: item.price,
+      rrp: item.offFormPrice ?? item.price,
+      unit: item.unit,
+      my_rate: item.price,
+      owner_id: userData.user.id,
+    }));
+
+    const { error } = await supabase
+      .from('rate_library')
+      .upsert(rows, { onConflict: 'product_id' });
+
+    if (error) {
+      console.warn('[rateLibraryService] seed failed:', error.message);
+      return { ok: false, error: error.message };
+    }
+    return { ok: true, inserted: rows.length };
+  } catch (e) {
+    console.warn('[rateLibraryService] seed unreachable:', e);
+    return { ok: false, error: e instanceof Error ? e.message : 'unknown' };
   }
 }
