@@ -7,6 +7,7 @@ import {
   ChevronRight, Loader2, Check,
   AlertCircle, Keyboard, Bot, Copy
 } from 'lucide-react';
+import { detectElectricalComponents } from '../../analyze_pdf';
 
 const C = {
   bg: '#faf9f5', bgSoft: '#f4f2ea', bgCard: '#ffffff', bgPaper: '#fcfbf7',
@@ -340,6 +341,8 @@ function ScansView({ go }) {
 function ScanDetailView({ go }) {
   const [step, setStep] = useState(2);
   const [revealed, setRevealed] = useState(0);
+  const [detection, setDetection] = useState(null);
+  const [uploadedFile, setUploadedFile] = useState(null);
 
   useEffect(() => {
     if (step !== 2) return;
@@ -362,14 +365,21 @@ function ScanDetailView({ go }) {
       </button>
 
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 }}>
-        <h1 style={{ fontFamily: fontHeading, fontSize: 26, fontWeight: 600, letterSpacing: '-0.02em', margin: 0 }}>Switchboard_LV2_rev3.pdf</h1>
+        <h1 style={{ fontFamily: fontHeading, fontSize: 26, fontWeight: 600, letterSpacing: '-0.02em', margin: 0 }}>
+          {uploadedFile?.name ?? 'Switchboard_LV2_rev3.pdf'}
+        </h1>
         <span style={{ fontFamily: fontMono, fontSize: 13, color: C.textSubtle }}>EST-2026-0143</span>
       </div>
       <p style={{ color: C.textMuted, fontStyle: 'italic', margin: '0 0 28px 0' }}>Bondi Tower Residences · Level 2 · uploaded 14 minutes ago</p>
 
       <StepBar step={step} onStep={setStep} />
 
-      {step === 1 && <StepUpload onNext={() => setStep(2)} />}
+      {step === 1 && (
+        <StepUpload
+          onNext={() => setStep(2)}
+          onDetected={(file, result) => { setUploadedFile(file); setDetection(result); }}
+        />
+      )}
       {step === 2 && <StepDetecting revealed={revealed} onNext={() => setStep(3)} ready={allDetected} />}
       {step === 3 && <StepReview onNext={() => setStep(4)} onBack={() => setStep(2)} />}
       {step === 4 && <StepQuote onBack={() => setStep(3)} />}
@@ -403,15 +413,79 @@ function StepBar({ step, onStep }) {
   );
 }
 
-function StepUpload({ onNext }) {
+function StepUpload({ onNext, onDetected }) {
+  const inputRef = useRef(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [fileName, setFileName] = useState(null);
+  const [dragOver, setDragOver] = useState(false);
+
+  const runDetection = async (file) => {
+    if (!file) return;
+    if (file.type !== 'application/pdf') {
+      setError('Please select a PDF file.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setFileName(file.name);
+    try {
+      const result = await detectElectricalComponents(file, '001');
+      onDetected?.(file, result);
+      onNext();
+    } catch (err) {
+      setError(err?.message || 'Detection failed. Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onDrop = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    if (busy) return;
+    runDetection(e.dataTransfer.files?.[0]);
+  };
+
   return (
-    <div className="anim-in" style={{ backgroundColor: C.bgCard, border: `2px dashed ${C.border}`, borderRadius: 12, padding: 64, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, textAlign: 'center' }}>
+    <div
+      className="anim-in"
+      onDragOver={(e) => { e.preventDefault(); if (!busy) setDragOver(true); }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={onDrop}
+      style={{
+        backgroundColor: dragOver ? C.orangeSoft : C.bgCard,
+        border: `2px dashed ${dragOver ? C.orange : C.border}`,
+        borderRadius: 12, padding: 64,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14,
+        textAlign: 'center', transition: 'background-color 150ms, border-color 150ms',
+      }}
+    >
+      <input
+        ref={inputRef}
+        type="file"
+        accept="application/pdf"
+        disabled={busy}
+        onChange={(e) => runDetection(e.target.files?.[0])}
+        style={{ display: 'none' }}
+      />
       <div style={{ width: 56, height: 56, borderRadius: 12, backgroundColor: C.orangeSoft, color: C.orange, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <Upload size={24} />
+        {busy ? <Loader2 size={24} className="spin" /> : <Upload size={24} />}
       </div>
-      <h2 style={{ fontFamily: fontHeading, fontSize: 20, fontWeight: 600, margin: 0 }}>Drop your floor plan here</h2>
-      <p style={{ color: C.textMuted, fontStyle: 'italic', margin: 0, maxWidth: 420 }}>PDF, PNG, or DWG. Claude Vision will detect symbols, map them to your rate library, and draft a quote.</p>
-      <PrimaryButton onClick={onNext}>Simulate upload →</PrimaryButton>
+      <h2 style={{ fontFamily: fontHeading, fontSize: 20, fontWeight: 600, margin: 0 }}>
+        {busy ? `Analysing ${fileName}…` : 'Drop your floor plan here'}
+      </h2>
+      <p style={{ color: C.textMuted, fontStyle: 'italic', margin: 0, maxWidth: 460 }}>
+        {busy
+          ? 'Claude Vision is reading the legend and counting symbols. This usually takes 30–60 seconds.'
+          : 'PDF only. Claude Vision will detect symbols, map them to your rate library, and draft a quote.'}
+      </p>
+      {error && (
+        <div style={{ color: '#b64545', fontSize: 13, maxWidth: 460 }}>{error}</div>
+      )}
+      {!busy && (
+        <PrimaryButton onClick={() => inputRef.current?.click()}>Choose PDF</PrimaryButton>
+      )}
     </div>
   );
 }
