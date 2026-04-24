@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { detectElectricalComponents } from '../../analyze_pdf';
 import { fetchPriceMap, seedRateLibraryFromVeshCatalogue } from '../../services/rateLibraryService';
+import { fetchEstimates } from '../../services/estimateService';
 
 const C = {
   bg: '#faf9f5', bgSoft: '#f4f2ea', bgCard: '#ffffff', bgPaper: '#fcfbf7',
@@ -118,6 +119,29 @@ function gridPosition(index, total) {
   return { x: Math.round(x), y: Math.round(y) };
 }
 
+// Shared loader for estimates rows from Supabase. Both the dashboard
+// "Recent estimates" section and the dedicated Estimates view consume
+// this. Each call hits the DB once on mount; the dataset is small and
+// scoped to the signed-in user via RLS so re-renders are cheap.
+function useEstimates() {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+    fetchEstimates().then((r) => {
+      if (!mounted) return;
+      if (r.ok) setItems(r.estimates);
+      else setError(r.error);
+      setLoading(false);
+    });
+    return () => { mounted = false; };
+  }, []);
+
+  return { items, loading, error };
+}
+
 // Convert a DetectionResult from analyze_pdf.ts into the item shape the
 // mockup's StepDetecting / StepReview / StepQuote already render.
 function mapDetectionToItems(result) {
@@ -140,15 +164,6 @@ function mapDetectionToItems(result) {
     };
   });
 }
-
-const ESTIMATES = [
-  { r: 'EST-2026-0142', client: 'Bondi Tower Residences',   value: 28450, status: 'sent',     days: 2  },
-  { r: 'EST-2026-0141', client: 'Martin Place Partners',    value: 14900, status: 'approved', days: 5  },
-  { r: 'EST-2026-0140', client: 'Northern Beaches Council', value: 62300, status: 'viewed',   days: 6  },
-  { r: 'EST-2026-0139', client: 'Chatswood Dental Group',   value: 8120,  status: 'draft',    days: 8  },
-  { r: 'EST-2026-0138', client: 'Parramatta Logistics Hub', value: 41780, status: 'approved', days: 11 },
-  { r: 'EST-2026-0137', client: 'Surry Hills Hospitality',  value: 19640, status: 'sent',     days: 13 },
-];
 
 export default function App() {
   const [route, setRoute] = useState('dashboard');
@@ -297,6 +312,9 @@ function Footer() {
 }
 
 function DashboardView({ go }) {
+  const { items: estimateRows, loading: estimatesLoading, error: estimatesError } = useEstimates();
+  const recentEstimates = estimateRows.slice(0, 6);
+
   return (
     <div className="anim-in">
       <div style={{ marginBottom: 32 }}>
@@ -346,8 +364,27 @@ function DashboardView({ go }) {
                   <Th>Status</Th><Th align="right">Sent</Th><Th width={32}></Th>
                 </tr>
               </thead>
-              <tbody>{ESTIMATES.map((e) => (<EstRow key={e.r} {...e} />))}</tbody>
+              <tbody>
+                {!estimatesLoading && recentEstimates.map((e) => (
+                  <EstRow key={e.id} r={e.reference} client={e.client} value={e.value} status={e.status} days={e.daysAgo} />
+                ))}
+              </tbody>
             </table>
+            {estimatesLoading && (
+              <div style={{ padding: 20, textAlign: 'center', color: C.textSubtle, fontStyle: 'italic', fontSize: 13 }}>
+                Loading estimates…
+              </div>
+            )}
+            {!estimatesLoading && estimatesError && (
+              <div style={{ padding: 20, textAlign: 'center', color: '#b64545', fontSize: 13 }}>
+                Couldn't load estimates: {estimatesError}
+              </div>
+            )}
+            {!estimatesLoading && !estimatesError && recentEstimates.length === 0 && (
+              <div style={{ padding: 20, textAlign: 'center', color: C.textSubtle, fontStyle: 'italic', fontSize: 13 }}>
+                No estimates yet.
+              </div>
+            )}
           </Card>
         </section>
       </div>
@@ -854,14 +891,26 @@ function FloorPlan({ items }) {
 }
 
 function EstimatesView() {
+  const { items, loading, error } = useEstimates();
+
+  const drafted   = items.filter((i) => i.status === 'draft').length;
+  const sent      = items.filter((i) => i.status === 'sent').length;
+  const approved  = items.filter((i) => i.status === 'approved').length;
+  const winValue  = items
+    .filter((i) => i.status === 'approved')
+    .reduce((s, i) => s + i.value, 0);
+  const winLabel  = winValue >= 1000
+    ? `$${Math.round(winValue / 1000)}k`
+    : `$${winValue.toLocaleString()}`;
+
   return (
     <div className="anim-in">
-      <PageHeader title="Estimates" sub="Every quote ElectraScan has drafted for Vesh Electrical this quarter." />
+      <PageHeader title="Estimates" sub="Every quote ElectraScan has drafted for your account." />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 18 }}>
-        <MiniStat label="Drafted"   v="38"    />
-        <MiniStat label="Sent"      v="24"    tint={C.blue} />
-        <MiniStat label="Approved"  v="16"    tint={C.green} />
-        <MiniStat label="Win value" v="$284k" tint={C.green} />
+        <MiniStat label="Drafted"   v={loading ? '—' : String(drafted)} />
+        <MiniStat label="Sent"      v={loading ? '—' : String(sent)}      tint={C.blue} />
+        <MiniStat label="Approved"  v={loading ? '—' : String(approved)}  tint={C.green} />
+        <MiniStat label="Win value" v={loading ? '—' : winLabel}          tint={C.green} />
       </div>
       <Card>
         <table style={{ width: '100%', fontSize: 14 }}>
@@ -872,10 +921,26 @@ function EstimatesView() {
             </tr>
           </thead>
           <tbody>
-            {ESTIMATES.map((e) => (<EstRow key={e.r} {...e} />))}
-            {ESTIMATES.map((e) => (<EstRow key={`2-${e.r}`} {...e} r={e.r.replace('014', '013')} days={e.days + 14} />))}
+            {!loading && items.map((e) => (
+              <EstRow key={e.id} r={e.reference} client={e.client} value={e.value} status={e.status} days={e.daysAgo} />
+            ))}
           </tbody>
         </table>
+        {loading && (
+          <div style={{ padding: 24, textAlign: 'center', color: C.textSubtle, fontStyle: 'italic', fontSize: 13 }}>
+            Loading estimates…
+          </div>
+        )}
+        {!loading && error && (
+          <div style={{ padding: 24, textAlign: 'center', color: '#b64545', fontSize: 13 }}>
+            Couldn't load estimates: {error}
+          </div>
+        )}
+        {!loading && !error && items.length === 0 && (
+          <div style={{ padding: 24, textAlign: 'center', color: C.textSubtle, fontStyle: 'italic', fontSize: 13 }}>
+            No estimates yet. Run a scan and export to create your first one.
+          </div>
+        )}
       </Card>
     </div>
   );
