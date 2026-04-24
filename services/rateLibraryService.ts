@@ -91,6 +91,10 @@ export async function fetchLibrary(): Promise<
 
 export async function upsertLibraryItem(item: LibraryItem) {
   try {
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData.user) {
+      return { ok: false as const, error: 'Not signed in.' };
+    }
     const { error } = await supabase.from('rate_library_items').upsert({
       product_id: item.productId,
       code: item.code,
@@ -101,6 +105,7 @@ export async function upsertLibraryItem(item: LibraryItem) {
       rrp: item.rrp,
       unit: item.unit,
       my_rate: item.myRate,
+      owner_id: userData.user.id,
     }, { onConflict: 'product_id' });
     if (error) {
       console.warn('[rateLibraryService] upsert skipped:', error.message);
@@ -161,12 +166,17 @@ export async function fetchSyncLog(): Promise<
 
 export async function appendSyncLog(entry: Omit<SyncLogEntry, 'id' | 'ts'> & { ts?: string }) {
   try {
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData.user) {
+      return { ok: false as const, error: 'Not signed in.' };
+    }
     const { error } = await supabase.from('rate_library_sync_log').insert([{
       ts: entry.ts ?? new Date().toISOString(),
       source: entry.source,
       products_count: entry.productsCount,
       status: entry.status,
       note: entry.note,
+      owner_id: userData.user.id,
     }]);
     if (error) {
       console.warn('[rateLibraryService] log append skipped:', error.message);

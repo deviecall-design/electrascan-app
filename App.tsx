@@ -11,7 +11,10 @@ import ApprovalsScreen, { ApprovalEstimateLike } from "./components/ApprovalsScr
 import RateLibrary from "./components/RateLibrary";
 import EmailUpload from "./components/EmailUpload";
 import ReportsScreen from "./components/ReportsScreen";
+import LoginScreen from "./components/LoginScreen";
 import type { RiskFlag as DetectionRiskFlag } from "./analyze_pdf";
+import { useAuth } from "./contexts/AuthContext";
+import { saveScan } from "./services/scanService";
 
 // ─── Design tokens ─────────────────────────────
 const C = {
@@ -154,11 +157,16 @@ const toLineItems = (components: DetectedComponent[]): LineItem[] =>
 function DashboardScreen({ projects, onNewScan, onOpenProject, onOpenRateLibrary, onOpenEmail }: {
   projects: Project[]; onNewScan: () => void; onOpenProject: (p: Project) => void; onOpenRateLibrary: () => void; onOpenEmail: () => void;
 }) {
+  const { user, signOut } = useAuth();
   const [filter, setFilter] = useState<ProjectStatus | "all">("all");
   const totalValue = projects.reduce((s, p) => s + p.contractValue, 0);
   const activeCount = projects.filter(p => p.status === "active").length;
   const estimatingCount = projects.filter(p => p.status === "estimating").length;
   const filtered = filter === "all" ? projects : projects.filter(p => p.status === filter);
+
+  const meta = (user?.user_metadata ?? {}) as { full_name?: string; company_name?: string; name?: string };
+  const greetingName = meta.full_name || meta.name || user?.email?.split("@")[0] || "there";
+  const companyLabel = meta.company_name || "Vesh Electrical Services";
 
   return (
     <div style={{ height: "100vh", background: C.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -169,7 +177,8 @@ function DashboardScreen({ projects, onNewScan, onOpenProject, onOpenRateLibrary
             <div style={{ fontSize: 22, fontWeight: 800, color: C.blue, letterSpacing: "-0.03em" }}>
               Electra<span style={{ color: C.text }}>Scan</span>
             </div>
-            <div style={{ fontSize: 12, color: C.muted, marginTop: 1 }}>Vesh Electrical Services</div>
+            <div style={{ fontSize: 12, color: C.text, marginTop: 2, fontWeight: 600 }}>Hi, {greetingName}</div>
+            <div style={{ fontSize: 11, color: C.muted, marginTop: 1 }}>{companyLabel}</div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <button onClick={onOpenEmail}
@@ -187,6 +196,15 @@ function DashboardScreen({ projects, onNewScan, onOpenProject, onOpenRateLibrary
               borderRadius: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
             }}>
               <span style={{ fontSize: 16 }}>⚡</span> New Scan
+            </button>
+            <button onClick={() => { void signOut(); }}
+              title="Sign out"
+              style={{
+                background: C.card, border: `1px solid ${C.border}`, color: C.muted,
+                width: 40, height: 40, borderRadius: 12, cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16,
+              }}>
+              ⎋
             </button>
           </div>
         </div>
@@ -824,7 +842,7 @@ function EstimateEditor({ result, fileName, onBack }: {
 }
 
 // ─── Root App ───────────────────────────────────
-export default function App() {
+function AuthedApp() {
   const [screen, setScreen] = useState<Screen>("dashboard");
   const [file, setFile] = useState<File | null>(null);
   const [result, setResult] = useState<DetectionResult | null>(null);
@@ -849,6 +867,15 @@ export default function App() {
     try {
       const d = await detectElectricalComponents(f, "001");
       setResult(d); setScreen("results");
+      saveScan({
+        file_name: f.name,
+        drawing_version: d.drawing_version,
+        scale_detected: d.scale_detected,
+        page_count: d.page_count,
+        legend_found: d.legend_found,
+        estimate_subtotal: d.estimate_subtotal,
+        component_count: d.components.length,
+      }).catch(err => console.warn("[App] saveScan failed:", err));
     } catch (err: any) {
       setError(err?.message ?? "Detection failed."); setScreen("upload");
     }
@@ -998,4 +1025,24 @@ export default function App() {
       )}
     </>
   );
+}
+
+export default function App() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div style={{
+        minHeight: "100vh", background: C.bg, display: "flex",
+        alignItems: "center", justifyContent: "center",
+        color: C.muted, fontSize: 13,
+      }}>
+        Loading…
+      </div>
+    );
+  }
+
+  if (!user) return <LoginScreen />;
+
+  return <AuthedApp />;
 }

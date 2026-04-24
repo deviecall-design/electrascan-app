@@ -5,6 +5,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import { ToastProvider } from './contexts/ToastContext';
 import { LicenseProvider } from './contexts/LicenseContext';
+import { AuthProvider } from './contexts/AuthContext';
 import { suppressConsoleWarnings } from './utils/suppressWarnings';
 import { RouterProvider } from './components/Router';
 
@@ -20,11 +21,13 @@ const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
     <ToastProvider>
-      <LicenseProvider>
-        <RouterProvider>
-          <App />
-        </RouterProvider>
-      </LicenseProvider>
+      <AuthProvider>
+        <LicenseProvider>
+          <RouterProvider>
+            <App />
+          </RouterProvider>
+        </LicenseProvider>
+      </AuthProvider>
     </ToastProvider>
   </React.StrictMode>
 );

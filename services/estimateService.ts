@@ -9,10 +9,19 @@ export async function saveEstimate(estimateData: {
   items: any[];
   status?: string;
 }) {
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError || !userData.user) {
+    throw new Error('Not signed in — cannot save estimate.');
+  }
+
   // 1. Save to Supabase
   const { data, error } = await supabase
     .from('estimates')
-    .insert([{ ...estimateData, status: estimateData.status ?? 'draft' }])
+    .insert([{
+      ...estimateData,
+      status: estimateData.status ?? 'draft',
+      owner_id: userData.user.id,
+    }])
     .select()
     .single();
 
