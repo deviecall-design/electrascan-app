@@ -24,7 +24,7 @@ export async function fetchEstimates(): Promise<
 
     const { data, error } = await supabase
       .from('estimates')
-      .select('id, project_name, contractor, total, status, created_at')
+      .select('id, reference, project_name, contractor, total, status, created_at')
       .order('created_at', { ascending: false })
       .limit(200);
 
@@ -41,11 +41,15 @@ export async function fetchEstimates(): Promise<
         Math.floor((now - new Date(createdAt).getTime()) / 86_400_000),
       );
       const idStr = String(r.id ?? '');
+      // Prefer the DB-generated reference (populated by the trigger on
+      // insert). Fall back to a synthesized value for legacy rows that
+      // predate the column.
+      const dbRef = typeof r.reference === 'string' ? r.reference : null;
       const idShort = idStr.replace(/-/g, '').slice(0, 4).toUpperCase();
       const yymm = createdAt.slice(2, 4) + createdAt.slice(5, 7);
       return {
         id: idStr,
-        reference: `EST-${yymm}-${idShort}`,
+        reference: dbRef || `EST-${yymm}-${idShort}`,
         client: String(r.project_name ?? r.contractor ?? 'Unnamed'),
         value: Number(r.total ?? 0),
         status: String(r.status ?? 'draft'),
