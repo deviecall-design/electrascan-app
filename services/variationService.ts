@@ -31,14 +31,17 @@ export interface VariationSavePayload {
 
 export async function saveVariationReport(payload: VariationSavePayload) {
   try {
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData.user) {
+      return { ok: false as const, error: 'Not signed in.' };
+    }
     const { data, error } = await supabase
       .from('variations')
-      .insert([payload])
+      .insert([{ ...payload, owner_id: userData.user.id }])
       .select()
       .single();
 
     if (error) {
-      // Table likely doesn't exist yet — don't throw, surface a warning.
       console.warn('[variationService] Supabase save skipped:', error.message);
       return { ok: false as const, error: error.message };
     }

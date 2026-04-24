@@ -21,8 +21,14 @@ export async function submitTimesheet(entry: {
   materials: number;
 }) {
   try {
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData.user) {
+      return { ok: false as const, error: 'Not signed in.' };
+    }
     const { error } = await supabase.from('timesheets').insert([{
-      ...entry, submitted_at: new Date().toISOString(),
+      ...entry,
+      submitted_at: new Date().toISOString(),
+      owner_id: userData.user.id,
     }]);
     if (error) {
       console.warn('[reportsService] timesheet insert skipped:', error.message);
@@ -41,8 +47,15 @@ export async function submitMilestoneClaim(entry: {
   amount: number;
 }) {
   try {
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData.user) {
+      return { ok: false as const, error: 'Not signed in.' };
+    }
     const { error } = await supabase.from('milestone_claims').insert([{
-      ...entry, claimed_at: new Date().toISOString(), status: 'claimed',
+      ...entry,
+      claimed_at: new Date().toISOString(),
+      status: 'claimed',
+      owner_id: userData.user.id,
     }]);
     if (error) {
       console.warn('[reportsService] claim insert skipped:', error.message);

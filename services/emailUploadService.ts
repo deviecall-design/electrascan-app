@@ -120,10 +120,19 @@ export async function fetchAutoScanPref(
 
 export async function upsertAutoScanPref(userEmail: string, autoScan: boolean) {
   try {
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData.user) {
+      return { ok: false as const, error: 'Not signed in.' };
+    }
     const { error } = await supabase
       .from('user_prefs')
       .upsert(
-        { user_email: userEmail, auto_scan: autoScan, updated_at: new Date().toISOString() },
+        {
+          user_email: userEmail,
+          auto_scan: autoScan,
+          updated_at: new Date().toISOString(),
+          owner_id: userData.user.id,
+        },
         { onConflict: 'user_email' },
       );
     if (error) {

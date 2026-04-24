@@ -63,9 +63,13 @@ export async function appendApprovalAudit(
   entry: ApprovalAuditInsert,
 ): Promise<{ ok: true; data: unknown } | { ok: false; error: string }> {
   try {
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData.user) {
+      return { ok: false, error: 'Not signed in.' };
+    }
     const { data, error } = await supabase
       .from('approval_audit')
-      .insert([entry])
+      .insert([{ ...entry, owner_id: userData.user.id }])
       .select()
       .single();
 
