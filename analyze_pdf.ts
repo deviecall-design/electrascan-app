@@ -468,7 +468,15 @@ export async function detectElectricalComponents(
   let legendFound = false;
   let scaleDetected = "unknown";
 
-  try {
+  const legendUserText = `Drawing: ${file.name}. Find the legend table and extract every item including its visual symbol appearance. Include ALL items that need electrical wiring including motorised blinds, ceiling fans, LED strips, heated towel rails.`;
+  const legendContentValid =
+    imageBlocks.length > 0 &&
+    legendUserText.trim().length > 0 &&
+    LEGEND_SYSTEM_PROMPT.trim().length > 0;
+
+  if (!legendContentValid) {
+    console.warn("[ElectraScan v4] Skipping legend extraction: empty content blocks (no pages or empty prompt).");
+  } else try {
     const r = await client.messages.create({
       model: "claude-sonnet-4-20250514",
       max_tokens: 2000,
@@ -477,7 +485,7 @@ export async function detectElectricalComponents(
         role: "user",
         content: [
           ...imageBlocks,
-          { type: "text", text: `Drawing: ${file.name}. Find the legend table and extract every item including its visual symbol appearance. Include ALL items that need electrical wiring including motorised blinds, ceiling fans, LED strips, heated towel rails.` },
+          { type: "text", text: legendUserText },
         ],
       }],
     });
@@ -502,16 +510,25 @@ export async function detectElectricalComponents(
   let rawResponse = "";
   let roomComponents: any[] = [];
 
-  try {
+  const floorPlanSystem = buildFloorPlanPrompt(legendItems);
+  const floorPlanUserText = `Drawing: ${file.name}. Scan every room and count each symbol type using the decoder. Total quantities must match the legend.`;
+  const floorPlanContentValid =
+    imageBlocks.length > 0 &&
+    floorPlanUserText.trim().length > 0 &&
+    floorPlanSystem.trim().length > 0;
+
+  if (!floorPlanContentValid) {
+    console.warn("[ElectraScan v4] Skipping floor plan scan: empty content blocks (no pages or empty prompt).");
+  } else try {
     const r = await client.messages.create({
       model: "claude-sonnet-4-20250514",
       max_tokens: 4096,
-      system: buildFloorPlanPrompt(legendItems),
+      system: floorPlanSystem,
       messages: [{
         role: "user",
         content: [
           ...imageBlocks,
-          { type: "text", text: `Drawing: ${file.name}. Scan every room and count each symbol type using the decoder. Total quantities must match the legend.` },
+          { type: "text", text: floorPlanUserText },
         ],
       }],
     });
