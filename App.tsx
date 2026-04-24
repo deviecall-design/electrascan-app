@@ -12,6 +12,7 @@ import RateLibrary from "./components/RateLibrary";
 import EmailUpload from "./components/EmailUpload";
 import ReportsScreen from "./components/ReportsScreen";
 import LoginScreen from "./components/LoginScreen";
+import MockupApp from "./app/mockup/page.jsx";
 import type { RiskFlag as DetectionRiskFlag } from "./analyze_pdf";
 import { useAuth } from "./contexts/AuthContext";
 import { saveScan } from "./services/scanService";
@@ -25,7 +26,7 @@ const C = {
   purple: "#7C3AED",
 };
 
-type Screen = "dashboard" | "upload" | "scanning" | "results" | "estimate" | "project" | "variation" | "approvals" | "ratelibrary" | "email" | "reports";
+type Screen = "dashboard" | "upload" | "scanning" | "results" | "estimate" | "project" | "variation" | "approvals" | "ratelibrary" | "email" | "reports" | "detection";
 type ResultTab = "schedule" | "risks";
 type ProjectStatus = "estimating" | "submitted" | "approved" | "active" | "completed";
 
@@ -154,8 +155,8 @@ const toLineItems = (components: DetectedComponent[]): LineItem[] =>
   }));
 
 // ─── Dashboard Screen ───────────────────────────
-function DashboardScreen({ projects, onNewScan, onOpenProject, onOpenRateLibrary, onOpenEmail }: {
-  projects: Project[]; onNewScan: () => void; onOpenProject: (p: Project) => void; onOpenRateLibrary: () => void; onOpenEmail: () => void;
+function DashboardScreen({ projects, onNewScan, onOpenProject, onOpenRateLibrary, onOpenEmail, onOpenDetection }: {
+  projects: Project[]; onNewScan: () => void; onOpenProject: (p: Project) => void; onOpenRateLibrary: () => void; onOpenEmail: () => void; onOpenDetection: () => void;
 }) {
   const { user, signOut } = useAuth();
   const [filter, setFilter] = useState<ProjectStatus | "all">("all");
@@ -189,6 +190,16 @@ function DashboardScreen({ projects, onNewScan, onOpenProject, onOpenRateLibrary
                 display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18,
               }}>
               📧
+            </button>
+            <button onClick={onOpenDetection}
+              title="Detection flow"
+              style={{
+                background: C.card, border: `1px solid ${C.border}`, color: C.text,
+                height: 40, borderRadius: 12, cursor: "pointer",
+                display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600,
+                padding: "0 14px",
+              }}>
+              <span style={{ fontSize: 16 }}>🔬</span> Detection
             </button>
             <button onClick={onNewScan} style={{
               background: C.blue, border: "none", color: "#fff",
@@ -983,7 +994,7 @@ function AuthedApp() {
   return (
     <>
       <style>{CSS}</style>
-      {screen === "dashboard" && <DashboardScreen projects={projects} onNewScan={goToScan} onOpenProject={p => { setSelectedProject(p); setScreen("project"); }} onOpenRateLibrary={() => setScreen("ratelibrary")} onOpenEmail={() => setScreen("email")} />}
+      {screen === "dashboard" && <DashboardScreen projects={projects} onNewScan={goToScan} onOpenProject={p => { setSelectedProject(p); setScreen("project"); }} onOpenRateLibrary={() => setScreen("ratelibrary")} onOpenEmail={() => setScreen("email")} onOpenDetection={() => setScreen("detection")} />}
       {screen === "project" && selectedProject && <ProjectScreen project={selectedProject} onBack={() => setScreen("dashboard")} onNewScan={goToScan} onOpenVariation={openVariation} onOpenApprovals={openApprovals} onOpenReports={(p) => { setSelectedProject(p); setScreen("reports"); }} />}
       {screen === "upload" && <UploadScreen onFile={handleFile} onBack={() => setScreen("dashboard")} error={error} />}
       {screen === "scanning" && file && <ScanningScreen fileName={file.name} />}
@@ -1022,6 +1033,24 @@ function AuthedApp() {
           projectName={selectedProject?.name}
           onBack={() => setScreen(selectedProject ? "project" : "dashboard")}
         />
+      )}
+      {screen === "detection" && (
+        <div style={{ position: "relative", minHeight: "100vh" }}>
+          <button
+            onClick={() => setScreen("dashboard")}
+            style={{
+              position: "fixed", top: 16, right: 16, zIndex: 50,
+              background: "rgba(20,20,19,0.85)", color: "#fff",
+              border: "1px solid rgba(255,255,255,0.15)",
+              fontSize: 12, fontWeight: 600, padding: "8px 14px",
+              borderRadius: 8, cursor: "pointer",
+              backdropFilter: "blur(6px)",
+            }}
+          >
+            ← Exit detection
+          </button>
+          <MockupApp />
+        </div>
       )}
     </>
   );
