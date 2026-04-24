@@ -10,6 +10,7 @@ import {
 import { detectElectricalComponents } from '../../analyze_pdf';
 import { fetchPriceMap, seedRateLibraryFromVeshCatalogue } from '../../services/rateLibraryService';
 import { fetchEstimates } from '../../services/estimateService';
+import { fetchScans } from '../../services/scanService';
 
 const C = {
   bg: '#faf9f5', bgSoft: '#f4f2ea', bgCard: '#ffffff', bgPaper: '#fcfbf7',
@@ -140,6 +141,102 @@ function useEstimates() {
   }, []);
 
   return { items, loading, error };
+}
+
+// Compute the four dashboard KPIs from live estimates + scans data.
+//   - thisMonth:  estimates created since the first of the current month
+//   - pending:    sum of total for rows not yet approved or rejected
+//   - winRate:    approved / (approved + rejected), null if no decisions yet
+//   - avgScanToQuote: average seconds between each estimate and its nearest
+//                     prior scan by the same owner. null if no pairings.
+function useDashboardStats() {
+  const [state, setState] = useState({
+    loading: true,
+    error: null,
+    thisMonth: 0,
+    pending: 0,
+    winRate: null,
+    avgScanToQuoteSec: null,
+    scanPairings: 0,
+  });
+
+  useEffect(() => {
+    let mounted = true;
+    Promise.all([fetchEstimates(), fetchScans()]).then(([eRes, sRes]) => {
+      if (!mounted) return;
+      if (!eRes.ok) {
+        setState((s) => ({ ...s, loading: false, error: eRes.error }));
+        return;
+      }
+      const estimates = eRes.estimates;
+      const scans = sRes.ok ? sRes.scans : [];
+
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+      const thisMonth = estimates.filter(
+        (e) => new Date(e.createdAt).getTime() >= monthStart,
+      ).length;
+
+      const pending = estimates
+        .filter((e) => e.status !== 'approved' && e.status !== 'rejected')
+        .reduce((sum, e) => sum + e.value, 0);
+
+      const approved = estimates.filter((e) => e.status === 'approved').length;
+      const rejected = estimates.filter((e) => e.status === 'rejected').length;
+      const decided = approved + rejected;
+      const winRate = decided > 0 ? approved / decided : null;
+
+      // Pair each estimate with the most recent prior scan by the same
+      // owner. RLS already scopes both queries to one owner, so nearest-
+      // prior-by-timestamp is the best we can do without a scan_id FK.
+      const sortedScans = scans
+        .slice()
+        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      let totalDelta = 0;
+      let pairings = 0;
+      for (const e of estimates) {
+        const eTs = new Date(e.createdAt).getTime();
+        let nearest = null;
+        for (const s of sortedScans) {
+          const sTs = new Date(s.createdAt).getTime();
+          if (sTs <= eTs) nearest = s; else break;
+        }
+        if (nearest) {
+          totalDelta += eTs - new Date(nearest.createdAt).getTime();
+          pairings++;
+        }
+      }
+      const avgScanToQuoteSec = pairings > 0
+        ? Math.round(totalDelta / pairings / 1000)
+        : null;
+
+      setState({
+        loading: false,
+        error: null,
+        thisMonth,
+        pending,
+        winRate,
+        avgScanToQuoteSec,
+        scanPairings: pairings,
+      });
+    });
+    return () => { mounted = false; };
+  }, []);
+
+  return state;
+}
+
+function formatCurrencyK(n) {
+  if (n >= 1000) return `$${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k`;
+  return `$${Math.round(n).toLocaleString()}`;
+}
+
+function formatDuration(sec) {
+  if (sec == null) return '—';
+  if (sec < 60) return `${sec}s`;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return s === 0 ? `${m}m` : `${m}m ${s}s`;
 }
 
 // Convert a DetectionResult from analyze_pdf.ts into the item shape the
@@ -313,23 +410,43 @@ function Footer() {
 
 function DashboardView({ go }) {
   const { items: estimateRows, loading: estimatesLoading, error: estimatesError } = useEstimates();
+  const stats = useDashboardStats();
   const recentEstimates = estimateRows.slice(0, 6);
+
+  const pendingLabel = stats.loading ? '—' : formatCurrencyK(stats.pending);
+  const winRateLabel = stats.loading
+    ? '—'
+    : stats.winRate == null
+      ? 'n/a'
+      : `${Math.round(stats.winRate * 100)}%`;
+  const scanToQuoteLabel = stats.loading ? '—' : formatDuration(stats.avgScanToQuoteSec);
+  const scanToQuoteSub = stats.scanPairings > 0
+    ? `avg across ${stats.scanPairings} quote${stats.scanPairings === 1 ? '' : 's'}`
+    : 'no scan pairings yet';
 
   return (
     <div className="anim-in">
       <div style={{ marginBottom: 32 }}>
-        <h1 style={{ fontFamily: fontHeading, fontSize: 30, fontWeight: 600, letterSpacing: '-0.02em', margin: '0 0 6px 0', lineHeight: 1.15 }}>Good morning, Damien.</h1>
+        <h1 style={{ fontFamily: fontHeading, fontSize: 30, fontWeight: 600, letterSpacing: '-0.02em', margin: '0 0 6px 0', lineHeight: 1.15 }}>Good morning.</h1>
         <p style={{ color: C.textMuted, fontStyle: 'italic', margin: 0, fontSize: 16 }}>
-          You have <B>3 scans</B> in queue and <B>$48,290</B> in pending estimates.
+          {stats.loading
+            ? 'Loading pipeline…'
+            : <>You have <B>{stats.pending > 0 ? pendingLabel : '$0'}</B> in pending estimates.</>}
         </p>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 32 }}>
-        <Kpi label="Estimates this month" value="24" delta="+8" sub="vs April" up />
-        <Kpi label="Pending value" value="$48,290" delta="+12%" sub="vs last week" up />
-        <Kpi label="Win rate" value="68%" delta="+4%" sub="30-day rolling" up />
-        <Kpi label="Avg scan-to-quote" value="7m 12s" delta="−2m" sub="vs April" up />
+        <Kpi label="Estimates this month" value={stats.loading ? '—' : String(stats.thisMonth)} sub="from the estimates table" />
+        <Kpi label="Pending value"        value={pendingLabel}    sub="draft + sent + viewed" />
+        <Kpi label="Win rate"             value={winRateLabel}    sub="approved / decided" />
+        <Kpi label="Avg scan-to-quote"    value={scanToQuoteLabel} sub={scanToQuoteSub} />
       </div>
+
+      {stats.error && (
+        <div style={{ marginBottom: 24, color: '#b64545', fontSize: 13, fontStyle: 'italic' }}>
+          Couldn't load stats: {stats.error}
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 3fr', gap: 24 }}>
         <section>
@@ -1092,9 +1209,11 @@ function Kpi({ label, value, delta, sub, up }) {
       <div style={{ fontFamily: fontHeading, fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.textSubtle, marginBottom: 10 }}>{label}</div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
         <div style={{ fontFamily: fontHeading, fontSize: 26, fontWeight: 600, letterSpacing: '-0.015em' }}>{value}</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 12, color: up ? C.green : C.orange, fontWeight: 500 }}>
-          {up ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}{delta}
-        </div>
+        {delta && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 12, color: up ? C.green : C.orange, fontWeight: 500 }}>
+            {up ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}{delta}
+          </div>
+        )}
       </div>
       <div style={{ fontSize: 12, color: C.textMuted, fontStyle: 'italic', marginTop: 4 }}>{sub}</div>
     </div>

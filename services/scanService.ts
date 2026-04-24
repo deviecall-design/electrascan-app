@@ -49,3 +49,43 @@ export async function saveScan(input: SaveScanInput) {
     return { ok: false as const, error: e instanceof Error ? e.message : 'unknown' };
   }
 }
+
+export interface ScanRow {
+  id: string;
+  fileName: string;
+  createdAt: string;
+  componentCount: number;
+}
+
+// Fetch the signed-in user's scans. Used by the dashboard to pair each
+// estimate with its originating scan for the scan-to-quote duration.
+export async function fetchScans(): Promise<
+  { ok: true; scans: ScanRow[] } | { ok: false; error: string }
+> {
+  try {
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData.user) return { ok: false, error: 'Not signed in.' };
+
+    const { data, error } = await supabase
+      .from('scans')
+      .select('id, file_name, created_at, component_count')
+      .order('created_at', { ascending: false })
+      .limit(500);
+
+    if (error) {
+      console.warn('[scanService] fetch skipped:', error.message);
+      return { ok: false, error: error.message };
+    }
+
+    const scans: ScanRow[] = (data ?? []).map((r: Record<string, unknown>) => ({
+      id: String(r.id ?? ''),
+      fileName: String(r.file_name ?? ''),
+      createdAt: String(r.created_at ?? new Date().toISOString()),
+      componentCount: Number(r.component_count ?? 0),
+    }));
+    return { ok: true, scans };
+  } catch (e) {
+    console.warn('[scanService] unreachable:', e);
+    return { ok: false, error: e instanceof Error ? e.message : 'unknown' };
+  }
+}
