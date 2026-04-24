@@ -8,8 +8,8 @@ import { supabase } from './supabaseClient';
 //
 // TODO(supabase-schema): Create tables when the financial reporting
 // feature moves beyond mock data:
-//   - timesheets (id, project_id, week_label, planned, actual, labour, materials, submitted_at)
-//   - milestone_claims (id, project_id, milestone_label, amount, claimed_at, status)
+//   - timesheets (id, project_name, week, planned, actual, labour, materials, submitted_at, owner_id)
+//   - milestone_claims (id, project_name, milestone, amount, claimed_at, status, owner_id)
 //   - accounting_connections (id, platform, status, last_sync, company_file)
 
 export async function submitTimesheet(entry: {
@@ -26,7 +26,12 @@ export async function submitTimesheet(entry: {
       return { ok: false as const, error: 'Not signed in.' };
     }
     const { error } = await supabase.from('timesheets').insert([{
-      ...entry,
+      project_name: entry.projectName,
+      week: entry.week,
+      planned: entry.planned,
+      actual: entry.actual,
+      labour: entry.labour,
+      materials: entry.materials,
       submitted_at: new Date().toISOString(),
       owner_id: userData.user.id,
     }]);
@@ -52,7 +57,9 @@ export async function submitMilestoneClaim(entry: {
       return { ok: false as const, error: 'Not signed in.' };
     }
     const { error } = await supabase.from('milestone_claims').insert([{
-      ...entry,
+      project_name: entry.projectName,
+      milestone: entry.milestone,
+      amount: entry.amount,
       claimed_at: new Date().toISOString(),
       status: 'claimed',
       owner_id: userData.user.id,

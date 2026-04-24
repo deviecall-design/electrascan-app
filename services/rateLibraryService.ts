@@ -7,7 +7,7 @@ import { supabase } from './supabaseClient';
 // delete rows scoped to the current tenant. Until they exist, the service
 // degrades gracefully and the UI falls back to in-memory state.
 //
-// Table 1 — rate_library_items (the contractor's priced catalogue):
+// Table 1 — rate_library (the contractor's priced catalogue):
 //   id uuid primary key default gen_random_uuid(),
 //   product_id text unique,     -- stable wholesaler SKU (e.g. "GPO_DOUBLE_STANDARD")
 //   code text,                  -- short SKU shown in table (e.g. "2025WE")
@@ -65,7 +65,7 @@ export async function fetchLibrary(): Promise<
 > {
   try {
     const { data, error } = await supabase
-      .from('rate_library_items')
+      .from('rate_library')
       .select('*');
     if (error) {
       console.warn('[rateLibraryService] fetch skipped:', error.message);
@@ -95,7 +95,7 @@ export async function upsertLibraryItem(item: LibraryItem) {
     if (!userData.user) {
       return { ok: false as const, error: 'Not signed in.' };
     }
-    const { error } = await supabase.from('rate_library_items').upsert({
+    const { error } = await supabase.from('rate_library').upsert({
       product_id: item.productId,
       code: item.code,
       name: item.name,
@@ -121,7 +121,7 @@ export async function upsertLibraryItem(item: LibraryItem) {
 export async function removeLibraryItem(productId: string) {
   try {
     const { error } = await supabase
-      .from('rate_library_items')
+      .from('rate_library')
       .delete()
       .eq('product_id', productId);
     if (error) {
