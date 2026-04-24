@@ -12,6 +12,8 @@ import {
   Td,
   B,
 } from "../components/ui/anthropic";
+import useSupabaseQuery from "../hooks/useSupabaseQuery";
+import { fetchEstimates, type EstimateRow } from "../services/supabaseData";
 
 // ─── Mock data ──────────────────────────────────────────────────────────
 // Same shape as the Dashboard's ESTIMATES but expanded for the full-list
@@ -39,6 +41,22 @@ const winValue = ESTIMATES.filter(e => e.status === "approved").reduce((s, e) =>
 export default function EstimateScreen() {
   const navigate = useNavigate();
 
+  const { data: liveEstimates, isLive } = useSupabaseQuery(
+    fetchEstimates,
+    ESTIMATES.map(e => ({
+      id: e.r, ref: e.r, client: e.client, value: e.value,
+      status: e.status as EstimateRow["status"],
+      days_since_sent: e.days, project_name: null,
+      drawing_file: null, margin_pct: 15, subtotal: e.value,
+      line_items: [], created_at: new Date().toISOString(),
+    })),
+  );
+
+  const drafted  = liveEstimates.length;
+  const sentCount     = liveEstimates.filter((e: any) => e.status === "sent").length;
+  const approvedCount = liveEstimates.filter((e: any) => e.status === "approved").length;
+  const winVal = liveEstimates.filter((e: any) => e.status === "approved").reduce((s: number, e: any) => s + (e.value ?? 0), 0);
+
   return (
     <div className="anim-in">
       <PageHeader
@@ -47,11 +65,16 @@ export default function EstimateScreen() {
       />
 
       {/* Quick stats */}
+      {!isLive && (
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 12px", borderRadius: 20, backgroundColor: C.amberSoft, color: C.amber, fontFamily: FONT.heading, fontSize: 11, fontWeight: 500, marginBottom: 12 }}>
+          Demo data — Supabase tables not yet created
+        </div>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 18 }}>
         <MiniStat label="Drafted"   v={String(drafted)} />
-        <MiniStat label="Sent"      v={String(sent)}     tint={C.blue} />
-        <MiniStat label="Approved"  v={String(approved)} tint={C.green} />
-        <MiniStat label="Win value" v={`$${Math.round(winValue / 1000)}k`} tint={C.green} />
+        <MiniStat label="Sent"      v={String(sentCount)}     tint={C.blue} />
+        <MiniStat label="Approved"  v={String(approvedCount)} tint={C.green} />
+        <MiniStat label="Win value" v={`$${Math.round(winVal / 1000)}k`} tint={C.green} />
       </div>
 
       {/* Estimates table */}
@@ -68,9 +91,9 @@ export default function EstimateScreen() {
             </tr>
           </thead>
           <tbody>
-            {ESTIMATES.map(e => (
+            {liveEstimates.map((e: any) => (
               <tr
-                key={e.r}
+                key={e.ref ?? e.r}
                 className="es-row"
                 style={{
                   borderTop: `1px solid ${C.border}`,
@@ -79,15 +102,15 @@ export default function EstimateScreen() {
                 }}
               >
                 <Td mono>
-                  <span style={{ fontWeight: 500, fontSize: 13, letterSpacing: "-0.01em" }}>{e.r}</span>
+                  <span style={{ fontWeight: 500, fontSize: 13, letterSpacing: "-0.01em" }}>{e.ref ?? e.r}</span>
                 </Td>
                 <Td>{e.client}</Td>
                 <Td align="right" mono>
-                  <span style={{ fontWeight: 500 }}>${e.value.toLocaleString()}</span>
+                  <span style={{ fontWeight: 500 }}>${(e.value ?? 0).toLocaleString()}</span>
                 </Td>
                 <Td><StatusPill status={e.status} /></Td>
                 <Td align="right" muted>
-                  <span style={{ fontStyle: "italic", fontSize: 13 }}>{e.days}d ago</span>
+                  <span style={{ fontStyle: "italic", fontSize: 13 }}>{e.days_since_sent ?? e.days}d ago</span>
                 </Td>
                 <Td align="right">
                   <MoreHorizontal size={15} color={C.textSubtle} />

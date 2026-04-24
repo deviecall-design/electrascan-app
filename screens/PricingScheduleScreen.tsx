@@ -11,6 +11,8 @@ import {
   B,
 } from "../components/ui/anthropic";
 import { PrimaryButton } from "../components/ui/anthropic/Button";
+import useSupabaseQuery from "../hooks/useSupabaseQuery";
+import { fetchRateLibrary, type RateRow } from "../services/supabaseData";
 
 // ─── Rate library data ──────────────────────────────────────────────────
 // TODO: Replace with Supabase fetch from `rate_library` table.
@@ -72,34 +74,54 @@ export default function PricingScheduleScreen() {
   const [filter, setFilter] = useState("All");
   const [query, setQuery] = useState("");
 
+  const { data: liveRates, isLive } = useSupabaseQuery(
+    fetchRateLibrary,
+    RATE_LIBRARY.map(r => ({ ...r, id: r.code, is_custom: false, synced_at: new Date().toISOString() } as RateRow)),
+  );
+
+  const rateData = liveRates.map((r: any) => ({
+    code: r.code,
+    category: r.category,
+    description: r.description,
+    unit: r.unit,
+    rate: r.rate,
+    labour: r.labour,
+  }));
+
   const categories = useMemo(
-    () => ["All", ...Array.from(new Set(RATE_LIBRARY.map(r => r.category)))],
-    [],
+    () => ["All", ...Array.from(new Set(rateData.map((r: any) => r.category)))],
+    [rateData],
   );
 
   const filtered = useMemo(
     () =>
-      RATE_LIBRARY.filter(
-        r =>
+      rateData.filter(
+        (r: any) =>
           (filter === "All" || r.category === filter) &&
           (query === "" ||
             (r.description + " " + r.code).toLowerCase().includes(query.toLowerCase())),
       ),
-    [filter, query],
+    [filter, query, rateData],
   );
 
-  // Quick stats
-  const totalItems = RATE_LIBRARY.length;
-  const avgRate = Math.round(
-    RATE_LIBRARY.reduce((s, r) => s + r.rate + r.labour, 0) / totalItems,
-  );
-  const maxRate = Math.max(...RATE_LIBRARY.map(r => r.rate + r.labour));
+  const totalItems = rateData.length;
+  const avgRate = totalItems > 0
+    ? Math.round(rateData.reduce((s: number, r: any) => s + r.rate + r.labour, 0) / totalItems)
+    : 0;
+  const maxRate = totalItems > 0
+    ? Math.max(...rateData.map((r: any) => r.rate + r.labour))
+    : 0;
 
   return (
     <div className="anim-in">
+      {!isLive && (
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 12px", borderRadius: 20, backgroundColor: C.amberSoft, color: C.amber, fontFamily: FONT.heading, fontSize: 11, fontWeight: 500, marginBottom: 12 }}>
+          Demo data — Supabase tables not yet created
+        </div>
+      )}
       <PageHeader
         title="Rate library"
-        sub={`${totalItems} items · imported from Vesh Electrical · last synced today`}
+        sub={`${totalItems} items · ${isLive ? "live from Supabase" : "imported from Vesh Electrical"} · last synced today`}
         cta={<PrimaryButton icon={<Plus size={14} />}>Add rate</PrimaryButton>}
       />
 

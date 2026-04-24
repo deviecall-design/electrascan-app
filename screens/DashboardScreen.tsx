@@ -19,6 +19,8 @@ import {
   Td,
   StatusPill,
 } from "../components/ui/anthropic";
+import useSupabaseQuery from "../hooks/useSupabaseQuery";
+import { fetchEstimates, fetchScans, type EstimateRow, type ScanRow as ScanRowType } from "../services/supabaseData";
 
 // ─── Mock data ──────────────────────────────────────────────────────────
 // TODO: Replace with Supabase queries once the `estimates` and `scans`
@@ -72,8 +74,43 @@ const pendingValue = ESTIMATES
 export default function DashboardScreen() {
   const navigate = useNavigate();
 
+  // Try Supabase first; fall back to mock arrays above if tables don't exist.
+  const { data: liveEstimates, isLive: estimatesLive } = useSupabaseQuery(
+    fetchEstimates,
+    ESTIMATES.map(e => ({
+      id: e.r, ref: e.r, client: e.client, value: e.value,
+      status: e.status as EstimateRow["status"],
+      days_since_sent: e.days, project_name: null,
+      drawing_file: null, margin_pct: 15, subtotal: e.value,
+      line_items: [], created_at: new Date().toISOString(),
+    })),
+  );
+  const { data: liveScans, isLive: scansLive } = useSupabaseQuery(
+    fetchScans,
+    ACTIVE_SCANS.map((s, i) => ({
+      id: `scan-${i + 1}`, file_name: s.file, client: s.client,
+      stage: s.stage, items_detected: 0, progress: s.progress,
+      estimate_ref: null, detected_items: [], risk_flags: [],
+      started_at: new Date().toISOString(), completed_at: null,
+    })),
+  );
+
+  const isLive = estimatesLive || scansLive;
+  const displayEstimates = liveEstimates.slice(0, 6);
+  const displayScans = liveScans.filter((s: any) => (s.progress ?? 0) < 100).slice(0, 3);
+  const allPendingValue = liveEstimates
+    .filter((e: any) => e.status === "sent" || e.status === "viewed")
+    .reduce((s: number, e: any) => s + (e.value ?? 0), 0);
+
   return (
     <div className="anim-in">
+      {/* Data source indicator */}
+      {!isLive && (
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 12px", borderRadius: 20, backgroundColor: C.amberSoft, color: C.amber, fontFamily: FONT.heading, fontSize: 11, fontWeight: 500, marginBottom: 16 }}>
+          Demo data — Supabase tables not yet created
+        </div>
+      )}
+
       {/* Greeting */}
       <div style={{ marginBottom: 32 }}>
         <h1
@@ -89,14 +126,14 @@ export default function DashboardScreen() {
           Good morning, Damien.
         </h1>
         <p style={{ color: C.textMuted, fontStyle: "italic", margin: 0, fontSize: 16 }}>
-          You have <B>3 scans</B> in queue and <B>${pendingValue.toLocaleString()}</B> in pending estimates.
+          You have <B>{displayScans.length} scans</B> in queue and <B>${allPendingValue.toLocaleString()}</B> in pending estimates.
         </p>
       </div>
 
       {/* KPI strip */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 32 }}>
-        <Kpi label="Estimates this month" value="24" delta="+8"  sub="vs April"       up />
-        <Kpi label="Pending value"        value={`$${(pendingValue / 1000).toFixed(0)}k`} delta="+12%" sub="vs last week"   up />
+        <Kpi label="Estimates this month" value={String(liveEstimates.length)} delta="+8" sub="vs April" up />
+        <Kpi label="Pending value"        value={`$${Math.round(allPendingValue / 1000)}k`} delta="+12%" sub="vs last week" up />
         <Kpi label="Win rate"             value="68%" delta="+4%"  sub="30-day rolling" up />
         <Kpi label="Avg scan-to-quote"    value="7m 12s" delta="−2m" sub="vs April"     up />
       </div>
@@ -107,15 +144,15 @@ export default function DashboardScreen() {
         <section>
           <SectionHead title="Active scans" cta="View all" onCta={() => navigate("/detection")} />
           <Card>
-            {ACTIVE_SCANS.map((s, i) => (
+            {displayScans.map((s: any, i: number) => (
               <ScanRow
-                key={s.file}
-                file={s.file}
-                client={s.client}
-                progress={s.progress}
-                stage={s.stage}
+                key={s.id ?? s.file_name}
+                file={s.file_name ?? s.file}
+                client={s.client ?? ""}
+                progress={s.progress ?? 0}
+                stage={s.stage ?? "Processing"}
                 divider={i > 0}
-                onClick={() => navigate(`/detection/scan-${i + 1}`)}
+                onClick={() => navigate(`/detection/${s.id ?? `scan-${i + 1}`}`)}
               />
             ))}
           </Card>
@@ -184,9 +221,9 @@ export default function DashboardScreen() {
                 </tr>
               </thead>
               <tbody>
-                {ESTIMATES.map(e => (
+                {displayEstimates.map((e: any) => (
                   <tr
-                    key={e.r}
+                    key={e.ref ?? e.r}
                     className="es-row"
                     style={{
                       borderTop: `1px solid ${C.border}`,
@@ -196,15 +233,15 @@ export default function DashboardScreen() {
                     onClick={() => navigate("/estimate")}
                   >
                     <Td mono>
-                      <span style={{ fontWeight: 500, fontSize: 13, letterSpacing: "-0.01em" }}>{e.r}</span>
+                      <span style={{ fontWeight: 500, fontSize: 13, letterSpacing: "-0.01em" }}>{e.ref ?? e.r}</span>
                     </Td>
                     <Td>{e.client}</Td>
                     <Td align="right" mono>
-                      <span style={{ fontWeight: 500 }}>${e.value.toLocaleString()}</span>
+                      <span style={{ fontWeight: 500 }}>${(e.value ?? 0).toLocaleString()}</span>
                     </Td>
                     <Td><StatusPill status={e.status} /></Td>
                     <Td align="right" muted>
-                      <span style={{ fontStyle: "italic", fontSize: 13 }}>{e.days}d ago</span>
+                      <span style={{ fontStyle: "italic", fontSize: 13 }}>{e.days_since_sent ?? e.days}d ago</span>
                     </Td>
                     <Td align="right">
                       <MoreHorizontal size={15} color={C.textSubtle} />

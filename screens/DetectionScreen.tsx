@@ -10,6 +10,8 @@ import {
   Td,
 } from "../components/ui/anthropic";
 import { PrimaryButton } from "../components/ui/anthropic/Button";
+import useSupabaseQuery from "../hooks/useSupabaseQuery";
+import { fetchScans, type ScanRow } from "../services/supabaseData";
 
 // ─── Mock data ──────────────────────────────────────────────────────────
 // TODO: Replace with Supabase query on `scans` table.
@@ -24,8 +26,23 @@ const SCANS = [
 export default function DetectionScreen() {
   const navigate = useNavigate();
 
+  const { data: liveScans, isLive } = useSupabaseQuery(
+    fetchScans,
+    SCANS.map((s, i) => ({
+      id: `scan-${i + 1}`, file_name: s.f, client: s.c,
+      stage: s.s, items_detected: s.n, progress: s.p,
+      estimate_ref: null, detected_items: [], risk_flags: [],
+      started_at: new Date().toISOString(), completed_at: s.p === 100 ? new Date().toISOString() : null,
+    } as ScanRow)),
+  );
+
   return (
     <div className="anim-in">
+      {!isLive && (
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 12px", borderRadius: 20, backgroundColor: C.amberSoft, color: C.amber, fontFamily: FONT.heading, fontSize: 11, fontWeight: 500, marginBottom: 12 }}>
+          Demo data — Supabase tables not yet created
+        </div>
+      )}
       <PageHeader
         title="Scans"
         sub="Upload a floor plan and let Claude turn it into a costed estimate."
@@ -52,11 +69,11 @@ export default function DetectionScreen() {
             </tr>
           </thead>
           <tbody>
-            {SCANS.map((s, i) => (
+            {liveScans.map((s: any, i: number) => (
               <tr
-                key={s.f}
+                key={s.id ?? s.file_name}
                 className="es-row"
-                onClick={() => navigate(`/detection/scan-${i + 1}`)}
+                onClick={() => navigate(`/detection/${s.id ?? `scan-${i + 1}`}`)}
                 style={{
                   borderTop: `1px solid ${C.border}`,
                   transition: "background-color 120ms",
@@ -65,27 +82,27 @@ export default function DetectionScreen() {
               >
                 <Td>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <FileCheck2 size={16} color={s.p === 100 ? C.green : C.orange} />
-                    <span style={{ fontFamily: FONT.heading, fontSize: 14, fontWeight: 500 }}>{s.f}</span>
+                    <FileCheck2 size={16} color={(s.progress ?? s.p) === 100 ? C.green : C.orange} />
+                    <span style={{ fontFamily: FONT.heading, fontSize: 14, fontWeight: 500 }}>{s.file_name ?? s.f}</span>
                   </div>
                 </Td>
-                <Td>{s.c}</Td>
+                <Td>{s.client ?? s.c}</Td>
                 <Td>
-                  <span style={{ fontFamily: FONT.heading, fontSize: 13, color: C.textMuted }}>{s.s}</span>
+                  <span style={{ fontFamily: FONT.heading, fontSize: 13, color: C.textMuted }}>{s.stage ?? s.s}</span>
                 </Td>
                 <Td align="right" mono>
-                  <span style={{ fontWeight: 500 }}>{s.n}</span>
+                  <span style={{ fontWeight: 500 }}>{s.items_detected ?? s.n ?? 0}</span>
                 </Td>
                 <Td>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, width: 160 }}>
                     <div style={{ flex: 1, height: 3, borderRadius: 2, backgroundColor: C.border, overflow: "hidden" }}>
-                      <div style={{ width: `${s.p}%`, height: "100%", backgroundColor: s.p === 100 ? C.green : C.orange }} />
+                      <div style={{ width: `${s.progress ?? s.p}%`, height: "100%", backgroundColor: (s.progress ?? s.p) === 100 ? C.green : C.orange }} />
                     </div>
-                    <span style={{ fontFamily: FONT.mono, fontSize: 12, color: C.textMuted, width: 34 }}>{s.p}%</span>
+                    <span style={{ fontFamily: FONT.mono, fontSize: 12, color: C.textMuted, width: 34 }}>{s.progress ?? s.p}%</span>
                   </div>
                 </Td>
                 <Td align="right" muted>
-                  <span style={{ fontStyle: "italic", fontSize: 13 }}>{s.t}</span>
+                  <span style={{ fontStyle: "italic", fontSize: 13 }}>{s.t ?? "just now"}</span>
                 </Td>
               </tr>
             ))}
