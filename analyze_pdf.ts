@@ -482,8 +482,12 @@ export async function detectElectricalComponents(
   drawingVersion: string = "001",
   apiKey?: string
 ): Promise<DetectionResult> {
+  const resolvedKey = apiKey ?? (import.meta as any).env.VITE_ANTHROPIC_API_KEY;
+  if (!resolvedKey) {
+    throw new Error("VITE_ANTHROPIC_API_KEY is not configured. Add it to Vercel Environment Variables and redeploy.");
+  }
   const client = new Anthropic({
-    apiKey: apiKey ?? (import.meta as any).env.VITE_ANTHROPIC_API_KEY,
+    apiKey: resolvedKey,
     dangerouslyAllowBrowser: true,
   });
 
