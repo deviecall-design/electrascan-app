@@ -503,6 +503,9 @@ export async function detectElectricalComponents(
     source: { type: "base64" as const, media_type: "image/jpeg" as const, data: base64 },
   }));
 
+  let pass1Error: any = null;
+  let pass2Error: any = null;
+
   // ── PASS 1: Symbol-aware legend extraction ────
   console.log("[ElectraScan v4] Pass 1: Reading legend + symbols...");
   let rawLegendResponse = "";
@@ -535,8 +538,9 @@ export async function detectElectricalComponents(
     legendItems.filter(l => l.in_electrical_scope).forEach(l => {
       console.log(`  [${l.symbol_visual}] ${l.symbol_description}: ${l.quantity} EA @ $${l.catalogue_price}`);
     });
-  } catch (err) {
+  } catch (err: any) {
     console.warn("[ElectraScan v4] Legend extraction failed:", err);
+    pass1Error = err;
   }
 
   // ── PASS 2: Floor plan scan with symbol decoder ─
@@ -568,13 +572,19 @@ export async function detectElectricalComponents(
     if (parsed.scale_detected && scaleDetected === "unknown") scaleDetected = parsed.scale_detected;
     roomComponents = parsed.components ?? [];
     console.log(`[ElectraScan v4] Room distribution: ${roomComponents.length} entries across rooms`);
-  } catch (err) {
+  } catch (err: any) {
     console.warn("[ElectraScan v4] Room scan failed:", err);
+    pass2Error = err;
   }
 
   const components = buildComponents(legendItems, roomComponents);
 
   if (components.length === 0) {
+    const apiError = pass1Error ?? pass2Error;
+    if (apiError) {
+      const msg = apiError?.message ?? String(apiError);
+      throw new Error(`Detection API error: ${msg}`);
+    }
     console.warn("[ElectraScan v4] Zero components after both passes — drawing may be unreadable or non-electrical.");
   }
 
