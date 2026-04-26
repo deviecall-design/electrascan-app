@@ -230,6 +230,36 @@ Return ONLY valid JSON:
 }`;
 };
 
+// Direct-scan fallback — used when Pass 1 finds no legend
+const DIRECT_SCAN_PROMPT = `You are ElectraScan scanning an Australian electrical floor plan. No legend table was found so scan the drawing directly.
+
+Identify every electrical component you can see on the floor plan using standard Australian electrical drawing conventions:
+- Downlights, ceiling lights, pendants, wall lights, LED strips, track lights
+- Power points (GPO, double GPO, weatherproof)
+- Light switches, dimmers, 2-way switches
+- Exhaust fans, ceiling fans
+- Split system AC, ducted AC
+- Data/TV points (Cat6)
+- CCTV, intercom, smoke detectors
+- EV chargers, switchboards
+
+Return ONLY valid JSON:
+{
+  "scale_detected": "1:50",
+  "components": [
+    {
+      "legend_description": "Recessed downlight",
+      "type": "DOWNLIGHT_RECESSED",
+      "quantity": 6,
+      "room": "Kitchen",
+      "drawing_ref": "Sheet 1",
+      "confidence": 75,
+      "flags": ["LOW_CONFIDENCE"],
+      "notes": "No legend — estimated from drawing symbols"
+    }
+  ]
+}`;
+
 // ─────────────────────────────────────────────
 // PDF → IMAGES
 // ─────────────────────────────────────────────
@@ -501,7 +531,8 @@ export async function detectElectricalComponents(
   }
 
   // ── PASS 2: Floor plan scan with symbol decoder ─
-  console.log("[ElectraScan v4] Pass 2: Scanning floor plan with symbol decoder...");
+  const noLegend = legendItems.length === 0;
+  console.log(`[ElectraScan v4] Pass 2: ${noLegend ? "Direct scan (no legend)" : "Scanning with symbol decoder"}...`);
   let rawResponse = "";
   let roomComponents: any[] = [];
 
@@ -509,12 +540,17 @@ export async function detectElectricalComponents(
     const r = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 4096,
-      system: buildFloorPlanPrompt(legendItems),
+      system: noLegend ? DIRECT_SCAN_PROMPT : buildFloorPlanPrompt(legendItems),
       messages: [{
         role: "user",
         content: [
           ...imageBlocks,
-          { type: "text", text: `Drawing: ${file.name}. Scan every room and count each symbol type using the decoder. Total quantities must match the legend.` },
+          {
+            type: "text",
+            text: noLegend
+              ? `Drawing: ${file.name}. Scan every room and identify all electrical components you can see.`
+              : `Drawing: ${file.name}. Scan every room and count each symbol type using the decoder. Total quantities must match the legend.`,
+          },
         ],
       }],
     });
@@ -530,11 +566,7 @@ export async function detectElectricalComponents(
   const components = buildComponents(legendItems, roomComponents);
 
   if (components.length === 0) {
-    throw new Error(
-      legendItems.length === 0
-        ? "No legend found in this drawing. Ensure the PDF includes a symbol legend/key."
-        : "Detection returned 0 components. Check the drawing contains a readable floor plan."
-    );
+    console.warn("[ElectraScan v4] Zero components after both passes — drawing may be unreadable or non-electrical.");
   }
 
   const riskFlags = generateRiskFlags(components);
