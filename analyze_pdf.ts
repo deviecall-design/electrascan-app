@@ -582,10 +582,14 @@ export async function detectElectricalComponents(
   if (components.length === 0) {
     const apiError = pass1Error ?? pass2Error;
     if (apiError) {
-      const msg = apiError?.message ?? String(apiError);
-      throw new Error(`Detection API error: ${msg}`);
+      throw new Error(`Detection API error: ${apiError?.message ?? String(apiError)}`);
     }
-    console.warn("[ElectraScan v4] Zero components after both passes — drawing may be unreadable or non-electrical.");
+    // Both passes succeeded but Claude returned no items — surface raw responses for diagnosis
+    const p1Preview = rawLegendResponse.slice(0, 400) || "(empty)";
+    const p2Preview = rawResponse.slice(0, 400) || "(empty)";
+    throw new Error(
+      `Detection returned 0 components.\nPass 1 response: ${p1Preview}\nPass 2 response: ${p2Preview}`
+    );
   }
 
   const riskFlags = generateRiskFlags(components);
