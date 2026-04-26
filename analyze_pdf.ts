@@ -264,18 +264,23 @@ Return ONLY valid JSON:
 // PDF → IMAGES
 // ─────────────────────────────────────────────
 
+const MAX_IMAGE_PX = 1568; // Anthropic recommended max for vision quality
+
 async function pdfToImages(file: File): Promise<string[]> {
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
   const images: string[] = [];
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
-    const viewport = page.getViewport({ scale: 2.0 });
+    const natural = page.getViewport({ scale: 1.0 });
+    const scale = Math.min(2.0, MAX_IMAGE_PX / Math.max(natural.width, natural.height));
+    const viewport = page.getViewport({ scale });
     const canvas = document.createElement("canvas");
     canvas.width = viewport.width;
     canvas.height = viewport.height;
     await page.render({ canvasContext: canvas.getContext("2d")!, viewport }).promise;
-    images.push(canvas.toDataURL("image/png").split(",")[1]);
+    // JPEG at 0.92 quality — far smaller than PNG for line drawings, stays within API limits
+    images.push(canvas.toDataURL("image/jpeg", 0.92).split(",")[1]);
   }
   return images;
 }
@@ -495,7 +500,7 @@ export async function detectElectricalComponents(
   const pageImages = await pdfToImages(file);
   const imageBlocks: Anthropic.ImageBlockParam[] = pageImages.map(base64 => ({
     type: "image" as const,
-    source: { type: "base64" as const, media_type: "image/png" as const, data: base64 },
+    source: { type: "base64" as const, media_type: "image/jpeg" as const, data: base64 },
   }));
 
   // ── PASS 1: Symbol-aware legend extraction ────
