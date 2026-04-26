@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { useProjects, statusPalette, type Project } from "../contexts/ProjectContext";
+import { useProjects, estimateTotals, statusPalette, type Project } from "../contexts/ProjectContext";
 
 /**
  * DashboardScreen (light theme — renders inside AppShell).
@@ -67,25 +67,33 @@ const DashboardScreen: React.FC<Props> = ({
   const { projects } = useProjects();
 
   const stats = useMemo(() => {
-    const activeCount = projects.filter(p => p.status === "Active").length;
-    const thisMonth = new Date();
-    const monthKey = `${thisMonth.getFullYear()}-${thisMonth.getMonth()}`;
-    const estimatesThisMonth = projects.reduce((sum, p) => {
-      return (
-        sum +
-        p.estimates.filter(e => {
-          const d = new Date(e.createdAt);
-          return `${d.getFullYear()}-${d.getMonth()}` === monthKey;
-        }).length
-      );
-    }, 0);
-    const scansUsed = projects.reduce((sum, p) => sum + p.scans.length, 0);
-    return {
-      total: projects.length,
-      active: activeCount,
-      estimatesThisMonth,
-      scansUsed,
-    };
+    const now = new Date();
+    const monthKey = `${now.getFullYear()}-${now.getMonth()}`;
+
+    const estimatesThisMonth = projects.reduce((sum, p) =>
+      sum + p.estimates.filter(e => {
+        const d = new Date(e.createdAt);
+        return `${d.getFullYear()}-${d.getMonth()}` === monthKey;
+      }).length, 0);
+
+    const pendingValue = projects.reduce((sum, p) =>
+      sum + p.estimates
+        .filter(e => !e.locked)
+        .reduce((s, e) => s + estimateTotals(e).total, 0), 0);
+
+    const won  = projects.filter(p => p.status === "Won").length;
+    const lost = projects.filter(p => p.status === "Lost").length;
+    const winRate = (won + lost) === 0 ? null : Math.round((won / (won + lost)) * 100);
+
+    const diffs = projects
+      .filter(p => p.scans.length > 0 && p.estimates.length > 0)
+      .map(p => {
+        const ms = new Date(p.estimates[0].createdAt).getTime() - new Date(p.scans[0].scannedAt).getTime();
+        return ms / (1000 * 60 * 60 * 24);
+      });
+    const avgDays = diffs.length === 0 ? null : Math.round(diffs.reduce((s, d) => s + d, 0) / diffs.length * 10) / 10;
+
+    return { estimatesThisMonth, pendingValue, winRate, avgDays };
   }, [projects]);
 
   const recent = useMemo(() => {
@@ -105,10 +113,10 @@ const DashboardScreen: React.FC<Props> = ({
           marginBottom: 24,
         }}
       >
-        <StatCard label="Total Projects"         value={stats.total}              color={C.blue} />
-        <StatCard label="Active Projects"        value={stats.active}             color={C.green} />
-        <StatCard label="Estimates This Month"   value={stats.estimatesThisMonth} color={C.amber} />
-        <StatCard label="Scans Used"             value={stats.scansUsed}          color={C.purple} />
+        <StatCard label="Estimates This Month" value={String(stats.estimatesThisMonth)}                                                    color={C.amber} />
+        <StatCard label="Pending Value"        value={stats.pendingValue > 0 ? `$${(stats.pendingValue / 1000).toFixed(0)}k` : "$0"}   color={C.green} />
+        <StatCard label="Win Rate"             value={stats.winRate === null ? "—" : `${stats.winRate}%`}                              color={C.blue} />
+        <StatCard label="Avg Scan-to-Quote"    value={stats.avgDays === null ? "—" : `${stats.avgDays}d`}                              color={C.purple} />
       </div>
 
       {/* Recent projects */}

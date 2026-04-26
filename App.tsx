@@ -1113,6 +1113,7 @@ export default function App() {
           pageTitle={`${greetingFor(new Date())}, ${firstNameOf(tenant.name)}`}
           pageSubtitle={tenant.name}
           onNavigate={navigate}
+          onOpenSettings={() => setScreen("settings")}
           onNewScan={goToScan}
           topbarActions={
             <button
@@ -1157,6 +1158,7 @@ export default function App() {
           pageTitle="Projects"
           pageSubtitle={`${ctxProjects.length} total · ${ctxProjects.filter(p => p.status === "Active").length} active`}
           onNavigate={navigate}
+          onOpenSettings={() => setScreen("settings")}
           onNewScan={goToScan}
           topbarActions={
             <button
@@ -1194,6 +1196,7 @@ export default function App() {
           }
           pageSubtitle={ctxProjects.find(p => p.id === route.id)?.clientName || undefined}
           onNavigate={navigate}
+          onOpenSettings={() => setScreen("settings")}
           onNewScan={goToScan}
         >
           <ProjectDetail
@@ -1208,6 +1211,7 @@ export default function App() {
           pageTitle="Approvals"
           pageSubtitle="Track estimate sign-off across your projects"
           onNavigate={navigate}
+          onOpenSettings={() => setScreen("settings")}
           onNewScan={goToScan}
         >
           <ApprovalsIndex
@@ -1222,6 +1226,7 @@ export default function App() {
           pageTitle="Rate Library"
           pageSubtitle="Wholesaler pricing + your custom rates"
           onNavigate={navigate}
+          onOpenSettings={() => setScreen("settings")}
           onNewScan={goToScan}
         >
           <RateLibrary onBack={() => navigate({ name: "dashboard" })} />
@@ -1233,6 +1238,7 @@ export default function App() {
           pageTitle="Reports"
           pageSubtitle="Budget, burndown, hours, milestones"
           onNavigate={navigate}
+          onOpenSettings={() => setScreen("settings")}
           onNewScan={goToScan}
         >
           <ReportsIndexScreen onBack={() => navigate({ name: "dashboard" })} />
@@ -1244,6 +1250,7 @@ export default function App() {
           pageTitle="Email Upload"
           pageSubtitle="Forward drawings into ElectraScan by email"
           onNavigate={navigate}
+          onOpenSettings={() => setScreen("settings")}
           onNewScan={goToScan}
         >
           <EmailUpload

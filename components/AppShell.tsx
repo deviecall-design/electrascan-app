@@ -24,6 +24,7 @@ export interface AppShellProps {
   topbarActions?: React.ReactNode;
   onNavigate: (route: AppRoute) => void;
   onNewScan: () => void;
+  onOpenSettings?: () => void;
   children: React.ReactNode;
 }
 
@@ -81,6 +82,7 @@ const AppShell: React.FC<AppShellProps> = ({
   topbarActions,
   onNavigate,
   onNewScan,
+  onOpenSettings,
   children,
 }) => {
   const { tenant } = useTenant();
@@ -183,6 +185,19 @@ const AppShell: React.FC<AppShellProps> = ({
             </nav>
 
             <div className="es-sidebar-footer">
+              {onOpenSettings && (
+                <div
+                  className="es-nav-item"
+                  onClick={onOpenSettings}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={e => { if (e.key === "Enter" || e.key === " ") onOpenSettings(); }}
+                  style={{ marginBottom: 6 }}
+                >
+                  <span className="es-nav-icon">⚙️</span>
+                  <span>Settings</span>
+                </div>
+              )}
               <div className="es-user-chip">
                 <div className="es-user-avatar">{initialsOf(tenantName)}</div>
                 <div className="es-user-name" title={tenantName}>{tenantName}</div>
