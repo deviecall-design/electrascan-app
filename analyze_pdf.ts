@@ -251,6 +251,9 @@ async function pdfToImages(file: File): Promise<string[]> {
 }
 
 function extractJSON(raw: string): string {
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start !== -1 && end !== -1 && end > start) return raw.slice(start, end + 1);
   return raw.replace(/^```(?:json)?\s*/im, "").replace(/\s*```$/im, "").trim();
 }
 
@@ -470,7 +473,7 @@ export async function detectElectricalComponents(
 
   try {
     const r = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       max_tokens: 2000,
       system: LEGEND_SYSTEM_PROMPT,
       messages: [{
@@ -504,7 +507,7 @@ export async function detectElectricalComponents(
 
   try {
     const r = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       max_tokens: 4096,
       system: buildFloorPlanPrompt(legendItems),
       messages: [{
@@ -525,6 +528,15 @@ export async function detectElectricalComponents(
   }
 
   const components = buildComponents(legendItems, roomComponents);
+
+  if (components.length === 0) {
+    throw new Error(
+      legendItems.length === 0
+        ? "No legend found in this drawing. Ensure the PDF includes a symbol legend/key."
+        : "Detection returned 0 components. Check the drawing contains a readable floor plan."
+    );
+  }
+
   const riskFlags = generateRiskFlags(components);
   const estimateSubtotal = components.reduce((s, c) => s + c.line_total, 0);
 
