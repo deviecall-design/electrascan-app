@@ -7,6 +7,7 @@ import {
   type ApprovalAuditEntry,
   type ApprovalRole,
 } from "../services/approvalService";
+import { sendEnvelope } from "../services/docusignService";
 
 // ─── Design tokens (mirror App.tsx) ──────────────
 const C = {
@@ -260,14 +261,55 @@ export default function ApprovalsScreen({
     onStatusChange?.("rejected");
   };
 
+  const [docusignError, setDocusignError] = useState<{ kind: "not_configured" | "error"; message: string } | null>(null);
+  const [sending, setSending] = useState(false);
+  const [envelope, setEnvelope] = useState<{ id: string; signingUrl: string | null } | null>(null);
+
   const handleSendForApproval = async () => {
-    // Drops a fresh `submitted` entry and advances the stepper.
-    await appendEntry({
-      actor: "Damien Callaghan", role: "Electrician", action: "submitted",
-      label: `${currentEstimate.number} submitted for approval`,
-      note: `Submitted to ${actor.name} · total ${fmt(currentEstimate.total)} inc GST.`,
-      doc: currentEstimate.number, signature: null,
-    }, "submitted");
+    // Step 1: dispatch to DocuSign. If env vars are missing we surface a
+    // clear inline error and bail without writing an audit entry — the
+    // approval state hasn't actually changed yet.
+    setSending(true);
+    setDocusignError(null);
+
+    // Pick signers from the parties roster — Builder + Architect are
+    // the typical recipients. Fall back to the active actor when the
+    // roster is incomplete (avoids 400 from /api/approvals/send-envelope).
+    const signers = roster
+      .filter(p => p.role === "Builder" || p.role === "Architect")
+      .map(p => ({ name: p.name, email: p.email }));
+    if (signers.length === 0) {
+      signers.push({ name: actor.name, email: `${actor.name.replace(/\s+/g, ".").toLowerCase()}@example.com` });
+    }
+
+    const res = await sendEnvelope({
+      estimate_id: currentEstimate.id,
+      estimate_number: currentEstimate.number,
+      project_name: projectName,
+      total: currentEstimate.total,
+      signers,
+    });
+
+    setSending(false);
+
+    if (res.ok === true) {
+      setEnvelope({ id: res.data.envelopeId, signingUrl: res.data.signingUrl });
+      // Step 2: persist audit with envelopeId baked into the note so it
+      // survives in the immutable audit trail (no schema change needed).
+      await appendEntry({
+        actor: "Damien Callaghan", role: "Electrician", action: "submitted",
+        label: `${currentEstimate.number} submitted for approval`,
+        note: `Submitted via DocuSign envelope ${res.data.envelopeId} to ${signers.map(s => s.name).join(", ")} · total ${fmt(currentEstimate.total)} inc GST.`,
+        doc: currentEstimate.number, signature: null,
+      }, "submitted");
+    } else if (res.reason === "not_configured") {
+      setDocusignError({
+        kind: "not_configured",
+        message: `DocuSign not configured — add ${res.missing.join(", ")} to .env.local and redeploy.`,
+      });
+    } else {
+      setDocusignError({ kind: "error", message: res.error });
+    }
   };
 
   const exportAuditLog = () => {
@@ -435,13 +477,58 @@ export default function ApprovalsScreen({
             ) : (
               <AuditTimeline entries={audit} />
             )}
-            <button onClick={handleSendForApproval}
+            <button
+              onClick={handleSendForApproval}
+              disabled={sending}
               style={{
-                width: "100%", marginTop: 10, background: C.card, border: `1px dashed ${C.border}`,
-                color: C.dim, fontSize: 13, fontWeight: 600, padding: "12px", borderRadius: 12, cursor: "pointer",
-              }}>
-              + Submit New Event (Send for Approval)
+                width: "100%", marginTop: 10,
+                background: docusignError?.kind === "not_configured" ? `${C.amber}18` : C.card,
+                border: `1px dashed ${docusignError ? C.amber : C.border}`,
+                color: docusignError ? C.amber : C.dim,
+                fontSize: 13, fontWeight: 600, padding: "12px", borderRadius: 12,
+                cursor: sending ? "wait" : "pointer",
+                opacity: sending ? 0.7 : 1,
+              }}
+            >
+              {sending ? "Sending to DocuSign…" : "+ Submit New Event (Send for Approval)"}
             </button>
+
+            {docusignError && (
+              <div
+                style={{
+                  marginTop: 10,
+                  background: docusignError.kind === "not_configured" ? `${C.amber}18` : `${C.red}18`,
+                  border: `1px solid ${docusignError.kind === "not_configured" ? C.amber : C.red}`,
+                  color: docusignError.kind === "not_configured" ? C.amber : C.red,
+                  padding: "10px 12px", borderRadius: 10, fontSize: 12, lineHeight: 1.5,
+                }}
+              >
+                <strong style={{ display: "block", marginBottom: 4 }}>
+                  {docusignError.kind === "not_configured" ? "DocuSign not configured" : "DocuSign send failed"}
+                </strong>
+                {docusignError.message}
+              </div>
+            )}
+
+            {envelope && (
+              <div
+                style={{
+                  marginTop: 10, background: `${C.green}18`, border: `1px solid ${C.green}`,
+                  color: C.green, padding: "10px 12px", borderRadius: 10, fontSize: 12, lineHeight: 1.5,
+                }}
+              >
+                <strong style={{ display: "block", marginBottom: 4 }}>Envelope sent</strong>
+                <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>{envelope.id}</span>
+                {envelope.signingUrl && (
+                  <>
+                    {" · "}
+                    <a href={envelope.signingUrl} target="_blank" rel="noreferrer" style={{ color: C.green, textDecoration: "underline" }}>
+                      Open signing URL
+                    </a>
+                  </>
+                )}
+              </div>
+            )}
           </>
         )}
 
