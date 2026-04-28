@@ -1,5 +1,10 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useProjects, estimateTotals, statusPalette, type Project } from "../contexts/ProjectContext";
+import {
+  fetchDashboardKpis,
+  formatScanToQuote,
+  type DashboardKpis,
+} from "../services/dashboardKpiService";
 
 /**
  * DashboardScreen (light theme — renders inside AppShell).
@@ -66,7 +71,10 @@ const DashboardScreen: React.FC<Props> = ({
 }) => {
   const { projects } = useProjects();
 
-  const stats = useMemo(() => {
+  // Local-only fallback so the dashboard still has something useful to show
+  // when Supabase is unreachable, the user is unauthenticated, or the
+  // estimates table is empty for this owner.
+  const localStats = useMemo(() => {
     const now = new Date();
     const monthKey = `${now.getFullYear()}-${now.getMonth()}`;
 
@@ -96,6 +104,41 @@ const DashboardScreen: React.FC<Props> = ({
     return { estimatesThisMonth, pendingValue, winRate, avgDays };
   }, [projects]);
 
+  // Live KPIs from Supabase. While loading we render skeleton placeholders;
+  // on error we fall through to the local-only numbers above so the dashboard
+  // never blanks out for a transient network issue.
+  const [live, setLive] = useState<DashboardKpis | null>(null);
+  const [kpiState, setKpiState] = useState<"loading" | "ready" | "error">("loading");
+  const [kpiError, setKpiError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setKpiState("loading");
+    fetchDashboardKpis().then((res: { ok: true; kpis: DashboardKpis } | { ok: false; error: string }) => {
+      if (cancelled) return;
+      if (res.ok === true) {
+        setLive(res.kpis);
+        setKpiError(null);
+        setKpiState("ready");
+      } else {
+        setLive(null);
+        setKpiError(res.error);
+        setKpiState("error");
+      }
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Use live numbers when present, otherwise fall back to local.
+  const useLive = live && live.source === "supabase";
+  const stats = {
+    estimatesThisMonth: useLive ? live!.estimatesThisMonth : localStats.estimatesThisMonth,
+    pendingValue:       useLive ? live!.pendingValue       : localStats.pendingValue,
+    winRate:            useLive ? live!.winRate            : localStats.winRate,
+    avgScanToQuote:     useLive ? formatScanToQuote(live!.avgScanToQuoteHours)
+                                : (localStats.avgDays === null ? "—" : `${localStats.avgDays}d`),
+  };
+
   const recent = useMemo(() => {
     return [...projects]
       .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
@@ -110,14 +153,30 @@ const DashboardScreen: React.FC<Props> = ({
           display: "grid",
           gap: 16,
           gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-          marginBottom: 24,
+          marginBottom: kpiState === "error" ? 8 : 24,
         }}
       >
-        <StatCard label="Estimates This Month" value={String(stats.estimatesThisMonth)}                                                    color={C.amber} />
-        <StatCard label="Pending Value"        value={stats.pendingValue > 0 ? `$${(stats.pendingValue / 1000).toFixed(0)}k` : "$0"}   color={C.green} />
-        <StatCard label="Win Rate"             value={stats.winRate === null ? "—" : `${stats.winRate}%`}                              color={C.blue} />
-        <StatCard label="Avg Scan-to-Quote"    value={stats.avgDays === null ? "—" : `${stats.avgDays}d`}                              color={C.purple} />
+        <StatCard label="Estimates This Month" value={String(stats.estimatesThisMonth)}                                                color={C.amber}  loading={kpiState === "loading"} />
+        <StatCard label="Pending Value"        value={stats.pendingValue > 0 ? `$${(stats.pendingValue / 1000).toFixed(0)}k` : "$0"}   color={C.green}  loading={kpiState === "loading"} />
+        <StatCard label="Win Rate"             value={stats.winRate === null ? "—" : `${stats.winRate}%`}                              color={C.blue}   loading={kpiState === "loading"} />
+        <StatCard label="Avg Scan-to-Quote"    value={stats.avgScanToQuote}                                                            color={C.purple} loading={kpiState === "loading"} />
       </div>
+      {kpiState === "error" && kpiError && (
+        <div
+          role="status"
+          style={{
+            background: `${C.red}10`,
+            border: `1px solid ${C.red}33`,
+            color: C.red,
+            borderRadius: 10,
+            padding: "8px 12px",
+            fontSize: 12,
+            marginBottom: 24,
+          }}
+        >
+          KPI sync failed — showing local data. ({kpiError})
+        </div>
+      )}
 
       {/* Recent projects */}
       <div style={{ marginBottom: 28 }}>
@@ -233,10 +292,11 @@ const DashboardScreen: React.FC<Props> = ({
   );
 };
 
-const StatCard: React.FC<{ label: string; value: number | string; color: string }> = ({
+const StatCard: React.FC<{ label: string; value: number | string; color: string; loading?: boolean }> = ({
   label,
   value,
   color,
+  loading,
 }) => (
   <div
     style={{
@@ -249,9 +309,32 @@ const StatCard: React.FC<{ label: string; value: number | string; color: string 
     <div style={{ fontSize: 11, color: C.grayMd, fontWeight: 600, letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 8 }}>
       {label}
     </div>
-    <div style={{ fontSize: 28, fontWeight: 800, color }}>{value}</div>
+    {loading ? (
+      <div
+        aria-label="Loading"
+        style={{
+          height: 28,
+          width: "60%",
+          borderRadius: 6,
+          background: `linear-gradient(90deg, ${C.border} 0%, #F8FAFC 50%, ${C.border} 100%)`,
+          backgroundSize: "200% 100%",
+          animation: "es-skeleton 1.4s ease-in-out infinite",
+        }}
+      />
+    ) : (
+      <div style={{ fontSize: 28, fontWeight: 800, color }}>{value}</div>
+    )}
   </div>
 );
+
+// Inject the skeleton keyframes once. Scoped via a stable id so multiple
+// dashboard mounts don't duplicate the rule.
+if (typeof document !== "undefined" && !document.getElementById("es-kpi-skeleton-style")) {
+  const styleEl = document.createElement("style");
+  styleEl.id = "es-kpi-skeleton-style";
+  styleEl.textContent = `@keyframes es-skeleton { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }`;
+  document.head.appendChild(styleEl);
+}
 
 const ProjectCard: React.FC<{ project: Project; onClick: () => void }> = ({ project, onClick }) => {
   const palette = statusPalette(project.status);
