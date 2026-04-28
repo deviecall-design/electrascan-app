@@ -1,5 +1,12 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTenant, type TenantConfig } from "../contexts/TenantContext";
+import { useToast } from "../contexts/ToastContext";
+import {
+  fetchTenantProfile,
+  saveTenantProfile,
+  uploadLogo,
+  type TenantProfile,
+} from "../services/tenantProfileService";
 
 const C = {
   bg:     "#0A1628", navy:   "#0F1E35", card:   "#132240",
@@ -35,9 +42,31 @@ async function fileToDataUrl(file: File): Promise<string> {
 
 export default function TenantSetup({ onBack }: TenantSetupProps) {
   const { tenant, updateTenant, resetTenant } = useTenant();
+  const { addToast } = useToast();
   const [draft, setDraft] = useState<TenantConfig>(tenant);
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Hydrate from Supabase on mount; falls through cleanly when the
+  // user is unauthenticated (anon access) and we keep the local
+  // TenantContext value already in `draft`.
+  useEffect(() => {
+    let cancelled = false;
+    fetchTenantProfile().then(res => {
+      if (cancelled) return;
+      if (res.ok && res.profile) {
+        const merged: TenantConfig = { ...tenant, ...res.profile };
+        setDraft(merged);
+        updateTenant(merged);
+      }
+      setLoading(false);
+    });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const setField = <K extends keyof TenantConfig>(key: K, value: TenantConfig[K]) => {
     setDraft(d => ({ ...d, [key]: value }));
@@ -47,14 +76,51 @@ export default function TenantSetup({ onBack }: TenantSetupProps) {
   const onPickLogo = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
-    if (!/^image\/(png|jpeg|jpg|svg\+xml)$/.test(f.type)) return;
-    const dataUrl = await fileToDataUrl(f);
-    setField("logoUrl", dataUrl);
+    if (!/^image\/(png|jpeg|jpg|svg\+xml)$/.test(f.type)) {
+      addToast("Logo must be PNG, JPEG, or SVG.", "error");
+      return;
+    }
+    setUploading(true);
+    // Try Supabase Storage first; fall back to a local data URL when
+    // the user isn't authenticated so the form still previews properly.
+    const upload = await uploadLogo(f);
+    if (upload.ok === true) {
+      setField("logoUrl", upload.url);
+      addToast("Logo uploaded.", "success");
+    } else if (upload.error === "unauthenticated") {
+      const dataUrl = await fileToDataUrl(f);
+      setField("logoUrl", dataUrl);
+      addToast("Saved locally — sign in to publish to all tenants.", "info");
+    } else {
+      addToast(`Logo upload failed: ${upload.error}`, "error");
+    }
+    setUploading(false);
   };
 
-  const save = () => {
+  const save = async () => {
+    setSaving(true);
+    const profile: TenantProfile = {
+      name: draft.name,
+      abn: draft.abn,
+      address: draft.address,
+      contactEmail: draft.contactEmail,
+      contactPhone: draft.contactPhone,
+      emailReplyTo: draft.emailReplyTo,
+      logoUrl: draft.logoUrl,
+    };
+    const res = await saveTenantProfile(profile);
+    // Always update the local context so the in-app branding reflects
+    // the latest values, even if Supabase persistence failed.
     updateTenant(draft);
-    setSaved(true);
+    if (res.ok === true) {
+      setSaved(true);
+      addToast("Company profile saved.", "success");
+    } else if (res.error === "unauthenticated") {
+      addToast("Saved locally — sign in to sync to Supabase.", "info");
+    } else {
+      addToast(`Save failed: ${res.error}`, "error");
+    }
+    setSaving(false);
   };
 
   const previewContact = [draft.address, draft.contactPhone, draft.contactEmail].filter(Boolean).join(" · ");
@@ -89,11 +155,16 @@ export default function TenantSetup({ onBack }: TenantSetupProps) {
             </div>
             <div style={{ flex: 1 }}>
               <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/svg+xml" style={{ display: "none" }} onChange={onPickLogo} />
-              <button onClick={() => fileRef.current?.click()} style={{
-                background: C.blue, border: "none", color: "#fff", fontSize: 13, fontWeight: 700,
-                padding: "10px 16px", borderRadius: 10, cursor: "pointer",
-              }}>
-                {draft.logoUrl ? "Replace logo" : "Upload logo"}
+              <button
+                disabled={uploading}
+                onClick={() => fileRef.current?.click()}
+                style={{
+                  background: C.blue, border: "none", color: "#fff", fontSize: 13, fontWeight: 700,
+                  padding: "10px 16px", borderRadius: 10, cursor: uploading ? "wait" : "pointer",
+                  opacity: uploading ? 0.7 : 1,
+                }}
+              >
+                {uploading ? "Uploading…" : draft.logoUrl ? "Replace logo" : "Upload logo"}
               </button>
               {draft.logoUrl && (
                 <button onClick={() => setField("logoUrl", "")} style={{
@@ -159,12 +230,18 @@ export default function TenantSetup({ onBack }: TenantSetupProps) {
           }}>
             Reset to defaults
           </button>
-          <button onClick={save} style={{
-            flex: 2, background: saved ? C.green : C.blue, border: "none", color: "#fff",
-            fontSize: 13, fontWeight: 700, padding: "12px", borderRadius: 12, cursor: "pointer",
-            transition: "background .15s",
-          }}>
-            {saved ? "Saved ✓" : "Save changes"}
+          <button
+            onClick={save}
+            disabled={saving || loading}
+            style={{
+              flex: 2, background: saved ? C.green : C.blue, border: "none", color: "#fff",
+              fontSize: 13, fontWeight: 700, padding: "12px", borderRadius: 12,
+              cursor: saving ? "wait" : "pointer",
+              opacity: (saving || loading) ? 0.7 : 1,
+              transition: "background .15s",
+            }}
+          >
+            {saving ? "Saving…" : saved ? "Saved ✓" : "Save changes"}
           </button>
         </div>
       </div>
