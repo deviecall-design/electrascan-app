@@ -585,10 +585,15 @@ export async function detectElectricalComponents(
       throw new Error(`Detection API error: ${apiError?.message ?? String(apiError)}`);
     }
     // Both passes succeeded but Claude returned no items — surface raw responses for diagnosis
-    const p1Preview = rawLegendResponse.slice(0, 400) || "(empty)";
-    const p2Preview = rawResponse.slice(0, 400) || "(empty)";
+    const p1Preview = rawLegendResponse.slice(0, 600) || "(empty)";
+    const p2Preview = rawResponse.slice(0, 600) || "(empty)";
     throw new Error(
-      `Detection returned 0 components.\nPass 1 response: ${p1Preview}\nPass 2 response: ${p2Preview}`
+      `Detection returned 0 components.\n` +
+      `Legend items parsed: ${legendItems.length}\n` +
+      `Room components parsed: ${roomComponents.length}\n` +
+      `Pages sent: ${pageImages.length}\n` +
+      `\n— Pass 1 (legend) raw response —\n${p1Preview}\n` +
+      `\n— Pass 2 (rooms) raw response —\n${p2Preview}`
     );
   }
 

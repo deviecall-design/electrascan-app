@@ -560,7 +560,12 @@ function UploadScreen({ onFile, onBack, error }: { onFile: (f: File) => void; on
         <div style={{ fontSize: 16, fontWeight: 800, color: C.blue }}>Electra<span style={{ color: C.text }}>Scan</span></div>
         <div style={{ width: 60 }} />
       </div>
-      {error && <div style={{ margin: "12px 20px 0", background: `${C.red}22`, border: `1px solid ${C.red}`, borderRadius: 10, padding: "12px 14px", fontSize: 13, color: C.red, flexShrink: 0 }}><strong>Error:</strong> {error}</div>}
+      {error && (
+        <div style={{ margin: "12px 20px 0", background: `${C.red}22`, border: `1px solid ${C.red}`, borderRadius: 10, padding: "12px 14px", fontSize: 13, color: C.red, flexShrink: 0, maxHeight: 280, overflowY: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: error.includes("Pass 1 response") ? "ui-monospace, SFMono-Regular, Menlo, monospace" : "inherit" }}>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>Detection error</div>
+          {error}
+        </div>
+      )}
       <div style={{ flex: 1, overflowY: "auto", padding: "24px 20px 20px" }}>
         <div style={{ fontSize: 28, fontWeight: 800, color: C.text, letterSpacing: "-0.03em", lineHeight: 1.2, marginBottom: 10 }}>Scan a<br />drawing</div>
         <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.6, marginBottom: 24 }}>Upload the electrical PDF. ElectraScan reads the legend, identifies every symbol, and builds your estimate.</div>
@@ -1116,25 +1121,47 @@ export default function App() {
           onOpenSettings={() => setScreen("settings")}
           onNewScan={goToScan}
           topbarActions={
-            <button
-              onClick={() => setScreen("settings")}
-              title="Company settings"
-              style={{
-                background: "transparent",
-                border: "1px solid #E2E8F0",
-                color: "#64748B",
-                width: 34,
-                height: 34,
-                borderRadius: 8,
-                cursor: "pointer",
-                fontSize: 14,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              ⚙️
-            </button>
+            <>
+              <button
+                onClick={goToScan}
+                title="Run detection on a PDF — surfaces raw Claude responses on failure"
+                style={{
+                  background: "transparent",
+                  border: "1px solid #E2E8F0",
+                  color: "#1D6EFD",
+                  height: 34,
+                  padding: "0 12px",
+                  borderRadius: 8,
+                  cursor: "pointer",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                🔬 Detection
+              </button>
+              <button
+                onClick={() => setScreen("settings")}
+                title="Company settings"
+                style={{
+                  background: "transparent",
+                  border: "1px solid #E2E8F0",
+                  color: "#64748B",
+                  width: 34,
+                  height: 34,
+                  borderRadius: 8,
+                  cursor: "pointer",
+                  fontSize: 14,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                ⚙️
+              </button>
+            </>
           }
         >
           <DashboardScreen

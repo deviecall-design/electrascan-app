@@ -848,9 +848,15 @@ const UploadTab: React.FC<{
             padding: "10px 14px",
             borderRadius: 10,
             fontSize: 13,
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+            maxHeight: 280,
+            overflowY: "auto",
+            fontFamily: error.includes("Pass 1 response") ? "ui-monospace, SFMono-Regular, Menlo, monospace" : "inherit",
           }}
         >
-          <strong>Error:</strong> {error}
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>Detection error</div>
+          {error}
         </div>
       )}
 
