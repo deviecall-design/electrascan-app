@@ -22,6 +22,7 @@ import {
   type DetectionResult,
   type DetectedComponent,
 } from "../analyze_pdf";
+import { peekNextReference } from "../services/estimateReferenceService";
 
 // Light-theme palette (renders inside AppShell's light content area).
 const C = {
@@ -284,8 +285,14 @@ const ProjectDetail: React.FC<Props> = ({ projectId, onBack }) => {
                     updatedAt: new Date().toISOString(),
                   });
                 } else {
-                  const est: ProjectEstimate = {
-                    id: newEstimateId(),
+                  // Reference is allocated server-side via /api/estimates/create
+                  // when the row is persisted; for the local draft we ask
+                  // Supabase for the next sequence so the user sees the
+                  // expected reference immediately. peekNextReference
+                  // resolves to EST-YYMM-0001 on any error path.
+                  const id = newEstimateId();
+                  const baseEst: ProjectEstimate = {
+                    id,
                     number: `EST-${new Date().getFullYear()}-${String(
                       Math.floor(Math.random() * 900) + 100,
                     )}-001`,
@@ -299,7 +306,10 @@ const ProjectDetail: React.FC<Props> = ({ projectId, onBack }) => {
                     cableRuns: [],
                     versions: [],
                   };
-                  saveEstimate(project.id, est);
+                  saveEstimate(project.id, baseEst);
+                  void peekNextReference().then(reference => {
+                    saveEstimate(project.id, { ...baseEst, reference });
+                  });
                 }
               }
               return saved;
@@ -310,8 +320,9 @@ const ProjectDetail: React.FC<Props> = ({ projectId, onBack }) => {
           <EstimateTab
             project={project}
             onCreateEstimate={() => {
+              const id = newEstimateId();
               const est: ProjectEstimate = {
-                id: newEstimateId(),
+                id,
                 number: `EST-${new Date().getFullYear()}-${String(
                   Math.floor(Math.random() * 900) + 100,
                 )}-001`,
@@ -326,6 +337,9 @@ const ProjectDetail: React.FC<Props> = ({ projectId, onBack }) => {
                 versions: [],
               };
               saveEstimate(project.id, est);
+              void peekNextReference().then(reference => {
+                saveEstimate(project.id, { ...est, reference });
+              });
             }}
           />
         )}
@@ -963,12 +977,100 @@ const EstimateTab: React.FC<{
         }}
       >
         <div>
-          <div style={{ fontSize: 15, fontWeight: 700 }}>{latest.number}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            {latest.reference && (
+              <span
+                title="Tenant reference (EST-YYMM-XXXX)"
+                style={{
+                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: "#fff",
+                  background: C.blue,
+                  padding: "3px 9px",
+                  borderRadius: 6,
+                  letterSpacing: 0.5,
+                }}
+              >
+                {latest.reference}
+              </span>
+            )}
+            <div style={{ fontSize: 15, fontWeight: 700 }}>{latest.number}</div>
+          </div>
           <div style={{ fontSize: 12, color: C.muted }}>
             Updated {fmtDateTime(latest.updatedAt)}
           </div>
         </div>
       </div>
+
+      {project.estimates.length > 1 && (
+        <div
+          style={{
+            background: C.card,
+            border: `1px solid ${C.border}`,
+            borderRadius: 12,
+            overflow: "hidden",
+            marginBottom: 14,
+          }}
+        >
+          <div
+            style={{
+              padding: "10px 14px",
+              borderBottom: `1px solid ${C.border}`,
+              fontSize: 11,
+              fontWeight: 700,
+              color: C.muted,
+              letterSpacing: 0.5,
+              textTransform: "uppercase",
+            }}
+          >
+            All estimates ({project.estimates.length})
+          </div>
+          <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ background: C.bg, color: C.muted }}>
+                <th style={{ textAlign: "left", padding: "8px 14px", fontSize: 11, fontWeight: 600, letterSpacing: 0.5 }}>Reference</th>
+                <th style={{ textAlign: "left", padding: "8px 14px", fontSize: 11, fontWeight: 600, letterSpacing: 0.5 }}>Number</th>
+                <th style={{ textAlign: "left", padding: "8px 14px", fontSize: 11, fontWeight: 600, letterSpacing: 0.5 }}>Created</th>
+                <th style={{ textAlign: "left", padding: "8px 14px", fontSize: 11, fontWeight: 600, letterSpacing: 0.5 }}>Status</th>
+                <th style={{ textAlign: "right", padding: "8px 14px", fontSize: 11, fontWeight: 600, letterSpacing: 0.5 }}>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {project.estimates.map(e => {
+                const t = estimateTotals(e);
+                return (
+                  <tr key={e.id} style={{ borderTop: `1px solid ${C.border}` }}>
+                    <td style={{ padding: "8px 14px", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontWeight: 700, color: e.reference ? C.text : C.muted }}>
+                      {e.reference ?? "—"}
+                    </td>
+                    <td style={{ padding: "8px 14px", color: C.muted }}>{e.number}</td>
+                    <td style={{ padding: "8px 14px", color: C.muted }}>{fmtDate(e.createdAt)}</td>
+                    <td style={{ padding: "8px 14px" }}>
+                      <span
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          padding: "2px 8px",
+                          borderRadius: 12,
+                          background: e.locked ? `${C.green}18` : `${C.amber}18`,
+                          color: e.locked ? C.green : C.amber,
+                        }}
+                      >
+                        {e.locked ? "Locked" : "Draft"}
+                      </span>
+                    </td>
+                    <td style={{ padding: "8px 14px", textAlign: "right", fontWeight: 700 }}>
+                      {fmtMoney(t.total)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       <ProjectEstimateEditor projectId={project.id} estimateId={latest.id} />
     </div>
   );

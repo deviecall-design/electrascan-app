@@ -56,6 +56,7 @@ export interface EstimateVersion {
 export interface ProjectEstimate {
   id: string;
   number: string;
+  reference?: string; // EST-YYMM-XXXX, monthly per-tenant sequence
   createdAt: string;
   updatedAt: string;
   margin: number; // global margin %
