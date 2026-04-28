@@ -96,3 +96,106 @@ export async function upsertRate(row: Omit<RateRow, "id" | "synced_at">) {
     .select()
     .single();
 }
+
+// ─── Dashboard KPI queries ──────────────────────────────────────────────
+//
+// Each KPI returns `{ value: T | null, error: any }`. A null value (rather
+// than 0) signals the caller to render "—" instead of a falsy number, so
+// fresh tenants don't see misleading zeroes.
+//
+// The schema uses status values: 'draft' | 'sent' | 'viewed' | 'approved'.
+// Mapping for win-rate: "won" = approved, "lost" = future 'rejected' status
+// (not yet in schema — handled gracefully via IN clause). Until rejected
+// rows exist, win rate is approved / (approved + sent + viewed) over the
+// last 90 days, treating "pending decision" estimates as not-yet-decided.
+
+export interface KpiResult<T> {
+  value: T | null;
+  error: any;
+}
+
+export async function fetchEstimatesThisMonth(): Promise<KpiResult<number>> {
+  const start = new Date();
+  start.setDate(1);
+  start.setHours(0, 0, 0, 0);
+  const { count, error } = await supabase
+    .from("estimates")
+    .select("id", { count: "exact", head: true })
+    .gte("created_at", start.toISOString());
+  return { value: error ? null : (count ?? 0), error };
+}
+
+export async function fetchPendingValue(): Promise<KpiResult<number>> {
+  const { data, error } = await supabase
+    .from("estimates")
+    .select("value")
+    .in("status", ["sent", "viewed"]);
+  if (error || !data) return { value: null, error };
+  const total = data.reduce((s, r: any) => s + Number(r.value ?? 0), 0);
+  return { value: total, error: null };
+}
+
+export async function fetchWinRate(): Promise<KpiResult<number>> {
+  const since = new Date();
+  since.setDate(since.getDate() - 90);
+  const { data, error } = await supabase
+    .from("estimates")
+    .select("status")
+    .gte("created_at", since.toISOString())
+    .in("status", ["approved", "sent", "viewed", "rejected"]);
+  if (error || !data || data.length === 0) return { value: null, error };
+  const won = data.filter((r: any) => r.status === "approved").length;
+  const decided = data.length;
+  if (decided === 0) return { value: null, error: null };
+  return { value: Math.round((won / decided) * 100), error: null };
+}
+
+export async function fetchAvgScanToQuote(): Promise<KpiResult<number>> {
+  // Returns the average time in milliseconds between a scan starting and
+  // the linked estimate being created. Scans link to estimates via
+  // scans.estimate_ref → estimates.ref.
+  const { data: scans, error: scansErr } = await supabase
+    .from("scans")
+    .select("estimate_ref, started_at")
+    .not("estimate_ref", "is", null);
+  if (scansErr || !scans || scans.length === 0) return { value: null, error: scansErr };
+
+  const refs = Array.from(new Set(scans.map((s: any) => s.estimate_ref).filter(Boolean)));
+  if (refs.length === 0) return { value: null, error: null };
+
+  const { data: estimates, error: estErr } = await supabase
+    .from("estimates")
+    .select("ref, created_at")
+    .in("ref", refs);
+  if (estErr || !estimates || estimates.length === 0) return { value: null, error: estErr };
+
+  const refToEstCreated = new Map<string, string>();
+  estimates.forEach((e: any) => {
+    if (e.ref && e.created_at) refToEstCreated.set(e.ref, e.created_at);
+  });
+
+  const deltas: number[] = [];
+  scans.forEach((s: any) => {
+    const estCreated = refToEstCreated.get(s.estimate_ref);
+    if (estCreated && s.started_at) {
+      const delta = new Date(estCreated).getTime() - new Date(s.started_at).getTime();
+      if (delta > 0) deltas.push(delta);
+    }
+  });
+
+  if (deltas.length === 0) return { value: null, error: null };
+  const avgMs = deltas.reduce((a, b) => a + b, 0) / deltas.length;
+  return { value: avgMs, error: null };
+}
+
+/**
+ * Format an avg-scan-to-quote duration (ms) as "Xh" or "Xd".
+ * Returns "—" for null/invalid input so callers can pass through.
+ */
+export function formatScanToQuote(ms: number | null): string {
+  if (ms == null || !isFinite(ms) || ms <= 0) return "—";
+  const hours = ms / (1000 * 60 * 60);
+  if (hours < 24) return `${Math.max(1, Math.round(hours))}h`;
+  const days = hours / 24;
+  return `${Math.max(1, Math.round(days))}d`;
+}

@@ -19,8 +19,19 @@ import {
   Td,
   StatusPill,
 } from "../components/ui/anthropic";
+import { useEffect, useState } from "react";
 import useSupabaseQuery from "../hooks/useSupabaseQuery";
-import { fetchEstimates, fetchScans, type EstimateRow, type ScanRow as ScanRowType } from "../services/supabaseData";
+import {
+  fetchEstimates,
+  fetchScans,
+  fetchEstimatesThisMonth,
+  fetchPendingValue,
+  fetchWinRate,
+  fetchAvgScanToQuote,
+  formatScanToQuote,
+  type EstimateRow,
+  type ScanRow as ScanRowType,
+} from "../services/supabaseData";
 
 // ─── Mock data ──────────────────────────────────────────────────────────
 // TODO: Replace with Supabase queries once the `estimates` and `scans`
@@ -102,6 +113,37 @@ export default function DashboardScreen() {
     .filter((e: any) => e.status === "sent" || e.status === "viewed")
     .reduce((s: number, e: any) => s + (e.value ?? 0), 0);
 
+  // Live KPIs — each is null until its query resolves; null renders "—".
+  const [kpiEstimatesMonth, setKpiEstimatesMonth] = useState<number | null>(null);
+  const [kpiPendingValue, setKpiPendingValue] = useState<number | null>(null);
+  const [kpiWinRate, setKpiWinRate] = useState<number | null>(null);
+  const [kpiScanToQuote, setKpiScanToQuote] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      fetchEstimatesThisMonth(),
+      fetchPendingValue(),
+      fetchWinRate(),
+      fetchAvgScanToQuote(),
+    ]).then(([m, pv, wr, stq]) => {
+      if (cancelled) return;
+      setKpiEstimatesMonth(m.value);
+      setKpiPendingValue(pv.value);
+      setKpiWinRate(wr.value);
+      setKpiScanToQuote(stq.value);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const fmtCount = (n: number | null) => (n == null ? "—" : String(n));
+  const fmtMoney = (n: number | null) => {
+    if (n == null) return "—";
+    if (n >= 1000) return `$${Math.round(n / 1000)}k`;
+    return `$${Math.round(n)}`;
+  };
+  const fmtPct = (n: number | null) => (n == null ? "—" : `${n}%`);
+
   return (
     <div className="anim-in">
       {/* Data source indicator */}
@@ -130,12 +172,12 @@ export default function DashboardScreen() {
         </p>
       </div>
 
-      {/* KPI strip */}
+      {/* KPI strip — live from Supabase, falls back to "—" when empty/unavailable */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 32 }}>
-        <Kpi label="Estimates this month" value={String(liveEstimates.length)} delta="+8" sub="vs April" up />
-        <Kpi label="Pending value"        value={`$${Math.round(allPendingValue / 1000)}k`} delta="+12%" sub="vs last week" up />
-        <Kpi label="Win rate"             value="68%" delta="+4%"  sub="30-day rolling" up />
-        <Kpi label="Avg scan-to-quote"    value="7m 12s" delta="−2m" sub="vs April"     up />
+        <Kpi label="Estimates this month" value={fmtCount(kpiEstimatesMonth)} delta=""    sub="MTD"            up />
+        <Kpi label="Pending value"        value={fmtMoney(kpiPendingValue)}   delta=""    sub="sent + viewed"  up />
+        <Kpi label="Win rate"             value={fmtPct(kpiWinRate)}          delta=""    sub="last 90 days"   up />
+        <Kpi label="Avg scan-to-quote"    value={formatScanToQuote(kpiScanToQuote)} delta="" sub="linked scans" up />
       </div>
 
       {/* Two-column body */}

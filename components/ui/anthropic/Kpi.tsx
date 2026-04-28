@@ -10,12 +10,13 @@ import { C, FONT, RADIUS } from "../../desktop/tokens";
 interface KpiProps {
   label: string;
   value: string;
-  delta: string;
+  delta?: string;
   sub: string;
   up?: boolean;
 }
 
 export default function Kpi({ label, value, delta, sub, up }: KpiProps) {
+  const showDelta = !!delta;
   return (
     <div
       style={{
@@ -49,19 +50,21 @@ export default function Kpi({ label, value, delta, sub, up }: KpiProps) {
         >
           {value}
         </div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 3,
-            fontSize: 12,
-            color: up ? C.green : C.orange,
-            fontWeight: 500,
-          }}
-        >
-          {up ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}
-          {delta}
-        </div>
+        {showDelta && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 3,
+              fontSize: 12,
+              color: up ? C.green : C.orange,
+              fontWeight: 500,
+            }}
+          >
+            {up ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}
+            {delta}
+          </div>
+        )}
       </div>
       <div
         style={{
