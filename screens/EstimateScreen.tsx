@@ -44,7 +44,7 @@ export default function EstimateScreen() {
   const { data: liveEstimates, isLive } = useSupabaseQuery(
     fetchEstimates,
     ESTIMATES.map(e => ({
-      id: e.r, ref: e.r, client: e.client, value: e.value,
+      id: e.r, ref: e.r, reference: e.r, client: e.client, value: e.value,
       status: e.status as EstimateRow["status"],
       days_since_sent: e.days, project_name: null,
       drawing_file: null, margin_pct: 15, subtotal: e.value,
@@ -82,7 +82,7 @@ export default function EstimateScreen() {
         <table style={{ width: "100%", fontSize: 14 }}>
           <thead>
             <tr style={{ backgroundColor: C.bg, borderBottom: `1px solid ${C.border}` }}>
-              <Th>Ref</Th>
+              <Th>Reference</Th>
               <Th>Client</Th>
               <Th align="right">Value</Th>
               <Th>Status</Th>
@@ -93,7 +93,7 @@ export default function EstimateScreen() {
           <tbody>
             {liveEstimates.map((e: any) => (
               <tr
-                key={e.ref ?? e.r}
+                key={e.id ?? e.reference ?? e.ref ?? e.r}
                 className="es-row"
                 style={{
                   borderTop: `1px solid ${C.border}`,
@@ -102,7 +102,7 @@ export default function EstimateScreen() {
                 }}
               >
                 <Td mono>
-                  <span style={{ fontWeight: 500, fontSize: 13, letterSpacing: "-0.01em" }}>{e.ref ?? e.r}</span>
+                  <span style={{ fontWeight: 500, fontSize: 13, letterSpacing: "-0.01em" }}>{e.reference ?? e.ref ?? e.r}</span>
                 </Td>
                 <Td>{e.client}</Td>
                 <Td align="right" mono>

@@ -14,6 +14,7 @@ import { supabase } from "./supabaseClient";
 export interface EstimateRow {
   id: string;
   ref: string;
+  reference: string | null;
   client: string;
   value: number;
   status: "draft" | "sent" | "viewed" | "approved";
