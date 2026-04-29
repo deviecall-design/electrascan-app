@@ -53,6 +53,19 @@ export interface RateRow {
   synced_at: string;
 }
 
+export interface CompanyProfileRow {
+  id: string;
+  owner_id: string;
+  company_name: string;
+  abn: string | null;
+  logo_url: string | null;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // ─── Fetch functions ────────────────────────────────────────────────────
 
 export async function fetchEstimates() {
@@ -94,6 +107,30 @@ export async function upsertRate(row: Omit<RateRow, "id" | "synced_at">) {
   return supabase
     .from("rate_library")
     .upsert([row], { onConflict: "code,owner_id" })
+    .select()
+    .single();
+}
+
+// ─── Company profile ────────────────────────────────────────────────────
+
+export type CompanyProfileInput = Pick<
+  CompanyProfileRow,
+  "company_name" | "abn" | "logo_url" | "address" | "phone" | "email"
+>;
+
+export async function fetchCompanyProfile() {
+  // RLS scopes the row to the signed-in user; maybeSingle() returns null
+  // (rather than an error) when no profile exists yet for fresh tenants.
+  return supabase.from("company_profile").select("*").maybeSingle();
+}
+
+export async function upsertCompanyProfile(input: CompanyProfileInput) {
+  const { data: userResult } = await supabase.auth.getUser();
+  const ownerId = userResult?.user?.id;
+  const row = ownerId ? { owner_id: ownerId, ...input } : input;
+  return supabase
+    .from("company_profile")
+    .upsert([row], { onConflict: "owner_id" })
     .select()
     .single();
 }
