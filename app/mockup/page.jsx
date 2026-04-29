@@ -7,6 +7,23 @@ import {
   ChevronRight, Loader2, Check,
   AlertCircle, Keyboard, Bot, Copy
 } from 'lucide-react';
+import { listEstimates, getDashboardKPIs } from '../../services/estimateService';
+
+function daysAgo(iso) {
+  if (!iso) return 0;
+  const ms = Date.now() - new Date(iso).getTime();
+  return Math.max(0, Math.floor(ms / (24 * 60 * 60 * 1000)));
+}
+
+function mapEstimateRow(e) {
+  return {
+    r: e.id ? String(e.id).slice(0, 8).toUpperCase() : 'EST-—',
+    client: e.contractor || e.project_name || 'Unknown client',
+    value: Number(e.total ?? 0),
+    status: e.status || 'draft',
+    days: daysAgo(e.created_at),
+  };
+}
 
 const C = {
   bg: '#faf9f5', bgSoft: '#f4f2ea', bgCard: '#ffffff', bgPaper: '#fcfbf7',
@@ -230,20 +247,45 @@ function Footer() {
 }
 
 function DashboardView({ go }) {
+  const [kpis, setKpis] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const data = await getDashboardKPIs();
+      if (!cancelled) setKpis(data);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const fmtUSD = (n) => `$${Math.round(n).toLocaleString()}`;
+  const fmtSec = (s) => {
+    if (!s || s <= 0) return null;
+    const m = Math.floor(s / 60);
+    const sec = Math.round(s % 60);
+    return `${m}m ${sec}s`;
+  };
+
+  const estimatesThisMonth = kpis?.estimatesThisMonth != null ? String(kpis.estimatesThisMonth) : '24';
+  const pendingValueRaw = kpis?.pendingValue;
+  const pendingValueDisplay = pendingValueRaw != null && pendingValueRaw > 0 ? fmtUSD(pendingValueRaw) : '$48,290';
+  const winRateDisplay = kpis?.winRatePct != null ? `${kpis.winRatePct}%` : '68%';
+  const avgQuote = fmtSec(kpis?.avgScanToQuoteSec) ?? '7m 12s';
+
   return (
     <div className="anim-in">
       <div style={{ marginBottom: 32 }}>
         <h1 style={{ fontFamily: fontHeading, fontSize: 30, fontWeight: 600, letterSpacing: '-0.02em', margin: '0 0 6px 0', lineHeight: 1.15 }}>Good morning, Damien.</h1>
         <p style={{ color: C.textMuted, fontStyle: 'italic', margin: 0, fontSize: 16 }}>
-          You have <B>3 scans</B> in queue and <B>$48,290</B> in pending estimates.
+          You have <B>3 scans</B> in queue and <B>{pendingValueDisplay}</B> in pending estimates.
         </p>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 32 }}>
-        <Kpi label="Estimates this month" value="24" delta="+8" sub="vs April" up />
-        <Kpi label="Pending value" value="$48,290" delta="+12%" sub="vs last week" up />
-        <Kpi label="Win rate" value="68%" delta="+4%" sub="30-day rolling" up />
-        <Kpi label="Avg scan-to-quote" value="7m 12s" delta="−2m" sub="vs April" up />
+        <Kpi label="Estimates this month" value={estimatesThisMonth} delta="+8" sub="vs April" up />
+        <Kpi label="Pending value" value={pendingValueDisplay} delta="+12%" sub="vs last week" up />
+        <Kpi label="Win rate" value={winRateDisplay} delta="+4%" sub="30-day rolling" up />
+        <Kpi label="Avg scan-to-quote" value={avgQuote} delta="−2m" sub="vs April" up />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 3fr', gap: 24 }}>
@@ -686,28 +728,72 @@ function FloorPlan({ items }) {
 }
 
 function EstimatesView() {
+  const [estimates, setEstimates] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await listEstimates(50);
+        if (cancelled) return;
+        setEstimates((rows ?? []).map(mapEstimateRow));
+      } catch (err) {
+        console.error('listEstimates error', err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const usingFallback = !loading && estimates.length === 0;
+  const displayed = usingFallback ? ESTIMATES : estimates;
+
+  const counts = displayed.reduce((acc, e) => {
+    const s = (e.status || '').toLowerCase();
+    if (s === 'draft') acc.drafted += 1;
+    if (s === 'sent' || s === 'viewed') acc.sent += 1;
+    if (s === 'approved') { acc.approved += 1; acc.winValue += Number(e.value ?? 0); }
+    return acc;
+  }, { drafted: 0, sent: 0, approved: 0, winValue: 0 });
+
+  const fmtMoney = (n) => n >= 1000 ? `$${Math.round(n / 1000)}k` : `$${n.toLocaleString()}`;
+
   return (
     <div className="anim-in">
-      <PageHeader title="Estimates" sub="Every quote ElectraScan has drafted for Vesh Electrical this quarter." />
+      <PageHeader
+        title="Estimates"
+        sub={loading
+          ? 'Loading estimates…'
+          : usingFallback
+            ? 'Sample estimates — no records yet in Supabase.'
+            : 'Every quote ElectraScan has drafted for Vesh Electrical.'}
+      />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 18 }}>
-        <MiniStat label="Drafted"   v="38"    />
-        <MiniStat label="Sent"      v="24"    tint={C.blue} />
-        <MiniStat label="Approved"  v="16"    tint={C.green} />
-        <MiniStat label="Win value" v="$284k" tint={C.green} />
+        <MiniStat label="Drafted"   v={String(counts.drafted)} />
+        <MiniStat label="Sent"      v={String(counts.sent)}      tint={C.blue} />
+        <MiniStat label="Approved"  v={String(counts.approved)}  tint={C.green} />
+        <MiniStat label="Win value" v={fmtMoney(counts.winValue)} tint={C.green} />
       </div>
       <Card>
-        <table style={{ width: '100%', fontSize: 14 }}>
-          <thead>
-            <tr style={{ backgroundColor: C.bg, borderBottom: `1px solid ${C.border}` }}>
-              <Th>Ref</Th><Th>Client</Th><Th align="right">Value</Th>
-              <Th>Status</Th><Th align="right">Sent</Th><Th width={32}></Th>
-            </tr>
-          </thead>
-          <tbody>
-            {ESTIMATES.map((e) => (<EstRow key={e.r} {...e} />))}
-            {ESTIMATES.map((e) => (<EstRow key={`2-${e.r}`} {...e} r={e.r.replace('014', '013')} days={e.days + 14} />))}
-          </tbody>
-        </table>
+        {loading ? (
+          <div style={{ padding: 32, textAlign: 'center', color: C.textSubtle, fontStyle: 'italic', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+            <Loader2 size={14} className="spin" /> Loading estimates…
+          </div>
+        ) : (
+          <table style={{ width: '100%', fontSize: 14 }}>
+            <thead>
+              <tr style={{ backgroundColor: C.bg, borderBottom: `1px solid ${C.border}` }}>
+                <Th>Ref</Th><Th>Client</Th><Th align="right">Value</Th>
+                <Th>Status</Th><Th align="right">Sent</Th><Th width={32}></Th>
+              </tr>
+            </thead>
+            <tbody>
+              {displayed.map((e, i) => (<EstRow key={`${e.r}-${i}`} {...e} />))}
+            </tbody>
+          </table>
+        )}
       </Card>
     </div>
   );

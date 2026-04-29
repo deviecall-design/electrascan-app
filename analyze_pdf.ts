@@ -180,9 +180,21 @@ Return ONLY valid JSON — no markdown:
 const buildFloorPlanPrompt = (legendItems: LegendItem[]): string => {
   const inScope = legendItems.filter(l => l.in_electrical_scope && l.catalogue_price);
 
-  const symbolDecoder = inScope.map(l =>
-    `  SYMBOL: ${l.symbol_visual} → "${l.symbol_description}" → ${l.quantity} EA total across whole drawing → type: ${l.mapped_type}`
-  ).join("\n");
+  const symbolDecoder = inScope.length > 0
+    ? inScope.map(l =>
+        `  SYMBOL: ${l.symbol_visual} → "${l.symbol_description}" → ${l.quantity} EA total across whole drawing → type: ${l.mapped_type}`
+      ).join("\n")
+    : `  No legend was extracted. Identify common Australian electrical symbols by appearance:
+  - Filled circles / dots → Downlights (DOWNLIGHT_RECESSED)
+  - Squares with two parallel lines → GPO / power point (GPO_DOUBLE)
+  - Squares with "WP" or weatherproof marker → Weatherproof GPO (GPO_WEATHERPROOF)
+  - Circles or rectangles with "S" / switch glyph → Light switch (SWITCHING_STANDARD)
+  - "DB" or panel boxes → Distribution board (SWITCHBOARD_SUB)
+  - Triangles or fan blades → Exhaust fan (EXHAUST_FAN) or ceiling fan
+  - "TV" / "D" / data jacks → Data / TV outlet (DATA_CAT6 / DATA_TV)
+  - "EV" / car charger glyph → EV charger (EV_CHARGER)
+  - Smoke detector circles with "S" → smoke alarm (use SECURITY_ALARM)
+  - Pendant / feature glyph → PENDANT_FEATURE`;
 
   return `You are ElectraScan scanning an Australian electrical floor plan.
 
@@ -251,7 +263,33 @@ async function pdfToImages(file: File): Promise<string[]> {
 }
 
 function extractJSON(raw: string): string {
-  return raw.replace(/^```(?:json)?\s*/im, "").replace(/\s*```$/im, "").trim();
+  if (!raw) return "";
+  let s = raw.trim();
+
+  const fenced = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced && fenced[1]) s = fenced[1].trim();
+
+  const first = s.indexOf("{");
+  const last = s.lastIndexOf("}");
+  if (first !== -1 && last !== -1 && last > first) {
+    s = s.slice(first, last + 1);
+  }
+
+  return s.trim();
+}
+
+function safeParse<T = any>(raw: string, label: string): T | null {
+  const cleaned = extractJSON(raw);
+  if (!cleaned) {
+    console.warn(`[ElectraScan v4] ${label}: empty response`);
+    return null;
+  }
+  try {
+    return JSON.parse(cleaned) as T;
+  } catch (err) {
+    console.warn(`[ElectraScan v4] ${label}: JSON parse failed`, err, "snippet:", cleaned.slice(0, 200));
+    return null;
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -470,7 +508,7 @@ export async function detectElectricalComponents(
 
   try {
     const r = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       max_tokens: 2000,
       system: LEGEND_SYSTEM_PROMPT,
       messages: [{
@@ -482,10 +520,15 @@ export async function detectElectricalComponents(
       }],
     });
     rawLegendResponse = r.content[0].type === "text" ? r.content[0].text : "";
-    const parsed = JSON.parse(extractJSON(rawLegendResponse));
-    legendFound = parsed.legend_found ?? false;
-    scaleDetected = parsed.scale_detected ?? "unknown";
-    legendItems = enrichLegendItems(parsed.items ?? []);
+    const parsed = safeParse<{ legend_found?: boolean; scale_detected?: string; items?: any[] }>(
+      rawLegendResponse,
+      "Legend parse"
+    );
+    if (parsed) {
+      legendFound = parsed.legend_found ?? false;
+      scaleDetected = parsed.scale_detected ?? "unknown";
+      legendItems = enrichLegendItems(parsed.items ?? []);
+    }
 
     const legendSubtotal = legendItems.filter(l => l.in_electrical_scope && l.catalogue_price)
       .reduce((s, l) => s + (l.catalogue_price! * l.quantity), 0);
@@ -504,7 +547,7 @@ export async function detectElectricalComponents(
 
   try {
     const r = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       max_tokens: 4096,
       system: buildFloorPlanPrompt(legendItems),
       messages: [{
@@ -516,9 +559,14 @@ export async function detectElectricalComponents(
       }],
     });
     rawResponse = r.content[0].type === "text" ? r.content[0].text : "";
-    const parsed = JSON.parse(extractJSON(rawResponse));
-    if (parsed.scale_detected && scaleDetected === "unknown") scaleDetected = parsed.scale_detected;
-    roomComponents = parsed.components ?? [];
+    const parsed = safeParse<{ scale_detected?: string; components?: any[] }>(
+      rawResponse,
+      "Floor plan parse"
+    );
+    if (parsed) {
+      if (parsed.scale_detected && scaleDetected === "unknown") scaleDetected = parsed.scale_detected;
+      roomComponents = parsed.components ?? [];
+    }
     console.log(`[ElectraScan v4] Room distribution: ${roomComponents.length} entries across rooms`);
   } catch (err) {
     console.warn("[ElectraScan v4] Room scan failed:", err);
