@@ -129,3 +129,60 @@ ProTakeoff is engineered for performance using the "T3" (Tauri, TypeScript, Tail
    ```bash
    git clone https://github.com/ilirkl/protakeoff-ai3.git
    cd protakeoff-ai3
+   ```
+
+---
+
+## ✍️ DocuSign Integration (sandbox)
+
+ElectraScan can send estimates out for signature via DocuSign's demo environment. The signing flow runs through a Supabase Edge Function so the RSA private key never reaches the browser.
+
+### One-time setup
+
+1. **Grant consent** (only required the first time the integration key is used). Open this URL in a browser while signed into your DocuSign demo account and click **Accept**:
+
+   ```
+   https://account-d.docusign.com/oauth/auth?response_type=code&scope=signature%20impersonation&client_id=9862c9dd-5aef-4595-afbe-3f5a8927eac1&redirect_uri=https://electrascan-app.vercel.app/api/docusign/callback
+   ```
+
+2. **Set the private key as a Supabase secret** (do not commit the PEM):
+
+   ```bash
+   npx supabase secrets set DOCUSIGN_PRIVATE_KEY="$(cat ~/.openclaw/workspace/docusign_private.pem)"
+   ```
+
+3. **Deploy the edge function**:
+
+   ```bash
+   npx supabase functions deploy docusign-envelope
+   ```
+
+### Endpoints used
+
+| Purpose | URL |
+|---------|-----|
+| OAuth (JWT Bearer Grant) | `https://account-d.docusign.com/oauth/token` |
+| eSignature REST API      | `https://demo.docusign.net/restapi/v2.1` |
+
+### Client usage
+
+```ts
+import { sendEstimateForSigning } from "./services/docusignService";
+
+const result = await sendEstimateForSigning({
+  signerEmail: "client@example.com",
+  signerName: "Pat Client",
+  estimateRef: "EST-0042",
+  projectName: "Smith Residence",
+  estimateValue: 18750,
+  documentBase64, // base64-encoded PDF (no data URL prefix)
+});
+
+if (result.ok) {
+  console.log("Envelope sent:", result.envelopeId, result.status);
+} else {
+  console.error("DocuSign error:", result.error);
+}
+```
+
+The edge function caches the JWT-issued access token in module memory and refreshes it when within 60s of expiry. Sandbox identifiers (Integration Key, API Account ID, User ID) are hardcoded in `supabase/functions/docusign-envelope/index.ts` — replace them before pointing at production.
