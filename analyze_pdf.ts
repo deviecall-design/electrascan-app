@@ -233,7 +233,9 @@ Return ONLY valid JSON:
 // Direct-scan fallback — used when Pass 1 finds no legend
 const DIRECT_SCAN_PROMPT = `You are ElectraScan scanning an Australian electrical floor plan. No legend table was found so scan the drawing directly.
 
-Identify every electrical component you can see on the floor plan using standard Australian electrical drawing conventions:
+CRITICAL: You MUST return components. Never return an empty components array. If you can see ANY marks, symbols, or annotations on the drawing that could be electrical, include them. If uncertain, include with low confidence and LOW_CONFIDENCE flag.
+
+Identify every electrical component using standard Australian electrical drawing conventions:
 - Downlights, ceiling lights, pendants, wall lights, LED strips, track lights
 - Power points (GPO, double GPO, weatherproof)
 - Light switches, dimmers, 2-way switches
@@ -242,6 +244,9 @@ Identify every electrical component you can see on the floor plan using standard
 - Data/TV points (Cat6)
 - CCTV, intercom, smoke detectors
 - EV chargers, switchboards
+- ANY symbol, mark, or notation that could be electrical even if uncertain
+
+If the drawing appears to be a residential floor plan with no electrical symbols visible, still identify the rooms and estimate typical electrical requirements (at minimum: downlights per room, GPOs, light switches).
 
 Return ONLY valid JSON:
 {
@@ -264,7 +269,7 @@ Return ONLY valid JSON:
 // PDF → IMAGES
 // ─────────────────────────────────────────────
 
-const MAX_IMAGE_PX = 1568; // Anthropic recommended max for vision quality
+const MAX_IMAGE_PX = 2000; // Increased for A1/A0 drawing clarity
 
 async function pdfToImages(file: File): Promise<string[]> {
   const arrayBuffer = await file.arrayBuffer();
@@ -418,24 +423,30 @@ function buildComponents(legendItems: LegendItem[], roomComponents: any[]): Dete
   const coveredDescs = new Set(roomComponents.map(c => (c.legend_description ?? "").toLowerCase()));
 
   for (const l of legendItems) {
-    if (!l.in_electrical_scope || !l.catalogue_price || l.quantity === 0) continue;
+    if (!l.in_electrical_scope || !l.catalogue_price) continue;
     const desc = l.symbol_description.toLowerCase();
     const covered = [...coveredDescs].some(d => d.includes(desc) || desc.includes(d));
     if (!covered) {
-      console.log(`[ElectraScan v4] Adding missed legend item: ${l.symbol_description} ×${l.quantity} @ $${l.catalogue_price}`);
+      // If quantity was 0 in legend (Claude couldn't read it), default to 1 and flag for review
+      const qty = l.quantity > 0 ? l.quantity : 1;
+      const qtyUnknown = l.quantity === 0;
+      console.log(`[ElectraScan v4] Adding missed legend item: ${l.symbol_description} ×${qty}${qtyUnknown ? " (qty unconfirmed)" : ""} @ $${l.catalogue_price}`);
       const flags: DetectionFlag[] = ["FROM_LEGEND"];
       if (l.automation_flag) flags.push("AUTOMATION_DEPENDENCY");
+      if (qtyUnknown) flags.push("LOW_CONFIDENCE");
       components.push({
         type: (l.mapped_type ?? "DOWNLIGHT_RECESSED") as ComponentType,
-        quantity: l.quantity,
+        quantity: qty,
         room: "General",
         drawing_ref: "From legend",
-        confidence: 85,
-        needs_review: false,
+        confidence: qtyUnknown ? 60 : 85,
+        needs_review: qtyUnknown,
         flags,
-        notes: `${l.symbol_description} — ${l.quantity} ${l.unit} per legend. Symbol: ${l.symbol_visual}`,
+        notes: qtyUnknown
+          ? `${l.symbol_description} — quantity not detected, please verify. Symbol: ${l.symbol_visual}`
+          : `${l.symbol_description} — ${qty} ${l.unit} per legend. Symbol: ${l.symbol_visual}`,
         unit_price: l.catalogue_price,
-        line_total: l.catalogue_price * l.quantity,
+        line_total: l.catalogue_price * qty,
         legend_quantity: l.quantity,
         legend_match: true,
         catalogue_item_name: l.symbol_description,
@@ -572,6 +583,30 @@ export async function detectElectricalComponents(
     if (parsed.scale_detected && scaleDetected === "unknown") scaleDetected = parsed.scale_detected;
     roomComponents = parsed.components ?? [];
     console.log(`[ElectraScan v4] Room distribution: ${roomComponents.length} entries across rooms`);
+
+    // Retry with simplified prompt if Pass 2 returned empty but we have legend items
+    if (roomComponents.length === 0 && legendItems.length > 0) {
+      console.log("[ElectraScan v4] Pass 2 returned empty — retrying with simplified legend prompt...");
+      const simplified = await client.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 2048,
+        system: `You are counting electrical symbols on a floor plan. You have been given a symbol decoder.
+For each symbol type in the decoder, count how many times it appears across the entire drawing.
+IMPORTANT: You MUST return a components array. Never return empty. If you cannot count precisely, estimate.
+Return ONLY valid JSON: {"scale_detected":"unknown","components":[{"legend_description":"<exact description from decoder>","type":"<type>","quantity":<count>,"room":"General","drawing_ref":"Sheet 1","confidence":70,"flags":["LOW_CONFIDENCE"],"notes":"Retry scan — estimated count"}]}`,
+        messages: [{
+          role: "user",
+          content: [
+            ...imageBlocks,
+            { type: "text", text: `Symbol decoder:\n${legendItems.filter(l => l.in_electrical_scope).map(l => `- ${l.symbol_visual} = "${l.symbol_description}" (${l.mapped_type})`).join("\n")}\n\nCount each symbol type across the whole drawing.` },
+          ],
+        }],
+      });
+      const retryRaw = simplified.content[0].type === "text" ? simplified.content[0].text : "";
+      const retryParsed = JSON.parse(extractJSON(retryRaw));
+      roomComponents = retryParsed.components ?? [];
+      console.log(`[ElectraScan v4] Retry room distribution: ${roomComponents.length} entries`);
+    }
   } catch (err: any) {
     console.warn("[ElectraScan v4] Room scan failed:", err);
     pass2Error = err;
