@@ -811,9 +811,23 @@ export default function App() {
   const handleFile = async (f: File) => {
     setFile(f); setError(null); setScreen("scanning");
     try {
+      console.log("[ElectraScan][app] handleFile: calling detectElectricalComponents for", f.name);
       const d = await detectElectricalComponents(f, "001");
+      console.log("[ElectraScan][app] detectElectricalComponents returned:", {
+        components: d?.components?.length ?? 0,
+        legend_items: d?.legend_items?.length ?? 0,
+        legend_found: d?.legend_found,
+        scale_detected: d?.scale_detected,
+        estimate_subtotal: d?.estimate_subtotal,
+        risk_flags: d?.risk_flags?.length ?? 0,
+      });
+      console.log("[ElectraScan][app] detection.components value before fallback check:", d?.components);
+      if (!d?.components || d.components.length === 0) {
+        console.warn("[ElectraScan][app] detection.components is empty/null — UI will render an empty state (or fall back to mock if a parent wired one).");
+      }
       setResult(d); setScreen("results");
     } catch (err: any) {
+      console.error("[ElectraScan][app] detectElectricalComponents threw:", err);
       setError(err?.message ?? "Detection failed."); setScreen("upload");
     }
   };

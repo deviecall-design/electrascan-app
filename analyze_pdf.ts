@@ -251,7 +251,19 @@ async function pdfToImages(file: File): Promise<string[]> {
 }
 
 function extractJSON(raw: string): string {
-  return raw.replace(/^```(?:json)?\s*/im, "").replace(/\s*```$/im, "").trim();
+  // Strip ``` / ```json fences if the model wrapped its output.
+  let s = raw.replace(/^```(?:json)?\s*/im, "").replace(/\s*```$/im, "").trim();
+
+  // Some responses prepend prose ("Here is the JSON: …") or append a
+  // trailing sentence. Slice out the substring between the first { and the
+  // matching last } so JSON.parse doesn't choke on the surrounding text.
+  // Falls back to the trimmed string if no braces are present.
+  const first = s.indexOf("{");
+  const last = s.lastIndexOf("}");
+  if (first !== -1 && last !== -1 && last > first) {
+    s = s.slice(first, last + 1);
+  }
+  return s;
 }
 
 // ─────────────────────────────────────────────
@@ -482,7 +494,12 @@ export async function detectElectricalComponents(
       }],
     });
     rawLegendResponse = r.content[0].type === "text" ? r.content[0].text : "";
-    const parsed = JSON.parse(extractJSON(rawLegendResponse));
+    console.log("[ElectraScan][detect] Pass 1 raw response (first 500 chars):", rawLegendResponse.slice(0, 500));
+    console.log("[ElectraScan][detect] Pass 1 stop_reason / content blocks:", r.stop_reason, r.content.length);
+    const extracted = extractJSON(rawLegendResponse);
+    console.log("[ElectraScan][detect] Pass 1 extracted JSON (first 500 chars):", extracted.slice(0, 500));
+    const parsed = JSON.parse(extracted);
+    console.log("[ElectraScan][detect] Pass 1 parsed keys:", Object.keys(parsed), "items count:", (parsed.items ?? []).length);
     legendFound = parsed.legend_found ?? false;
     scaleDetected = parsed.scale_detected ?? "unknown";
     legendItems = enrichLegendItems(parsed.items ?? []);
@@ -495,12 +512,23 @@ export async function detectElectricalComponents(
     });
   } catch (err) {
     console.warn("[ElectraScan v4] Legend extraction failed:", err);
+    console.warn("[ElectraScan][detect] Pass 1 failure — raw response was:", rawLegendResponse);
   }
 
   // ── PASS 2: Floor plan scan with symbol decoder ─
   console.log("[ElectraScan v4] Pass 2: Scanning floor plan with symbol decoder...");
   let rawResponse = "";
   let roomComponents: any[] = [];
+
+  // The Pass 2 SYMBOL DECODER only includes legend items with a Vesh
+  // catalogue_price match. If the tenant scans plans for a builder whose
+  // symbols aren't yet in the catalogue, the decoder is empty and Claude
+  // has nothing to anchor against — log this so we can spot the case.
+  const decoderInScope = legendItems.filter(l => l.in_electrical_scope && l.catalogue_price);
+  console.log(`[ElectraScan][detect] Pass 2 decoder built from ${decoderInScope.length}/${legendItems.length} legend items (rest skipped: out of scope or no catalogue match)`);
+  if (decoderInScope.length === 0) {
+    console.warn("[ElectraScan][detect] Pass 2 decoder is EMPTY — Pass 1 produced no priced legend items, so Claude has no symbol context. Detection will likely return 0 components.");
+  }
 
   try {
     const r = await client.messages.create({
@@ -516,19 +544,37 @@ export async function detectElectricalComponents(
       }],
     });
     rawResponse = r.content[0].type === "text" ? r.content[0].text : "";
-    const parsed = JSON.parse(extractJSON(rawResponse));
+    console.log("[ElectraScan][detect] Pass 2 raw response (first 500 chars):", rawResponse.slice(0, 500));
+    console.log("[ElectraScan][detect] Pass 2 stop_reason / content blocks:", r.stop_reason, r.content.length);
+    const extracted = extractJSON(rawResponse);
+    console.log("[ElectraScan][detect] Pass 2 extracted JSON (first 500 chars):", extracted.slice(0, 500));
+    const parsed = JSON.parse(extracted);
+    console.log("[ElectraScan][detect] Pass 2 parsed keys:", Object.keys(parsed), "components count:", (parsed.components ?? []).length);
     if (parsed.scale_detected && scaleDetected === "unknown") scaleDetected = parsed.scale_detected;
     roomComponents = parsed.components ?? [];
     console.log(`[ElectraScan v4] Room distribution: ${roomComponents.length} entries across rooms`);
   } catch (err) {
     console.warn("[ElectraScan v4] Room scan failed:", err);
+    console.warn("[ElectraScan][detect] Pass 2 failure — raw response was:", rawResponse);
   }
 
+  console.log(`[ElectraScan][detect] buildComponents inputs: legendItems=${legendItems.length}, roomComponents=${roomComponents.length}`);
   const components = buildComponents(legendItems, roomComponents);
+  console.log(`[ElectraScan][detect] buildComponents output: components=${components.length}`);
   const riskFlags = generateRiskFlags(components);
   const estimateSubtotal = components.reduce((s, c) => s + c.line_total, 0);
 
   console.log(`[ElectraScan v4] Complete: ${components.length} items, $${estimateSubtotal.toLocaleString()}`);
+
+  if (components.length === 0) {
+    console.error(
+      "[ElectraScan][detect] DETECTION RETURNED 0 COMPONENTS. " +
+      "Check the Pass 1 / Pass 2 raw responses above for: (a) JSON parse errors, " +
+      "(b) empty `items` / `components` arrays from the model, " +
+      "(c) an empty Pass 2 decoder (no legend items had a Vesh catalogue match), " +
+      "(d) HTTP/auth errors from the Anthropic SDK."
+    );
+  }
 
   return {
     drawing_version: drawingVersion,
