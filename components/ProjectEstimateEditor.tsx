@@ -6,6 +6,7 @@ import {
   type ProjectEstimate,
   type EstimateLineItem,
   type CableRun,
+  type BomStatus,
 } from "../contexts/ProjectContext";
 import WholesalerQuoteModal from "./WholesalerQuoteModal";
 
@@ -135,6 +136,7 @@ const ProjectEstimateEditor: React.FC<Props> = ({ projectId, estimateId }) => {
       margin: estimate.margin,
       categoryMargins: estimate.categoryMargins,
       cableRuns: estimate.cableRuns,
+      bomStatus: estimate.bomStatus,
     };
     const v = {
       id: makeId(),
@@ -153,6 +155,7 @@ const ProjectEstimateEditor: React.FC<Props> = ({ projectId, estimateId }) => {
       margin: v.snapshot.margin,
       categoryMargins: v.snapshot.categoryMargins,
       cableRuns: v.snapshot.cableRuns,
+      bomStatus: v.snapshot.bomStatus,
     });
     setShowVersions(false);
   };
@@ -467,6 +470,13 @@ const ProjectEstimateEditor: React.FC<Props> = ({ projectId, estimateId }) => {
           value={`+ ${fmtMoney(totals.marginAmount)}`}
           color={C.amber}
         />
+        {totals.materialsCost > 0 && (
+          <SummaryRow
+            label={`Materials (TLE cable @ ${estimate.margin}%)`}
+            value={`+ ${fmtMoney(totals.materialsCost)}`}
+            color={C.blue}
+          />
+        )}
         <SummaryRow label="Subtotal with margin" value={fmtMoney(totals.subtotalWithMargin)} />
         <SummaryRow label={`GST (${estimate.gstRate}%)`} value={fmtMoney(totals.gst)} muted />
         <div style={{ height: 1, background: C.border, margin: "10px 0" }} />
@@ -496,8 +506,14 @@ const ProjectEstimateEditor: React.FC<Props> = ({ projectId, estimateId }) => {
           <CableCalculator
             runs={estimate.cableRuns}
             readOnly={readOnly}
+            margin={estimate.margin}
+            bomStatus={estimate.bomStatus}
             onChange={runs => update({ cableRuns: runs })}
             onRequestQuote={() => { setShowCable(false); setShowWholesaler(true); }}
+            onBomStatusChange={status => update({ bomStatus: status })}
+            onApplyPrices={(runs, status) =>
+              update({ cableRuns: runs, bomStatus: status })
+            }
           />
         </Drawer>
       )}
@@ -768,12 +784,17 @@ const MarginEditor: React.FC<{
 const CableCalculator: React.FC<{
   runs: CableRun[];
   readOnly: boolean;
+  margin: number;
+  bomStatus?: BomStatus;
   onChange: (runs: CableRun[]) => void;
   onRequestQuote?: () => void;
-}> = ({ runs, readOnly, onChange, onRequestQuote }) => {
+  onBomStatusChange: (status: BomStatus) => void;
+  onApplyPrices: (runs: CableRun[], status: BomStatus) => void;
+}> = ({ runs, readOnly, margin, bomStatus, onChange, onRequestQuote, onBomStatusChange, onApplyPrices }) => {
   const [lengthInput, setLengthInput] = useState("");
   const [cableType, setCableType] = useState(CABLE_TYPES[0].label);
   const [waste, setWaste] = useState(10);
+  const [priceDraft, setPriceDraft] = useState<Record<string, string>>({});
 
   const add = () => {
     const l = Number(lengthInput);
@@ -796,6 +817,46 @@ const CableCalculator: React.FC<{
 
   const rateOf = (typeLabel: string) =>
     CABLE_TYPES.find(c => c.label === typeLabel)?.unitRate ?? 0;
+
+  const status: BomStatus = bomStatus ?? "draft";
+  const uniqueTypes = useMemo(
+    () => Array.from(new Set(runs.map(r => r.cableType))),
+    [runs],
+  );
+
+  const sendBom = () => onBomStatusChange("sent");
+  const markQuoteReceived = () => {
+    const seed: Record<string, string> = {};
+    uniqueTypes.forEach(t => {
+      const existing = runs.find(r => r.cableType === t && typeof r.approvedUnitPrice === "number");
+      if (existing && typeof existing.approvedUnitPrice === "number") {
+        seed[t] = String(existing.approvedUnitPrice);
+      }
+    });
+    setPriceDraft(seed);
+    onBomStatusChange("quote_received");
+  };
+  const cancelApply = () => {
+    setPriceDraft({});
+    onBomStatusChange("sent");
+  };
+  const confirmPrices = () => {
+    const next = runs.map(r => {
+      const raw = priceDraft[r.cableType];
+      const v = raw === undefined || raw === "" ? NaN : Number(raw);
+      if (Number.isFinite(v) && v > 0) return { ...r, approvedUnitPrice: v };
+      return r;
+    });
+    onApplyPrices(next, "ordered");
+    setPriceDraft({});
+  };
+
+  const allPricesEntered =
+    uniqueTypes.length > 0 &&
+    uniqueTypes.every(t => {
+      const v = Number(priceDraft[t]);
+      return Number.isFinite(v) && v > 0;
+    });
 
   return (
     <div>
@@ -949,6 +1010,210 @@ const CableCalculator: React.FC<{
           )}
         </>
       )}
+
+      {runs.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: C.muted,
+              letterSpacing: 0.6,
+              marginBottom: 8,
+            }}
+          >
+            BOM STATUS
+          </div>
+          <BomStatusBadge status={status} />
+
+          {!readOnly && status === "draft" && (
+            <button
+              onClick={sendBom}
+              style={{
+                marginTop: 10,
+                width: "100%",
+                background: C.blue,
+                color: "#fff",
+                border: "none",
+                padding: "10px 14px",
+                borderRadius: 10,
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              📧 Send BOM to TLE
+            </button>
+          )}
+
+          {!readOnly && status === "sent" && (
+            <button
+              onClick={markQuoteReceived}
+              style={{
+                marginTop: 10,
+                width: "100%",
+                background: `${C.amber}22`,
+                color: C.amber,
+                border: `1px solid ${C.amber}`,
+                padding: "10px 14px",
+                borderRadius: 10,
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              📨 Mark Quote Received
+            </button>
+          )}
+
+          {status === "quote_received" && (
+            <div
+              style={{
+                marginTop: 10,
+                background: C.card,
+                border: `1px solid ${C.amber}55`,
+                borderRadius: 12,
+                padding: 14,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: C.text,
+                  marginBottom: 4,
+                }}
+              >
+                Apply TLE Prices
+              </div>
+              <div style={{ fontSize: 11, color: C.muted, marginBottom: 12 }}>
+                Enter the actual $/m TLE quoted for each cable type. Confirming
+                applies the price to every run of that type and feeds it into
+                the estimate total.
+              </div>
+              {uniqueTypes.map(t => (
+                <div
+                  key={t}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    marginBottom: 8,
+                  }}
+                >
+                  <div style={{ flex: 1, fontSize: 13 }}>{t}</div>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={priceDraft[t] ?? ""}
+                    onChange={e =>
+                      setPriceDraft(prev => ({ ...prev, [t]: e.target.value }))
+                    }
+                    disabled={readOnly}
+                    placeholder={rateOf(t).toFixed(2)}
+                    style={{
+                      width: 96,
+                      background: C.bg,
+                      color: C.text,
+                      border: `1px solid ${C.border}`,
+                      borderRadius: 6,
+                      padding: "6px 8px",
+                      fontSize: 13,
+                      textAlign: "right",
+                    }}
+                  />
+                  <span style={{ color: C.muted, fontSize: 12 }}>$/m</span>
+                </div>
+              ))}
+              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                <button
+                  onClick={cancelApply}
+                  disabled={readOnly}
+                  style={{
+                    flex: 1,
+                    background: "transparent",
+                    color: C.muted,
+                    border: `1px solid ${C.border}`,
+                    padding: "8px 12px",
+                    borderRadius: 8,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: readOnly ? "not-allowed" : "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmPrices}
+                  disabled={readOnly || !allPricesEntered}
+                  style={{
+                    flex: 2,
+                    background:
+                      readOnly || !allPricesEntered ? C.card : C.green,
+                    color:
+                      readOnly || !allPricesEntered ? C.muted : "#04130C",
+                    border: "none",
+                    padding: "8px 12px",
+                    borderRadius: 8,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor:
+                      readOnly || !allPricesEntered ? "not-allowed" : "pointer",
+                  }}
+                >
+                  Confirm Prices
+                </button>
+              </div>
+            </div>
+          )}
+
+          {status === "ordered" && (
+            <div
+              style={{
+                marginTop: 10,
+                padding: "10px 12px",
+                background: `${C.green}10`,
+                border: `1px solid ${C.green}55`,
+                borderRadius: 10,
+                fontSize: 12,
+                color: C.green,
+                fontWeight: 600,
+              }}
+            >
+              TLE prices applied — materials are now included in the estimate
+              total at {margin}% margin.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const BomStatusBadge: React.FC<{ status: BomStatus }> = ({ status }) => {
+  const map: Record<BomStatus, { bg: string; fg: string; label: string }> = {
+    draft: { bg: C.card, fg: C.muted, label: "BOM: Draft" },
+    sent: { bg: `${C.blue}22`, fg: C.blue, label: "📧 Sent to TLE" },
+    quote_received: { bg: `${C.amber}22`, fg: C.amber, label: "📨 Quote Received" },
+    ordered: { bg: `${C.green}22`, fg: C.green, label: "📦 Ordered" },
+  };
+  const s = map[status];
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        background: s.bg,
+        color: s.fg,
+        border: `1px solid ${s.fg}55`,
+        padding: "6px 10px",
+        borderRadius: 8,
+        fontSize: 12,
+        fontWeight: 700,
+      }}
+    >
+      {s.label}
     </div>
   );
 };

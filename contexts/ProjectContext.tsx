@@ -37,13 +37,17 @@ export interface CableRun {
   lengthMeters: number;
   wasteFactorPct: number; // 10 default
   totalLength: number;
+  approvedUnitPrice?: number; // $/m — set when TLE quote is applied
 }
+
+export type BomStatus = "draft" | "sent" | "quote_received" | "ordered";
 
 export interface EstimateVersionSnapshot {
   lineItems: EstimateLineItem[];
   margin: number;
   categoryMargins: Record<string, number>;
   cableRuns: CableRun[];
+  bomStatus?: BomStatus;
 }
 
 export interface EstimateVersion {
@@ -72,6 +76,7 @@ export interface ProjectEstimate {
   wholesaleQuoteStatus?: "sent" | "received" | "ordered";
   wholesaleQuoteReceivedAt?: string;
   wholesaleQuoteOrderedAt?: string;
+  bomStatus?: BomStatus;
 }
 
 export interface ProjectDocument {
@@ -287,6 +292,7 @@ export function statusPalette(status: ProjectStatus): { bg: string; fg: string; 
 export function estimateTotals(est: ProjectEstimate): {
   subtotal: number;
   marginAmount: number;
+  materialsCost: number;
   subtotalWithMargin: number;
   gst: number;
   total: number;
@@ -300,12 +306,19 @@ export function estimateTotals(est: ProjectEstimate): {
   }, 0);
   const baseSubtotal = est.lineItems.reduce((s, li) => s + li.qty * li.unitPrice, 0);
   const marginAmount = subtotal - baseSubtotal;
-  const gst = subtotal * (est.gstRate / 100);
-  const total = subtotal + gst;
+  const materialsCost = est.cableRuns.reduce((s, r) => {
+    const price = r.approvedUnitPrice;
+    if (typeof price !== "number" || price <= 0) return s;
+    return s + r.totalLength * price * (1 + est.margin / 100);
+  }, 0);
+  const subtotalWithMargin = subtotal + materialsCost;
+  const gst = subtotalWithMargin * (est.gstRate / 100);
+  const total = subtotalWithMargin + gst;
   return {
     subtotal: baseSubtotal,
     marginAmount,
-    subtotalWithMargin: subtotal,
+    materialsCost,
+    subtotalWithMargin,
     gst,
     total,
   };
