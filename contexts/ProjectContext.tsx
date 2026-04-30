@@ -69,6 +69,9 @@ export interface ProjectEstimate {
   versions: EstimateVersion[];
   wholesaleQuoteSentAt?: string;
   wholesaleQuoteSentTo?: string;
+  wholesaleQuoteStatus?: "sent" | "received" | "ordered";
+  wholesaleQuoteReceivedAt?: string;
+  wholesaleQuoteOrderedAt?: string;
 }
 
 export interface ProjectDocument {

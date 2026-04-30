@@ -1001,23 +1001,63 @@ const EstimateTab: React.FC<{
             <div style={{ fontSize: 12, color: C.muted }}>
               Updated {fmtDateTime(latest.updatedAt)}
             </div>
-            {latest.wholesaleQuoteSentAt && (
-              <span
-                title={`Quote requested from ${latest.wholesaleQuoteSentTo ?? "wholesaler"} on ${fmtDateTime(latest.wholesaleQuoteSentAt)}`}
-                style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  color: "#0A1628",
-                  background: "#FFB020",
-                  padding: "2px 8px",
-                  borderRadius: 20,
-                  letterSpacing: 0.3,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                📧 Quote sent · {latest.wholesaleQuoteSentTo ?? "Wholesaler"} · {fmtDateTime(latest.wholesaleQuoteSentAt)}
-              </span>
-            )}
+            {latest.wholesaleQuoteSentAt && (() => {
+              const status = latest.wholesaleQuoteStatus ?? "sent";
+              const supplier = latest.wholesaleQuoteSentTo ?? "Wholesaler";
+              const STATES: Array<{
+                key: "sent" | "received" | "ordered";
+                icon: string;
+                label: string;
+                bg: string;
+                fg: string;
+                nextLabel?: string;
+              }> = [
+                { key: "sent",     icon: "📧", label: "BOM Sent",       bg: "#FFB020", fg: "#0A1628", nextLabel: "Mark Quote Received" },
+                { key: "received", icon: "📨", label: "Quote Received",  bg: "#1D6EFD", fg: "#fff",   nextLabel: "Mark as Ordered" },
+                { key: "ordered",  icon: "📦", label: "Ordered",         bg: "#00C48C", fg: "#0A1628" },
+              ];
+              const idx = STATES.findIndex(s => s.key === status);
+              const current = STATES[idx] ?? STATES[0];
+              const next = STATES[idx + 1];
+              const timestamp =
+                status === "ordered"
+                  ? latest.wholesaleQuoteOrderedAt
+                  : status === "received"
+                  ? latest.wholesaleQuoteReceivedAt
+                  : latest.wholesaleQuoteSentAt;
+              const advanceStatus = () => {
+                if (!next) return;
+                const now = new Date().toISOString();
+                saveEstimate(project.id, {
+                  ...latest,
+                  wholesaleQuoteStatus: next.key,
+                  wholesaleQuoteReceivedAt: next.key === "received" ? now : latest.wholesaleQuoteReceivedAt,
+                  wholesaleQuoteOrderedAt: next.key === "ordered" ? now : latest.wholesaleQuoteOrderedAt,
+                  updatedAt: now,
+                });
+              };
+              return (
+                <span
+                  onClick={next ? advanceStatus : undefined}
+                  title={next ? `${next.nextLabel} — click to advance` : `Ordered from ${supplier} on ${fmtDateTime(timestamp ?? "")}`}
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: current.fg,
+                    background: current.bg,
+                    padding: "2px 8px",
+                    borderRadius: 20,
+                    letterSpacing: 0.3,
+                    whiteSpace: "nowrap",
+                    cursor: next ? "pointer" : "default",
+                    userSelect: "none",
+                  }}
+                >
+                  {current.icon} {current.label} · {supplier} · {fmtDateTime(timestamp ?? latest.wholesaleQuoteSentAt ?? "")}
+                  {next && <span style={{ opacity: 0.65, marginLeft: 4 }}>›</span>}
+                </span>
+              );
+            })()}
           </div>
         </div>
       </div>

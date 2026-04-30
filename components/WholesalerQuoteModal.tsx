@@ -131,6 +131,9 @@ const WholesalerQuoteModal: React.FC<Props> = ({ estimate, project, onClose }) =
         ...estimate,
         wholesaleQuoteSentAt: new Date().toISOString(),
         wholesaleQuoteSentTo: wholesaler.name,
+        wholesaleQuoteStatus: "sent",
+        wholesaleQuoteReceivedAt: undefined,
+        wholesaleQuoteOrderedAt: undefined,
         updatedAt: new Date().toISOString(),
       });
       addToast(`Quote request sent to ${wholesaler.name}`, "success");
