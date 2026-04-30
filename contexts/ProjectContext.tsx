@@ -67,6 +67,8 @@ export interface ProjectEstimate {
   lineItems: EstimateLineItem[];
   cableRuns: CableRun[];
   versions: EstimateVersion[];
+  wholesaleQuoteSentAt?: string;
+  wholesaleQuoteSentTo?: string;
 }
 
 export interface ProjectDocument {

@@ -3,6 +3,7 @@ import type {
   Project,
   ProjectEstimate,
 } from "../contexts/ProjectContext";
+import { useProjects } from "../contexts/ProjectContext";
 import { useTenant } from "../contexts/TenantContext";
 import { useToast } from "../contexts/ToastContext";
 import { sendWholesalerQuoteRequest } from "../services/estimateService";
@@ -44,6 +45,7 @@ interface Props {
 const WholesalerQuoteModal: React.FC<Props> = ({ estimate, project, onClose }) => {
   const { tenant } = useTenant();
   const { addToast } = useToast();
+  const { saveEstimate } = useProjects();
 
   const estimateId = estimate.id;
   const estimateRef = estimate.reference || estimate.number || estimate.id;
@@ -125,6 +127,12 @@ const WholesalerQuoteModal: React.FC<Props> = ({ estimate, project, onClose }) =
     });
     setSending(false);
     if (res.ok) {
+      saveEstimate(project.id, {
+        ...estimate,
+        wholesaleQuoteSentAt: new Date().toISOString(),
+        wholesaleQuoteSentTo: wholesaler.name,
+        updatedAt: new Date().toISOString(),
+      });
       addToast(`Quote request sent to ${wholesaler.name}`, "success");
       onClose();
     } else {

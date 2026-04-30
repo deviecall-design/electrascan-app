@@ -997,8 +997,27 @@ const EstimateTab: React.FC<{
             )}
             <div style={{ fontSize: 15, fontWeight: 700 }}>{latest.number}</div>
           </div>
-          <div style={{ fontSize: 12, color: C.muted }}>
-            Updated {fmtDateTime(latest.updatedAt)}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
+            <div style={{ fontSize: 12, color: C.muted }}>
+              Updated {fmtDateTime(latest.updatedAt)}
+            </div>
+            {latest.wholesaleQuoteSentAt && (
+              <span
+                title={`Quote requested from ${latest.wholesaleQuoteSentTo ?? "wholesaler"} on ${fmtDateTime(latest.wholesaleQuoteSentAt)}`}
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: "#0A1628",
+                  background: "#FFB020",
+                  padding: "2px 8px",
+                  borderRadius: 20,
+                  letterSpacing: 0.3,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                📧 Quote sent · {latest.wholesaleQuoteSentTo ?? "Wholesaler"} · {fmtDateTime(latest.wholesaleQuoteSentAt)}
+              </span>
+            )}
           </div>
         </div>
       </div>
