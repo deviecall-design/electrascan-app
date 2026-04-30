@@ -5,7 +5,7 @@ const N8N_WEBHOOK_URL = 'https://damienc13.app.n8n.cloud/webhook/electrascan-est
 export async function saveEstimate(estimateData: {
   project_name: string;
   contractor: string;
-  total: number;
+  value: number;
   items: any[];
   status?: string;
 }) {
@@ -30,7 +30,7 @@ export async function saveEstimate(estimateData: {
         estimateId: data.id,
         project_name: data.project_name,
         contractor: data.contractor,
-        total: data.total,
+        value: data.value,
         createdAt: data.created_at
       })
     });

@@ -3,7 +3,7 @@ import { supabase } from './supabaseClient';
 // Dashboard KPI strip — live Supabase queries.
 //
 // Tables read:
-//   - estimates (created_at, updated_at, status, total / total_value, owner_id)
+//   - estimates (created_at, updated_at, status, value, owner_id)
 //
 // Owner scoping: the spec asks for `owner_id = auth.uid()`. If the user is not
 // authenticated (anon access), we fall back to the unscoped query, which will
@@ -38,12 +38,11 @@ interface EstimateRow {
   created_at?: string | null;
   updated_at?: string | null;
   status?: string | null;
-  total?: number | null;
-  total_value?: number | null;
+  value?: number | null;
 }
 
 function rowTotal(r: EstimateRow): number {
-  const v = r.total_value ?? r.total ?? 0;
+  const v = r.value ?? 0;
   return typeof v === 'number' ? v : Number(v) || 0;
 }
 
@@ -65,26 +64,14 @@ export async function fetchDashboardKpis(): Promise<
     ownerId = null;
   }
 
-  const baseColumns = 'created_at, updated_at, status, total, total_value';
+  const baseColumns = 'created_at, updated_at, status, value';
 
   try {
     let q = supabase.from('estimates').select(baseColumns).limit(2000);
     if (ownerId) q = q.eq('owner_id', ownerId);
     const { data, error } = await q;
     if (error) {
-      // Fallback: schema may not include total_value yet. Retry with a smaller
-      // column set that's known to exist (services/estimateService.ts inserts
-      // `total`).
-      let q2 = supabase
-        .from('estimates')
-        .select('created_at, updated_at, status, total')
-        .limit(2000);
-      if (ownerId) q2 = q2.eq('owner_id', ownerId);
-      const retry = await q2;
-      if (retry.error) {
-        return { ok: false, error: retry.error.message };
-      }
-      return { ok: true, kpis: computeKpis(retry.data as EstimateRow[], monthStart) };
+      return { ok: false, error: error.message };
     }
     return { ok: true, kpis: computeKpis(data as EstimateRow[], monthStart) };
   } catch (e) {
