@@ -7,6 +7,7 @@ import {
   uploadLogo,
   type TenantProfile,
 } from "../services/tenantProfileService";
+import type { Wholesaler } from "../types/tenant";
 
 const C = {
   bg:     "#0A1628", navy:   "#0F1E35", card:   "#132240",
@@ -107,6 +108,7 @@ export default function TenantSetup({ onBack }: TenantSetupProps) {
       contactPhone: draft.contactPhone,
       emailReplyTo: draft.emailReplyTo,
       logoUrl: draft.logoUrl,
+      wholesalers: draft.wholesalers,
     };
     const res = await saveTenantProfile(profile);
     // Always update the local context so the in-app branding reflects
@@ -124,6 +126,56 @@ export default function TenantSetup({ onBack }: TenantSetupProps) {
   };
 
   const previewContact = [draft.address, draft.contactPhone, draft.contactEmail].filter(Boolean).join(" · ");
+
+  const wholesalers = draft.wholesalers ?? [];
+
+  const updateWholesaler = (id: string, patch: Partial<Wholesaler>) => {
+    setDraft(d => ({
+      ...d,
+      wholesalers: (d.wholesalers ?? []).map(w => (w.id === id ? { ...w, ...patch } : w)),
+    }));
+    setSaved(false);
+  };
+
+  const setDefaultWholesaler = (id: string) => {
+    setDraft(d => ({
+      ...d,
+      wholesalers: (d.wholesalers ?? []).map(w => ({ ...w, isDefault: w.id === id })),
+    }));
+    setSaved(false);
+  };
+
+  const removeWholesaler = (id: string) => {
+    setDraft(d => {
+      const next = (d.wholesalers ?? []).filter(w => w.id !== id);
+      if (next.length > 0 && !next.some(w => w.isDefault)) {
+        next[0] = { ...next[0], isDefault: true };
+      }
+      return { ...d, wholesalers: next };
+    });
+    setSaved(false);
+  };
+
+  const addWholesaler = () => {
+    const id = `wholesaler-${Date.now()}`;
+    setDraft(d => {
+      const existing = d.wholesalers ?? [];
+      return {
+        ...d,
+        wholesalers: [
+          ...existing,
+          {
+            id,
+            name: "New wholesaler",
+            address: "",
+            email: "",
+            isDefault: existing.length === 0,
+          },
+        ],
+      };
+    });
+    setSaved(false);
+  };
 
   return (
     <div style={{ height: "100vh", background: C.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -200,6 +252,99 @@ export default function TenantSetup({ onBack }: TenantSetupProps) {
               </label>
             ))}
           </div>
+        </div>
+
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: 16, marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, letterSpacing: "0.08em", textTransform: "uppercase" }}>Wholesalers</div>
+            <button
+              onClick={addWholesaler}
+              style={{
+                background: `${C.blue}22`, color: C.blue, border: `1px solid ${C.blue}`,
+                padding: "4px 12px", borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: "pointer",
+              }}
+            >
+              ＋ Add
+            </button>
+          </div>
+          <div style={{ fontSize: 11, color: C.dim, marginBottom: 10 }}>
+            Used for "Send BOM to Wholesaler" quote requests on the estimate screen.
+            The default wholesaler is pre-selected when sending.
+          </div>
+          {wholesalers.length === 0 ? (
+            <div style={{ fontSize: 12, color: C.muted, padding: 10 }}>
+              No wholesalers configured.
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {wholesalers.map(w => (
+                <div
+                  key={w.id}
+                  style={{
+                    background: C.bg, border: `1px solid ${C.border}`, borderRadius: 12, padding: 12,
+                    display: "flex", flexDirection: "column", gap: 8,
+                  }}
+                >
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input
+                      value={w.name}
+                      placeholder="Wholesaler name"
+                      onChange={e => updateWholesaler(w.id, { name: e.target.value })}
+                      style={{
+                        flex: 1, background: C.navy, border: `1px solid ${C.border}`, borderRadius: 8,
+                        padding: "8px 10px", color: C.text, fontSize: 13, outline: "none", fontFamily: "inherit",
+                      }}
+                    />
+                    <button
+                      onClick={() => setDefaultWholesaler(w.id)}
+                      style={{
+                        background: w.isDefault ? `${C.green}22` : "transparent",
+                        color: w.isDefault ? C.green : C.muted,
+                        border: `1px solid ${w.isDefault ? C.green : C.border}`,
+                        padding: "8px 10px", borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: "pointer",
+                      }}
+                      title="Set as default for new quote requests"
+                    >
+                      {w.isDefault ? "★ Default" : "Set default"}
+                    </button>
+                    <button
+                      onClick={() => removeWholesaler(w.id)}
+                      style={{
+                        background: "transparent", color: C.red, border: `1px solid ${C.border}`,
+                        padding: "8px 10px", borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: "pointer",
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                  <input
+                    value={w.address}
+                    placeholder="Address"
+                    onChange={e => updateWholesaler(w.id, { address: e.target.value })}
+                    style={{
+                      background: C.navy, border: `1px solid ${C.border}`, borderRadius: 8,
+                      padding: "8px 10px", color: C.text, fontSize: 13, outline: "none", fontFamily: "inherit",
+                    }}
+                  />
+                  <input
+                    type="email"
+                    value={w.email}
+                    placeholder="Email — orders@wholesaler.com.au"
+                    onChange={e => updateWholesaler(w.id, { email: e.target.value })}
+                    style={{
+                      background: C.navy, border: `1px solid ${C.border}`, borderRadius: 8,
+                      padding: "8px 10px", color: C.text, fontSize: 13, outline: "none", fontFamily: "inherit",
+                    }}
+                  />
+                  {!w.email && (
+                    <div style={{ fontSize: 11, color: C.amber }}>
+                      No email set — quote requests can't be sent until you add one.
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: 16, marginBottom: 16 }}>

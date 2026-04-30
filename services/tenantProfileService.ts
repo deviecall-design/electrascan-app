@@ -17,7 +17,7 @@ const LOGO_BUCKET = 'logos';
 
 export type TenantProfile = Pick<
   TenantConfig,
-  'name' | 'abn' | 'address' | 'contactEmail' | 'contactPhone' | 'emailReplyTo' | 'logoUrl'
+  'name' | 'abn' | 'address' | 'contactEmail' | 'contactPhone' | 'emailReplyTo' | 'logoUrl' | 'wholesalers'
 >;
 
 async function currentUserEmail(): Promise<string | null> {

@@ -1,5 +1,13 @@
 export type AccountingProvider = "myob" | "xero" | "quickbooks" | null;
 
+export interface Wholesaler {
+  id: string;
+  name: string;
+  address: string;
+  email: string;
+  isDefault?: boolean;
+}
+
 export interface TenantConfig {
   id: string;
   name: string;
@@ -13,7 +21,18 @@ export interface TenantConfig {
   abn: string;
   accountingProvider: AccountingProvider;
   brandingHidden: boolean;
+  wholesalers: Wholesaler[];
 }
+
+export const DEFAULT_WHOLESALERS: Wholesaler[] = [
+  {
+    id: "tle-brookvale",
+    name: "TLE Brookvale",
+    address: "3/192 Harbord Rd, Brookvale NSW 2100",
+    email: "",
+    isDefault: true,
+  },
+];
 
 export const VESH_ELECTRICAL_CONFIG: TenantConfig = {
   id: "vesh",
@@ -28,4 +47,5 @@ export const VESH_ELECTRICAL_CONFIG: TenantConfig = {
   abn: "00 000 000 000",
   accountingProvider: "myob",
   brandingHidden: true,
+  wholesalers: DEFAULT_WHOLESALERS,
 };

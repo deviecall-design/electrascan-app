@@ -14,7 +14,11 @@ function loadTenant(): TenantConfig {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return VESH_ELECTRICAL_CONFIG;
     const parsed = JSON.parse(raw) as Partial<TenantConfig>;
-    return { ...VESH_ELECTRICAL_CONFIG, ...parsed };
+    const merged: TenantConfig = { ...VESH_ELECTRICAL_CONFIG, ...parsed };
+    if (!Array.isArray(merged.wholesalers) || merged.wholesalers.length === 0) {
+      merged.wholesalers = VESH_ELECTRICAL_CONFIG.wholesalers;
+    }
+    return merged;
   } catch {
     return VESH_ELECTRICAL_CONFIG;
   }

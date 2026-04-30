@@ -3,11 +3,11 @@ import {
   useProjects,
   estimateTotals,
   makeId,
-  type Project,
   type ProjectEstimate,
   type EstimateLineItem,
   type CableRun,
 } from "../contexts/ProjectContext";
+import WholesalerQuoteModal from "./WholesalerQuoteModal";
 
 const C = {
   bg: "#0A1628",
@@ -184,6 +184,9 @@ const ProjectEstimateEditor: React.FC<Props> = ({ projectId, estimateId }) => {
         </ToolbarBtn>
         <ToolbarBtn onClick={() => setShowCable(true)} icon="⚙️">
           Cable / Conduit
+        </ToolbarBtn>
+        <ToolbarBtn onClick={() => setShowWholesaler(true)} icon="📨">
+          Send BOM
         </ToolbarBtn>
         <div style={{ position: "relative" }}>
           <ToolbarBtn onClick={() => setShowVersions(v => !v)} icon="🕒">
@@ -969,171 +972,5 @@ const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, 
   </div>
 );
 
-// ─── Wholesaler Quote Modal ──────────────────────────────────────────────────
-
-const N8N_WEBHOOK = "https://damienc13.app.n8n.cloud/webhook/electrascan-estimate";
-
-const WholesalerQuoteModal: React.FC<{
-  estimate: ProjectEstimate;
-  project: Project;
-  onClose: () => void;
-}> = ({ estimate, project, onClose }) => {
-  const [wholesalerEmail, setWholesalerEmail] = useState("");
-  const [notes, setNotes] = useState("");
-  const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const estRef = estimate.reference ?? estimate.number;
-  const subject = `Quote Request — ${estRef} — ${project.name} — Vesh Electrical`;
-
-  const cableTotal = estimate.cableRuns.reduce((s, r) => s + r.totalLength * (CABLE_TYPES.find(c => c.label === r.cableType)?.unitRate ?? 0), 0);
-
-  const send = async () => {
-    if (!wholesalerEmail.trim()) { setError("Enter the wholesaler email first."); return; }
-    setSending(true);
-    setError(null);
-    try {
-      await fetch(N8N_WEBHOOK, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "wholesaler_quote_request",
-          estimate_ref: estRef,
-          project_name: project.name,
-          client_name: project.clientName,
-          wholesaler: "TLE Brookvale",
-          wholesaler_address: "3/192 Harbord Rd, Brookvale NSW 2100",
-          wholesaler_email: wholesalerEmail.trim(),
-          subject,
-          cable_runs: estimate.cableRuns.map(r => ({
-            type: r.cableType,
-            run_m: r.lengthMeters,
-            waste_pct: r.wasteFactorPct,
-            ordered_m: r.totalLength,
-            unit_rate: CABLE_TYPES.find(c => c.label === r.cableType)?.unitRate ?? 0,
-            line_total: +(r.totalLength * (CABLE_TYPES.find(c => c.label === r.cableType)?.unitRate ?? 0)).toFixed(2),
-          })),
-          cable_total: +cableTotal.toFixed(2),
-          line_items: estimate.lineItems.map(li => ({
-            description: li.description,
-            category: li.category,
-            qty: li.qty,
-            unit: li.unit,
-          })),
-          notes: notes.trim() || null,
-          tenant: "Vesh Electrical",
-          sent_at: new Date().toISOString(),
-        }),
-      });
-      setSent(true);
-    } catch {
-      setError("Send failed — check n8n webhook is active.");
-    } finally {
-      setSending(false);
-    }
-  };
-
-  return (
-    <div
-      style={{
-        position: "fixed", inset: 0, zIndex: 1000,
-        background: "rgba(0,0,0,0.7)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        padding: 24,
-      }}
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div style={{ background: C.navy, border: `1px solid ${C.border}`, borderRadius: 14, width: "100%", maxWidth: 540, padding: 28 }}>
-        {/* Header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: C.text }}>Request Wholesaler Quote</div>
-            <div style={{ fontSize: 12, color: C.muted, marginTop: 3 }}>TLE Brookvale · 3/192 Harbord Rd, Brookvale NSW 2100</div>
-          </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: C.muted, fontSize: 20, cursor: "pointer", lineHeight: 1 }}>×</button>
-        </div>
-
-        {sent ? (
-          <div style={{ textAlign: "center", padding: "24px 0" }}>
-            <div style={{ fontSize: 28, marginBottom: 12 }}>✅</div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: C.green, marginBottom: 6 }}>Quote request sent to TLE Brookvale</div>
-            <div style={{ fontSize: 12, color: C.muted, marginBottom: 24 }}>{wholesalerEmail}</div>
-            <button onClick={onClose} style={{ background: C.blue, color: "#fff", border: "none", borderRadius: 8, padding: "10px 24px", fontWeight: 700, cursor: "pointer", fontSize: 14 }}>
-              Done
-            </button>
-          </div>
-        ) : (
-          <>
-            {/* BOM summary */}
-            <div style={{ background: C.card, borderRadius: 10, padding: 14, marginBottom: 16 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: 0.6, marginBottom: 8 }}>BOM SUMMARY — {estRef}</div>
-              {estimate.cableRuns.length === 0 ? (
-                <div style={{ fontSize: 12, color: C.muted }}>No cable runs added.</div>
-              ) : (
-                estimate.cableRuns.map(r => {
-                  const rate = CABLE_TYPES.find(c => c.label === r.cableType)?.unitRate ?? 0;
-                  return (
-                    <div key={r.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
-                      <span style={{ color: C.text }}>{r.cableType}</span>
-                      <span style={{ color: C.dim }}>{r.totalLength}m · {fmtMoney(r.totalLength * rate)}</span>
-                    </div>
-                  );
-                })
-              )}
-              {estimate.cableRuns.length > 0 && (
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700, color: C.green, borderTop: `1px solid ${C.border}`, marginTop: 8, paddingTop: 8 }}>
-                  <span>Cable total</span><span>{fmtMoney(cableTotal)}</span>
-                </div>
-              )}
-              <div style={{ fontSize: 11, color: C.muted, marginTop: 8 }}>{estimate.lineItems.length} line items included</div>
-            </div>
-
-            {/* To field */}
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: 0.6, marginBottom: 4 }}>TO (WHOLESALER EMAIL)</div>
-              <input
-                type="email"
-                placeholder="Enter TLE Brookvale ordering email..."
-                value={wholesalerEmail}
-                onChange={e => setWholesalerEmail(e.target.value)}
-                style={{ ...drawerInput, fontSize: 13 }}
-              />
-            </div>
-
-            {/* Subject (read-only) */}
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: 0.6, marginBottom: 4 }}>SUBJECT</div>
-              <div style={{ fontSize: 12, color: C.dim, background: C.card, borderRadius: 8, padding: "8px 10px", border: `1px solid ${C.border}` }}>{subject}</div>
-            </div>
-
-            {/* Notes */}
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: 0.6, marginBottom: 4 }}>NOTES (OPTIONAL)</div>
-              <textarea
-                placeholder="Any special notes for TLE..."
-                value={notes}
-                onChange={e => setNotes(e.target.value)}
-                rows={3}
-                style={{ ...drawerInput, fontSize: 13, resize: "vertical" }}
-              />
-            </div>
-
-            {error && <div style={{ fontSize: 12, color: C.red, marginBottom: 12 }}>{error}</div>}
-
-            <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={onClose} style={{ flex: 1, background: C.card, color: C.text, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 0", fontWeight: 600, cursor: "pointer", fontSize: 14 }}>
-                Cancel
-              </button>
-              <button onClick={send} disabled={sending} style={{ flex: 2, background: sending ? C.muted : C.amber, color: "#0A1628", border: "none", borderRadius: 10, padding: "10px 0", fontWeight: 700, cursor: sending ? "not-allowed" : "pointer", fontSize: 14 }}>
-                {sending ? "Sending…" : "📧 Send Quote Request"}
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-};
 
 export default ProjectEstimateEditor;
