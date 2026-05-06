@@ -323,6 +323,10 @@ function enrichLegendItems(rawItems: any[]): LegendItem[] {
   return rawItems.map(item => {
     const { catalogueItem, price, componentType, automationFlag } =
       matchToVesh(item.symbol_description ?? "");
+    // Always assign a price — use the catalogue match, or fall back to the
+    // FALLBACK_PRICING table so legend items never silently drop from both
+    // the Pass 2 decoder and the buildComponents missed-item sweep.
+    const resolvedPrice = price ?? FALLBACK_PRICING[componentType] ?? 200;
     return {
       symbol_description: item.symbol_description ?? "",
       symbol_visual: item.symbol_visual ?? "unknown symbol",
@@ -330,7 +334,7 @@ function enrichLegendItems(rawItems: any[]): LegendItem[] {
       unit: item.unit ?? "EA",
       mapped_type: componentType,
       catalogue_id: catalogueItem?.id ?? null,
-      catalogue_price: price,
+      catalogue_price: resolvedPrice,
       in_electrical_scope: item.in_electrical_scope !== false,
       automation_flag: automationFlag,
       notes: item.notes ?? "",
@@ -525,9 +529,17 @@ export async function detectElectricalComponents(
   // symbols aren't yet in the catalogue, the decoder is empty and Claude
   // has nothing to anchor against — log this so we can spot the case.
   const decoderInScope = legendItems.filter(l => l.in_electrical_scope && l.catalogue_price);
-  console.log(`[ElectraScan][detect] Pass 2 decoder built from ${decoderInScope.length}/${legendItems.length} legend items (rest skipped: out of scope or no catalogue match)`);
+  console.log(`[ElectraScan][detect] Pass 2 decoder built from ${decoderInScope.length}/${legendItems.length} legend items`);
   if (decoderInScope.length === 0) {
-    console.warn("[ElectraScan][detect] Pass 2 decoder is EMPTY — Pass 1 produced no priced legend items, so Claude has no symbol context. Detection will likely return 0 components.");
+    // All in-scope legend items now have a fallback price (see enrichLegendItems),
+    // so this branch indicates Pass 1 found no electrical items at all — not a
+    // catalogue-match failure. buildComponents will still produce output from the
+    // legend-item missed-item sweep if legendItems has entries.
+    console.warn(
+      "[ElectraScan][detect] Pass 2 decoder is EMPTY — Pass 1 found no in-scope electrical items. " +
+      `legendItems total: ${legendItems.length}. ` +
+      "buildComponents will still produce components from the legend-item fallback sweep."
+    );
   }
 
   try {
