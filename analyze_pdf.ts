@@ -607,6 +607,31 @@ Return ONLY valid JSON: {"scale_detected":"unknown","components":[{"legend_descr
       roomComponents = retryParsed.components ?? [];
       console.log(`[ElectraScan v4] Retry room distribution: ${roomComponents.length} entries`);
     }
+
+    // Retry for no-legend path — direct scan also returned empty
+    if (roomComponents.length === 0 && noLegend) {
+      console.log("[ElectraScan v4] Direct scan empty — retrying with room-estimation fallback...");
+      const noLegendRetry = await client.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 2048,
+        system: `You are estimating electrical components in an Australian floor plan. No electrical legend was found.
+CRITICAL: You MUST return components. Never return an empty array.
+List every room you can see and estimate the electrical items for each room based on standard Australian residential requirements.
+If you cannot see the drawing clearly, make reasonable estimates for a standard residential space.
+Return ONLY valid JSON: {"scale_detected":"unknown","components":[{"legend_description":"Recessed downlight","type":"DOWNLIGHT_RECESSED","quantity":4,"room":"Kitchen","drawing_ref":"Sheet 1","confidence":55,"flags":["LOW_CONFIDENCE"],"notes":"No legend — estimated from floor plan layout"}]}`,
+        messages: [{
+          role: "user",
+          content: [
+            ...imageBlocks,
+            { type: "text", text: `Drawing: ${file.name}. List every visible room and estimate the electrical components in each room.` },
+          ],
+        }],
+      });
+      const noLegendRaw = noLegendRetry.content[0].type === "text" ? noLegendRetry.content[0].text : "";
+      const noLegendParsed = JSON.parse(extractJSON(noLegendRaw));
+      roomComponents = noLegendParsed.components ?? [];
+      console.log(`[ElectraScan v4] No-legend retry: ${roomComponents.length} entries`);
+    }
   } catch (err: any) {
     console.warn("[ElectraScan v4] Room scan failed:", err);
     pass2Error = err;

@@ -129,8 +129,9 @@ const DashboardScreen: React.FC<Props> = ({
     return () => { cancelled = true; };
   }, []);
 
-  // Use live numbers when present, otherwise fall back to local.
-  const useLive = live && live.source === "supabase";
+  // Use live numbers whenever Supabase returned successfully (even if empty).
+  // Avoids stale local-storage data masking a genuinely zero Supabase state.
+  const useLive = live !== null;
   const stats = {
     estimatesThisMonth: useLive ? live!.estimatesThisMonth : localStats.estimatesThisMonth,
     pendingValue:       useLive ? live!.pendingValue       : localStats.pendingValue,
