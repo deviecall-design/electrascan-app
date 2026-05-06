@@ -150,6 +150,12 @@ export async function upsertCompanyProfile(input: CompanyProfileInput) {
 // than 0) signals the caller to render "—" instead of a falsy number, so
 // fresh tenants don't see misleading zeroes.
 //
+// Auth filtering: all KPI queries filter by the signed-in user's uid
+// (owner_id = auth.uid()). This is necessary for RLS enforcement and is
+// the correct filter for the beta single-tenant phase — tenant_id may not
+// be populated for all rows yet. If no user session exists the query
+// resolves to null (renders "—") rather than erroring.
+//
 // The schema uses status values: 'draft' | 'sent' | 'viewed' | 'approved'.
 // Mapping for win-rate: "won" = approved, "lost" = future 'rejected' status
 // (not yet in schema — handled gracefully via IN clause). Until rejected
@@ -161,21 +167,33 @@ export interface KpiResult<T> {
   error: any;
 }
 
+/** Returns the current authenticated user's id, or null if not signed in. */
+async function getAuthUserId(): Promise<string | null> {
+  const { data } = await supabase.auth.getUser();
+  return data?.user?.id ?? null;
+}
+
 export async function fetchEstimatesThisMonth(): Promise<KpiResult<number>> {
+  const uid = await getAuthUserId();
+  if (!uid) return { value: null, error: "not_authenticated" };
   const start = new Date();
   start.setDate(1);
   start.setHours(0, 0, 0, 0);
   const { count, error } = await supabase
     .from("estimates")
     .select("id", { count: "exact", head: true })
+    .eq("owner_id", uid)
     .gte("created_at", start.toISOString());
   return { value: error ? null : (count ?? 0), error };
 }
 
 export async function fetchPendingValue(): Promise<KpiResult<number>> {
+  const uid = await getAuthUserId();
+  if (!uid) return { value: null, error: "not_authenticated" };
   const { data, error } = await supabase
     .from("estimates")
     .select("value")
+    .eq("owner_id", uid)
     .in("status", ["sent", "viewed"]);
   if (error || !data) return { value: null, error };
   const total = data.reduce((s, r: any) => s + Number(r.value ?? 0), 0);
@@ -183,11 +201,14 @@ export async function fetchPendingValue(): Promise<KpiResult<number>> {
 }
 
 export async function fetchWinRate(): Promise<KpiResult<number>> {
+  const uid = await getAuthUserId();
+  if (!uid) return { value: null, error: "not_authenticated" };
   const since = new Date();
   since.setDate(since.getDate() - 90);
   const { data, error } = await supabase
     .from("estimates")
     .select("status")
+    .eq("owner_id", uid)
     .gte("created_at", since.toISOString())
     .in("status", ["approved", "sent", "viewed", "rejected"]);
   if (error || !data || data.length === 0) return { value: null, error };
@@ -201,9 +222,13 @@ export async function fetchAvgScanToQuote(): Promise<KpiResult<number>> {
   // Returns the average time in milliseconds between a scan starting and
   // the linked estimate being created. Scans link to estimates via
   // scans.estimate_ref → estimates.ref.
+  const uid = await getAuthUserId();
+  if (!uid) return { value: null, error: "not_authenticated" };
+
   const { data: scans, error: scansErr } = await supabase
     .from("scans")
     .select("estimate_ref, started_at")
+    .eq("owner_id", uid)
     .not("estimate_ref", "is", null);
   if (scansErr || !scans || scans.length === 0) return { value: null, error: scansErr };
 
@@ -213,6 +238,7 @@ export async function fetchAvgScanToQuote(): Promise<KpiResult<number>> {
   const { data: estimates, error: estErr } = await supabase
     .from("estimates")
     .select("ref, created_at")
+    .eq("owner_id", uid)
     .in("ref", refs);
   if (estErr || !estimates || estimates.length === 0) return { value: null, error: estErr };
 
