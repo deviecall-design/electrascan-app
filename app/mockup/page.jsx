@@ -72,6 +72,8 @@ const DETECTED_ITEMS = [
   { id: 8,  symbol: 'FN',  qty: 3,  desc: 'Bathroom exhaust fan',       rate: 'FN-001',  conf: 0.88, x: 440, y: 220 },
   { id: 9,  symbol: 'DC',  qty: 6,  desc: 'Cat6A data point',           rate: 'DC-001',  conf: 0.93, x: 180, y: 320 },
   { id: 10, symbol: 'LT',  qty: 2,  desc: 'Pendant light (kitchen)',    rate: 'LT-005',  conf: 0.65, x: 240, y: 120 },
+  { id: 11, symbol: '?',  qty: 4, desc: 'CCTV camera rough-in (builder spec)', rate: null, conf: 0.87, x: 310, y: 300 },
+  { id: 12, symbol: 'EV', qty: 1, desc: 'EV charger — model TBC',              rate: null, conf: 0.79, x: 420, y: 160 },
 ];
 
 const ESTIMATES = [
@@ -471,15 +473,35 @@ function StepDetecting({ revealed, onNext, ready }) {
 
 function StepReview({ onNext, onBack }) {
   const [items, setItems] = useState(DETECTED_ITEMS);
-  const needsReview = items.filter((i) => i.conf < 0.8).length;
+  const [customRates, setCustomRates] = useState({});  // { [id]: number }
+
   const toggle = (id) => setItems((arr) => arr.map((i) => i.id === id ? { ...i, _ok: !i._ok } : i));
+  const setCustomRate = (id, val) => setCustomRates((prev) => ({ ...prev, [id]: val }));
+
+  const priceRequired = items.filter((i) => !RATE_LIBRARY.find((r) => r.code === i.rate));
+  const pricedCount = priceRequired.filter((i) => customRates[i.id] > 0).length;
+  const allPriced = priceRequired.length === 0 || pricedCount === priceRequired.length;
+  const needsConfidence = items.filter((i) => i.conf !== null && i.conf < 0.8 && RATE_LIBRARY.find((r) => r.code === i.rate)).length;
 
   return (
     <div className="anim-in" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16 }}>
-      {needsReview > 0 && (
+
+      {/* Price Required banner — shows count of unpriced items, updates as user fills them */}
+      {priceRequired.length > 0 && (
         <div style={{ backgroundColor: C.amberSoft, border: `1px solid #e6d2aa`, borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
           <AlertCircle size={16} color={C.amber} />
-          <span style={{ fontSize: 14 }}><B>{needsReview} items</B> below 80% confidence — quick review recommended before rate matching.</span>
+          <span style={{ fontSize: 14 }}>
+            <B>{priceRequired.length - pricedCount} item{(priceRequired.length - pricedCount) !== 1 ? 's' : ''}</B>
+            {' '}require pricing before this quote can be sent.
+          </span>
+        </div>
+      )}
+
+      {/* Confidence banner — only for rate-matched items below 80% */}
+      {needsConfidence > 0 && (
+        <div style={{ backgroundColor: C.amberSoft, border: `1px solid #e6d2aa`, borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <AlertCircle size={16} color={C.amber} />
+          <span style={{ fontSize: 14 }}><B>{needsConfidence} items</B> below 80% confidence — quick review recommended before rate matching.</span>
         </div>
       )}
 
@@ -494,10 +516,13 @@ function StepReview({ onNext, onBack }) {
           <tbody>
             {items.map((it) => {
               const rate = RATE_LIBRARY.find((r) => r.code === it.rate);
-              const unit = rate ? rate.rate + rate.labour : 0;
+              const isPR = !rate;
+              const customVal = customRates[it.id] || 0;
+              const unit = isPR ? customVal : (rate.rate + rate.labour);
               const total = unit * it.qty;
+
               return (
-                <tr key={it.id} className="es-row" style={{ borderTop: `1px solid ${C.border}` }}>
+                <tr key={it.id} className="es-row" style={{ borderTop: `1px solid ${C.border}`, backgroundColor: isPR && !customVal ? '#fffaf2' : undefined }}>
                   <Td>
                     <button onClick={() => toggle(it.id)} style={{ width: 18, height: 18, borderRadius: 4, border: `1.5px solid ${it._ok ? C.green : C.border}`, backgroundColor: it._ok ? C.green : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       {it._ok && <Check size={11} color="#fff" strokeWidth={3} />}
@@ -506,14 +531,52 @@ function StepReview({ onNext, onBack }) {
                   <Td><SymbolBadge symbol={it.symbol} small /></Td>
                   <Td>{it.desc}</Td>
                   <Td>
-                    <span style={{ fontFamily: fontMono, fontSize: 12, color: C.textMuted }}>{it.rate}</span>
-                    <span style={{ color: C.textSubtle, margin: '0 6px' }}>·</span>
-                    <span style={{ fontSize: 13 }}>{rate?.description}</span>
+                    {isPR ? (
+                      <span style={{ fontSize: 12, color: C.amber, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5, backgroundColor: C.amberSoft, padding: '3px 8px', borderRadius: 6, border: `1px solid #e6d2aa` }}>
+                        <AlertCircle size={11} color={C.amber} /> Price Required
+                      </span>
+                    ) : (
+                      <>
+                        <span style={{ fontFamily: fontMono, fontSize: 12, color: C.textMuted }}>{it.rate}</span>
+                        <span style={{ color: C.textSubtle, margin: '0 6px' }}>·</span>
+                        <span style={{ fontSize: 13 }}>{rate.description}</span>
+                      </>
+                    )}
                   </Td>
                   <Td align="right" mono>{it.qty}</Td>
-                  <Td align="right" mono>${unit}</Td>
-                  <Td align="right" mono><B>${total.toLocaleString()}</B></Td>
-                  <Td><ConfPill c={it.conf} withBar /></Td>
+                  <Td align="right">
+                    {isPR ? (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 2 }}>
+                        <span style={{ fontFamily: fontMono, fontSize: 13, color: C.textSubtle }}>$</span>
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="0"
+                          value={customVal || ''}
+                          onChange={(e) => setCustomRate(it.id, parseFloat(e.target.value) || 0)}
+                          style={{
+                            width: 72, textAlign: 'right', fontFamily: fontMono, fontSize: 13,
+                            border: `1.5px solid ${customVal > 0 ? C.border : C.amber}`,
+                            borderRadius: 6, padding: '3px 6px',
+                            backgroundColor: customVal > 0 ? 'transparent' : C.amberSoft,
+                            color: C.text, outline: 'none'
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <span style={{ fontFamily: fontMono }}>${unit}</span>
+                    )}
+                  </Td>
+                  <Td align="right" mono>
+                    {isPR && !customVal ? (
+                      <span style={{ color: C.textSubtle, fontFamily: fontMono }}>—</span>
+                    ) : (
+                      <B>${total.toLocaleString()}</B>
+                    )}
+                  </Td>
+                  <Td>
+                    {it.conf !== null ? <ConfPill c={it.conf} withBar /> : <span style={{ color: C.textSubtle, fontSize: 12, fontFamily: fontMono }}>—</span>}
+                  </Td>
                 </tr>
               );
             })}
@@ -523,7 +586,9 @@ function StepReview({ onNext, onBack }) {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
         <GhostButton onClick={onBack} icon={<ArrowLeft size={14} />}>Back to detection</GhostButton>
-        <PrimaryButton onClick={onNext} icon={<ArrowRight size={15} />}>Generate quote</PrimaryButton>
+        <PrimaryButton onClick={onNext} disabled={!allPriced} icon={<ArrowRight size={15} />}>
+          {allPriced ? 'Generate quote' : `Price ${priceRequired.length - pricedCount} item${(priceRequired.length - pricedCount) !== 1 ? 's' : ''} to continue`}
+        </PrimaryButton>
       </div>
     </div>
   );
@@ -837,9 +902,21 @@ function StubView({ title }) {
   return <div className="anim-in"><PageHeader title={title} sub="Coming soon." /></div>;
 }
 
-function PrimaryButton({ children, icon, onClick }) {
+function PrimaryButton({ children, icon, onClick, disabled }) {
   return (
-    <button onClick={onClick} className="es-btn-primary" style={{ fontFamily: fontHeading, fontSize: 14, fontWeight: 500, backgroundColor: C.orange, color: '#fff', padding: '10px 18px', borderRadius: 6, display: 'inline-flex', alignItems: 'center', gap: 8, transition: 'background-color 150ms' }}>
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={disabled ? undefined : 'es-btn-primary'}
+      style={{
+        fontFamily: fontHeading, fontSize: 14, fontWeight: 500,
+        backgroundColor: disabled ? C.borderSoft : C.orange,
+        color: disabled ? C.textSubtle : '#fff',
+        padding: '10px 18px', borderRadius: 6, display: 'inline-flex', alignItems: 'center', gap: 8,
+        transition: 'background-color 150ms',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+      }}
+    >
       {icon}{children}
     </button>
   );
