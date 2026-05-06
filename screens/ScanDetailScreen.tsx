@@ -26,6 +26,12 @@ import {
   Check,
   Loader2,
   AlertCircle,
+  AlertTriangle,
+  HelpCircle,
+  XCircle,
+  ChevronDown,
+  ChevronUp,
+  Lock,
   Bot,
   Send,
   Copy,
@@ -306,35 +312,385 @@ function StepDetecting({ onNext }: { onNext: () => void }) {
   );
 }
 
+// ─── Confidence state helpers (spec Section 8.2) ────────────────────────
+
+type ConfidenceState = "recognised" | "low_confidence" | "unrecognised" | "unclear";
+
+const CONF_STATE_CONFIG: Record<ConfidenceState, {
+  label: string;
+  icon: React.ReactNode;
+  color: string;
+  bg: string;
+  border: string;
+}> = {
+  recognised: {
+    label: "Recognised",
+    icon: <Check size={11} strokeWidth={3} />,
+    color: "#10B981",
+    bg: "#F0FDF4",
+    border: "#10B981",
+  },
+  low_confidence: {
+    label: "Low Confidence",
+    icon: <AlertTriangle size={11} />,
+    color: "#F59E0B",
+    bg: "#FFFBEB",
+    border: "#F59E0B",
+  },
+  unrecognised: {
+    label: "Unrecognised",
+    icon: <HelpCircle size={11} />,
+    color: "#EF4444",
+    bg: "#FEF2F2",
+    border: "#EF4444",
+  },
+  unclear: {
+    label: "Unclear",
+    icon: <XCircle size={11} />,
+    color: "#EF4444",
+    bg: "#FEF2F2",
+    border: "#EF4444",
+  },
+};
+
+function getConfidenceState(conf: number): ConfidenceState {
+  if (conf >= 0.90) return "recognised";
+  if (conf >= 0.60) return "low_confidence";
+  if (conf > 0.0)   return "unrecognised";
+  return "unclear";
+}
+
+function ConfStateBadge({ conf }: { conf: number }) {
+  const state = getConfidenceState(conf);
+  const cfg = CONF_STATE_CONFIG[state];
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 4,
+      fontSize: 11, fontFamily: FONT.heading, fontWeight: 500,
+      padding: "3px 8px", borderRadius: RADIUS.sm,
+      color: cfg.color, backgroundColor: cfg.bg,
+      border: `1px solid ${cfg.border}`,
+    }}>
+      {cfg.icon}
+      {cfg.label}
+    </span>
+  );
+}
+
+// ─── Review Queue Panel (spec Section 8.3) ───────────────────────────────
+
+type ReviewAction = "classify" | "not_in_scope" | "flag_site";
+
+interface ReviewQueueItem {
+  id: number;
+  symbol: string;
+  desc: string;
+  room: string;
+  conf: number;
+  state: ConfidenceState;
+  resolution: ReviewAction | null;
+  classifyData?: {
+    category: string;
+    description: string;
+    qty: number;
+    rate: number;
+  };
+}
+
+const CATEGORIES = [
+  "Power (GPO, switches)",
+  "Lighting (downlights, strips)",
+  "Automation (blinds, curtains)",
+  "AV / Data",
+  "Security (CCTV, access)",
+  "Solar / Battery",
+  "EV Charging",
+  "Switchboard",
+  "Other",
+];
+
+function ClassifyForm({ onSave, onCancel }: {
+  onSave: (data: ReviewQueueItem["classifyData"]) => void;
+  onCancel: () => void;
+}) {
+  const [category, setCategory] = useState(CATEGORIES[0]);
+  const [description, setDescription] = useState("");
+  const [qty, setQty] = useState(1);
+  const [rate, setRate] = useState(200);
+
+  return (
+    <div style={{
+      marginTop: 10, padding: 14,
+      backgroundColor: C.bg, borderRadius: RADIUS.md,
+      border: `1px solid ${C.border}`,
+      display: "flex", flexDirection: "column", gap: 10,
+    }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        <div>
+          <label style={{ display: "block", fontSize: 11, color: C.textSubtle, marginBottom: 4, fontFamily: FONT.heading }}>Category</label>
+          <select
+            value={category}
+            onChange={e => setCategory(e.target.value)}
+            style={{
+              width: "100%", padding: "6px 8px", fontSize: 13,
+              border: `1px solid ${C.border}`, borderRadius: RADIUS.sm,
+              backgroundColor: C.bgCard, color: C.text, fontFamily: FONT.heading,
+            }}
+          >
+            {CATEGORIES.map(cat => (
+              <option key={cat} value={cat}>{cat}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 11, color: C.textSubtle, marginBottom: 4, fontFamily: FONT.heading }}>Description</label>
+          <input
+            type="text"
+            value={description}
+            onChange={e => setDescription(e.target.value)}
+            placeholder="e.g. Recessed downlight"
+            style={{
+              width: "100%", padding: "6px 8px", fontSize: 13,
+              border: `1px solid ${C.border}`, borderRadius: RADIUS.sm,
+              backgroundColor: C.bgCard, color: C.text, fontFamily: FONT.heading,
+              boxSizing: "border-box",
+            }}
+          />
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 11, color: C.textSubtle, marginBottom: 4, fontFamily: FONT.heading }}>Qty</label>
+          <input
+            type="number"
+            value={qty}
+            min={1}
+            onChange={e => setQty(Math.max(1, Number(e.target.value)))}
+            style={{
+              width: "100%", padding: "6px 8px", fontSize: 13,
+              border: `1px solid ${C.border}`, borderRadius: RADIUS.sm,
+              backgroundColor: C.bgCard, color: C.text, fontFamily: FONT.mono,
+              boxSizing: "border-box",
+            }}
+          />
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 11, color: C.textSubtle, marginBottom: 4, fontFamily: FONT.heading }}>Rate ($/unit)</label>
+          <input
+            type="number"
+            value={rate}
+            min={0}
+            onChange={e => setRate(Math.max(0, Number(e.target.value)))}
+            style={{
+              width: "100%", padding: "6px 8px", fontSize: 13,
+              border: `1px solid ${C.border}`, borderRadius: RADIUS.sm,
+              backgroundColor: C.bgCard, color: C.text, fontFamily: FONT.mono,
+              boxSizing: "border-box",
+            }}
+          />
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button
+          onClick={() => onSave({ category, description: description || "Unclassified item", qty, rate })}
+          style={{
+            padding: "7px 14px", fontSize: 12, fontFamily: FONT.heading, fontWeight: 600,
+            backgroundColor: C.orange, color: "#fff", border: "none",
+            borderRadius: RADIUS.sm, cursor: "pointer",
+          }}
+        >
+          Add to estimate
+        </button>
+        <button
+          onClick={onCancel}
+          style={{
+            padding: "7px 14px", fontSize: 12, fontFamily: FONT.heading,
+            backgroundColor: "transparent", color: C.textMuted,
+            border: `1px solid ${C.border}`, borderRadius: RADIUS.sm, cursor: "pointer",
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ReviewQueuePanel({
+  items,
+  onResolve,
+}: {
+  items: ReviewQueueItem[];
+  onResolve: (id: number, action: ReviewAction, classifyData?: ReviewQueueItem["classifyData"]) => void;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  const [classifyingId, setClassifyingId] = useState<number | null>(null);
+
+  const unresolvedItems = items.filter(i => i.resolution === null);
+  const blockers = items.filter(i =>
+    (i.state === "unrecognised" || i.state === "unclear") && i.resolution === null
+  );
+
+  if (unresolvedItems.length === 0) return null;
+
+  return (
+    <div style={{
+      border: `1px solid #EF4444`,
+      borderRadius: RADIUS.lg,
+      overflow: "hidden",
+      backgroundColor: "#FEF2F2",
+    }}>
+      {/* Header */}
+      <button
+        onClick={() => setCollapsed(c => !c)}
+        style={{
+          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "12px 16px", background: "none", border: "none",
+          cursor: "pointer", gap: 10,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <AlertCircle size={16} color="#EF4444" />
+          <span style={{ fontFamily: FONT.heading, fontSize: 14, fontWeight: 600, color: "#EF4444" }}>
+            Review Queue
+          </span>
+          <span style={{
+            fontSize: 11, fontFamily: FONT.heading, fontWeight: 700,
+            backgroundColor: "#EF4444", color: "#fff",
+            padding: "2px 8px", borderRadius: RADIUS.pill,
+          }}>
+            {unresolvedItems.length} unresolved
+          </span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {blockers.length > 0 && (
+            <span style={{ fontSize: 11, color: "#EF4444", fontFamily: FONT.heading }}>
+              Blocks estimate lock
+            </span>
+          )}
+          {collapsed ? <ChevronDown size={15} color="#EF4444" /> : <ChevronUp size={15} color="#EF4444" />}
+        </div>
+      </button>
+
+      {!collapsed && (
+        <div style={{ backgroundColor: C.bgCard, borderTop: `1px solid #FECACA` }}>
+          {unresolvedItems.map((item, i) => (
+            <div
+              key={item.id}
+              style={{
+                padding: "14px 16px",
+                borderTop: i > 0 ? `1px solid ${C.border}` : "none",
+              }}
+            >
+              {/* Item header */}
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                    <SymbolBadge symbol={item.symbol} small />
+                    <span style={{ fontFamily: FONT.heading, fontSize: 13, fontWeight: 600 }}>
+                      {item.desc}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontSize: 12, color: C.textMuted }}>{item.room}</span>
+                    <ConfStateBadge conf={item.conf} />
+                    <span style={{ fontFamily: FONT.mono, fontSize: 12, color: C.textSubtle }}>
+                      {Math.round(item.conf * 100)}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              {classifyingId !== item.id && (
+                <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+                  <button
+                    onClick={() => setClassifyingId(item.id)}
+                    style={{
+                      padding: "6px 12px", fontSize: 12, fontFamily: FONT.heading, fontWeight: 600,
+                      backgroundColor: C.orange, color: "#fff",
+                      border: "none", borderRadius: RADIUS.sm, cursor: "pointer",
+                    }}
+                  >
+                    Classify & Add
+                  </button>
+                  <button
+                    onClick={() => onResolve(item.id, "not_in_scope")}
+                    style={{
+                      padding: "6px 12px", fontSize: 12, fontFamily: FONT.heading,
+                      backgroundColor: "transparent", color: C.textMuted,
+                      border: `1px solid ${C.border}`, borderRadius: RADIUS.sm, cursor: "pointer",
+                    }}
+                  >
+                    Not In Scope
+                  </button>
+                  <button
+                    onClick={() => onResolve(item.id, "flag_site")}
+                    style={{
+                      padding: "6px 12px", fontSize: 12, fontFamily: FONT.heading,
+                      backgroundColor: "#FFFBEB", color: "#F59E0B",
+                      border: `1px solid #F59E0B`, borderRadius: RADIUS.sm, cursor: "pointer",
+                    }}
+                  >
+                    Flag for Site Check
+                  </button>
+                </div>
+              )}
+
+              {/* Classify form */}
+              {classifyingId === item.id && (
+                <ClassifyForm
+                  onSave={data => {
+                    onResolve(item.id, "classify", data);
+                    setClassifyingId(null);
+                  }}
+                  onCancel={() => setClassifyingId(null)}
+                />
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Step 3: Review ─────────────────────────────────────────────────────
 function StepReview({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
   const [items, setItems] = useState(
     DETECTED_ITEMS.map(it => ({ ...it, ok: false })),
   );
-  const needsReview = items.filter(i => i.conf < 0.8).length;
+
+  // Build review queue: items with conf < 0.90 go into the queue
+  const [reviewQueue, setReviewQueue] = useState<ReviewQueueItem[]>(
+    DETECTED_ITEMS
+      .filter(it => it.conf < 0.90)
+      .map(it => ({
+        id: it.id,
+        symbol: it.symbol,
+        desc: it.desc,
+        room: "Level 2",    // room would come from real scan data
+        conf: it.conf,
+        state: getConfidenceState(it.conf),
+        resolution: null,
+      }))
+  );
+
   const toggle = (id: number) =>
     setItems(arr => arr.map(i => (i.id === id ? { ...i, ok: !i.ok } : i)));
 
+  const resolveQueueItem = (id: number, action: ReviewAction, classifyData?: ReviewQueueItem["classifyData"]) => {
+    setReviewQueue(q => q.map(i => i.id === id ? { ...i, resolution: action, classifyData } : i));
+  };
+
+  // Estimate lock is blocked if any Unrecognised or Unclear items are unresolved
+  const blockingUnresolved = reviewQueue.filter(i =>
+    (i.state === "unrecognised" || i.state === "unclear") && i.resolution === null
+  );
+  const lockBlocked = blockingUnresolved.length > 0;
+
   return (
     <div className="anim-in" style={{ display: "grid", gridTemplateColumns: "1fr", gap: 16 }}>
-      {needsReview > 0 && (
-        <div
-          style={{
-            backgroundColor: C.amberSoft,
-            border: `1px solid #e6d2aa`,
-            borderRadius: RADIUS.lg,
-            padding: "12px 16px",
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-          }}
-        >
-          <AlertCircle size={16} color={C.amber} />
-          <span style={{ fontSize: 14 }}>
-            <B>{needsReview} items</B> below 80% confidence — quick review recommended before rate matching.
-          </span>
-        </div>
-      )}
+      {/* Review Queue — appears above component table */}
+      <ReviewQueuePanel items={reviewQueue} onResolve={resolveQueueItem} />
 
       <Card>
         <table style={{ width: "100%", fontSize: 14 }}>
@@ -394,7 +750,29 @@ function StepReview({ onNext, onBack }: { onNext: () => void; onBack: () => void
 
       <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
         <GhostButton onClick={onBack} icon={<ArrowLeft size={14} />}>Back to detection</GhostButton>
-        <PrimaryButton onClick={onNext} icon={<ArrowRight size={15} />}>Generate quote</PrimaryButton>
+
+        {/* Lock blocked tooltip wrapper */}
+        <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
+          {lockBlocked && (
+            <div style={{
+              position: "absolute", bottom: "calc(100% + 8px)", right: 0,
+              backgroundColor: C.text, color: "#fff",
+              fontSize: 12, fontFamily: FONT.heading,
+              padding: "6px 10px", borderRadius: RADIUS.md,
+              whiteSpace: "nowrap", pointerEvents: "none", zIndex: 10,
+              boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+            }}>
+              <Lock size={11} style={{ marginRight: 5 }} />
+              Resolve all Unrecognised / Unclear items first
+            </div>
+          )}
+          <PrimaryButton
+            onClick={lockBlocked ? undefined : onNext}
+            icon={lockBlocked ? <Lock size={15} /> : <ArrowRight size={15} />}
+          >
+            {lockBlocked ? `Blocked — ${blockingUnresolved.length} unresolved` : "Generate quote"}
+          </PrimaryButton>
+        </div>
       </div>
     </div>
   );
