@@ -272,3 +272,76 @@ export function formatScanToQuote(ms: number | null): string {
   const days = hours / 24;
   return `${Math.max(1, Math.round(days))}d`;
 }
+
+// ─── Milestone claims ────────────────────────────────────────────────────
+//
+// milestone_claims table records each Submit Claim action. It creates a
+// DRAFT invoice in MYOB (via a future accounting sync trigger). Callers
+// update the local milestone status to "invoiced_draft" immediately;
+// MYOB sync-back will advance it to "invoiced" once finance approves.
+//
+// Table schema (run via migrations):
+//   id uuid PK, project_id text, milestone_id text,
+//   amount numeric, inv_ref text, status text,
+//   created_by uuid, created_at timestamptz,
+//   tenant_id uuid, owner_id uuid
+
+export interface MilestoneClaimRow {
+  id?: string;
+  project_id: string;
+  milestone_id: string;
+  milestone_label: string;
+  amount: number;
+  inv_ref: string;
+  status: "draft";
+  created_at?: string;
+}
+
+/**
+ * Submit a milestone claim. Creates a draft record in milestone_claims
+ * and returns the generated invoice reference.
+ *
+ * Does NOT auto-send to builder or approve the invoice. Status = "draft".
+ * Finance team is notified in-app; they review and approve in MYOB.
+ */
+export async function submitMilestoneClaim(
+  projectId: string,
+  milestoneId: string,
+  milestoneLabel: string,
+  amount: number,
+): Promise<{ invRef: string | null; error: any }> {
+  const { data: userResult } = await supabase.auth.getUser();
+  const ownerId = userResult?.user?.id ?? null;
+
+  // Generate an invoice reference: INV-YYYY-NNN (3-digit random suffix for
+  // demo; in production this would be a MYOB-assigned sequence number).
+  const year = new Date().getFullYear();
+  const seq = String(Math.floor(Math.random() * 900) + 100);
+  const invRef = `INV-${year}-${seq}`;
+
+  const row: MilestoneClaimRow = {
+    project_id: projectId,
+    milestone_id: milestoneId,
+    milestone_label: milestoneLabel,
+    amount,
+    inv_ref: invRef,
+    status: "draft",
+  };
+
+  const { error } = await supabase
+    .from("milestone_claims")
+    .insert([{
+      ...row,
+      owner_id: ownerId,
+      tenant_id: getCurrentTenantId(),
+    }]);
+
+  if (error) {
+    // Table may not exist yet — log and return the generated ref anyway so
+    // the UI can update its local state optimistically.
+    console.warn("[ElectraScan] milestone_claims insert failed:", error.message);
+    return { invRef, error };
+  }
+
+  return { invRef, error: null };
+}
