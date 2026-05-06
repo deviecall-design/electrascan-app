@@ -230,41 +230,6 @@ Return ONLY valid JSON:
 }`;
 };
 
-// Direct-scan fallback — used when Pass 1 finds no legend
-const DIRECT_SCAN_PROMPT = `You are ElectraScan scanning an Australian electrical floor plan. No legend table was found so scan the drawing directly.
-
-CRITICAL: You MUST return components. Never return an empty components array. If you can see ANY marks, symbols, or annotations on the drawing that could be electrical, include them. If uncertain, include with low confidence and LOW_CONFIDENCE flag.
-
-Identify every electrical component using standard Australian electrical drawing conventions:
-- Downlights, ceiling lights, pendants, wall lights, LED strips, track lights
-- Power points (GPO, double GPO, weatherproof)
-- Light switches, dimmers, 2-way switches
-- Exhaust fans, ceiling fans
-- Split system AC, ducted AC
-- Data/TV points (Cat6)
-- CCTV, intercom, smoke detectors
-- EV chargers, switchboards
-- ANY symbol, mark, or notation that could be electrical even if uncertain
-
-If the drawing appears to be a residential floor plan with no electrical symbols visible, still identify the rooms and estimate typical electrical requirements (at minimum: downlights per room, GPOs, light switches).
-
-Return ONLY valid JSON:
-{
-  "scale_detected": "1:50",
-  "components": [
-    {
-      "legend_description": "Recessed downlight",
-      "type": "DOWNLIGHT_RECESSED",
-      "quantity": 6,
-      "room": "Kitchen",
-      "drawing_ref": "Sheet 1",
-      "confidence": 75,
-      "flags": ["LOW_CONFIDENCE"],
-      "notes": "No legend — estimated from drawing symbols"
-    }
-  ]
-}`;
-
 // ─────────────────────────────────────────────
 // PDF → IMAGES
 // ─────────────────────────────────────────────
@@ -554,9 +519,18 @@ export async function detectElectricalComponents(
     pass1Error = err;
   }
 
+  if (pass1Error) {
+    throw new Error(`Legend extraction failed: ${pass1Error?.message ?? String(pass1Error)}`);
+  }
+  if (legendItems.length === 0) {
+    throw new Error(
+      "No legend detected in this document. Electrical plans must include a legend or key/schedule to be scanned. " +
+      "Please check you are uploading the correct file."
+    );
+  }
+
   // ── PASS 2: Floor plan scan with symbol decoder ─
-  const noLegend = legendItems.length === 0;
-  console.log(`[ElectraScan v4] Pass 2: ${noLegend ? "Direct scan (no legend)" : "Scanning with symbol decoder"}...`);
+  console.log("[ElectraScan v4] Pass 2: Scanning with symbol decoder...");
   let rawResponse = "";
   let roomComponents: any[] = [];
 
@@ -564,16 +538,14 @@ export async function detectElectricalComponents(
     const r = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 4096,
-      system: noLegend ? DIRECT_SCAN_PROMPT : buildFloorPlanPrompt(legendItems),
+      system: buildFloorPlanPrompt(legendItems),
       messages: [{
         role: "user",
         content: [
           ...imageBlocks,
           {
             type: "text",
-            text: noLegend
-              ? `Drawing: ${file.name}. Scan every room and identify all electrical components you can see.`
-              : `Drawing: ${file.name}. Scan every room and count each symbol type using the decoder. Total quantities must match the legend.`,
+            text: `Drawing: ${file.name}. Scan every room and count each symbol type using the decoder. Total quantities must match the legend.`,
           },
         ],
       }],
@@ -608,30 +580,6 @@ Return ONLY valid JSON: {"scale_detected":"unknown","components":[{"legend_descr
       console.log(`[ElectraScan v4] Retry room distribution: ${roomComponents.length} entries`);
     }
 
-    // Retry for no-legend path — direct scan also returned empty
-    if (roomComponents.length === 0 && noLegend) {
-      console.log("[ElectraScan v4] Direct scan empty — retrying with room-estimation fallback...");
-      const noLegendRetry = await client.messages.create({
-        model: "claude-sonnet-4-6",
-        max_tokens: 2048,
-        system: `You are estimating electrical components in an Australian floor plan. No electrical legend was found.
-CRITICAL: You MUST return components. Never return an empty array.
-List every room you can see and estimate the electrical items for each room based on standard Australian residential requirements.
-If you cannot see the drawing clearly, make reasonable estimates for a standard residential space.
-Return ONLY valid JSON: {"scale_detected":"unknown","components":[{"legend_description":"Recessed downlight","type":"DOWNLIGHT_RECESSED","quantity":4,"room":"Kitchen","drawing_ref":"Sheet 1","confidence":55,"flags":["LOW_CONFIDENCE"],"notes":"No legend — estimated from floor plan layout"}]}`,
-        messages: [{
-          role: "user",
-          content: [
-            ...imageBlocks,
-            { type: "text", text: `Drawing: ${file.name}. List every visible room and estimate the electrical components in each room.` },
-          ],
-        }],
-      });
-      const noLegendRaw = noLegendRetry.content[0].type === "text" ? noLegendRetry.content[0].text : "";
-      const noLegendParsed = JSON.parse(extractJSON(noLegendRaw));
-      roomComponents = noLegendParsed.components ?? [];
-      console.log(`[ElectraScan v4] No-legend retry: ${roomComponents.length} entries`);
-    }
   } catch (err: any) {
     console.warn("[ElectraScan v4] Room scan failed:", err);
     pass2Error = err;

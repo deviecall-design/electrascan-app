@@ -869,7 +869,7 @@ const UploadTab: React.FC<{
             fontFamily: error.includes("Pass 1 response") ? "ui-monospace, SFMono-Regular, Menlo, monospace" : "inherit",
           }}
         >
-          <div style={{ fontWeight: 700, marginBottom: 4 }}>Detection error</div>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>Couldn't read this drawing</div>
           {error}
         </div>
       )}

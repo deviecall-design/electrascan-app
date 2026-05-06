@@ -564,7 +564,7 @@ function UploadScreen({ onFile, onBack, error }: { onFile: (f: File) => void; on
       </div>
       {error && (
         <div style={{ margin: "12px 20px 0", background: `${C.red}22`, border: `1px solid ${C.red}`, borderRadius: 10, padding: "12px 14px", fontSize: 13, color: C.red, flexShrink: 0, maxHeight: 280, overflowY: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: error.includes("Pass 1 response") ? "ui-monospace, SFMono-Regular, Menlo, monospace" : "inherit" }}>
-          <div style={{ fontWeight: 700, marginBottom: 4 }}>Detection error</div>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>Couldn't read this drawing</div>
           {error}
         </div>
       )}
@@ -1109,8 +1109,19 @@ export default function App() {
     screen === "settings" ||
     screen === "project"; // legacy MOCK_PROJECTS detail screen
 
-  const { session, loading: authLoading } = useAuth();
-  if (authLoading) return null;
+  const { session, user, loading: authLoading, signOut } = useAuth();
+  if (authLoading) return (
+    <div style={{
+      height: "100vh", background: "#0A1628", display: "flex",
+      alignItems: "center", justifyContent: "center",
+    }}>
+      <div style={{
+        width: 32, height: 32, border: "3px solid #1A3358",
+        borderTopColor: "#1D6EFD", borderRadius: "50%",
+        animation: "spin 0.8s linear infinite",
+      }} />
+    </div>
+  );
   if (!session) return <LoginScreen />;
 
   return (
@@ -1125,6 +1136,7 @@ export default function App() {
           pageSubtitle={tenant.name}
           onNavigate={navigate}
           onOpenSettings={() => setScreen("settings")}
+          onSignOut={signOut}
           onNewScan={goToScan}
           topbarActions={
             <>
@@ -1192,6 +1204,7 @@ export default function App() {
           pageSubtitle={`${ctxProjects.length} total · ${ctxProjects.filter(p => p.status === "Active").length} active`}
           onNavigate={navigate}
           onOpenSettings={() => setScreen("settings")}
+          onSignOut={signOut}
           onNewScan={goToScan}
           topbarActions={
             <button
@@ -1230,6 +1243,7 @@ export default function App() {
           pageSubtitle={ctxProjects.find(p => p.id === route.id)?.clientName || undefined}
           onNavigate={navigate}
           onOpenSettings={() => setScreen("settings")}
+          onSignOut={signOut}
           onNewScan={goToScan}
         >
           <ProjectDetail
@@ -1245,6 +1259,7 @@ export default function App() {
           pageSubtitle="Track estimate sign-off across your projects"
           onNavigate={navigate}
           onOpenSettings={() => setScreen("settings")}
+          onSignOut={signOut}
           onNewScan={goToScan}
         >
           <ApprovalsIndex
@@ -1260,6 +1275,7 @@ export default function App() {
           pageSubtitle="Wholesaler pricing + your custom rates"
           onNavigate={navigate}
           onOpenSettings={() => setScreen("settings")}
+          onSignOut={signOut}
           onNewScan={goToScan}
         >
           <RateLibrary onBack={() => navigate({ name: "dashboard" })} />
@@ -1272,6 +1288,7 @@ export default function App() {
           pageSubtitle="Budget, burndown, hours, milestones"
           onNavigate={navigate}
           onOpenSettings={() => setScreen("settings")}
+          onSignOut={signOut}
           onNewScan={goToScan}
         >
           <ReportsIndexScreen onBack={() => navigate({ name: "dashboard" })} />
@@ -1284,6 +1301,7 @@ export default function App() {
           pageSubtitle="Forward drawings into ElectraScan by email"
           onNavigate={navigate}
           onOpenSettings={() => setScreen("settings")}
+          onSignOut={signOut}
           onNewScan={goToScan}
         >
           <EmailUpload
@@ -1335,7 +1353,11 @@ export default function App() {
         />
       )}
       {screen === "settings" && (
-        <TenantSetup onBack={() => setScreen("dashboard")} />
+        <TenantSetup
+          onBack={() => setScreen("dashboard")}
+          userEmail={user?.email}
+          onSignOut={signOut}
+        />
       )}
     </>
   );

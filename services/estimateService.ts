@@ -44,10 +44,17 @@ export async function saveEstimate(estimateData: {
   items: any[];
   status?: string;
 }) {
+  const { data: userData } = await supabase.auth.getUser();
+  const ownerId = userData?.user?.id ?? null;
+
   // 1. Save to Supabase
   const { data, error } = await supabase
     .from('estimates')
-    .insert([{ ...estimateData, status: estimateData.status ?? 'draft' }])
+    .insert([{
+      ...estimateData,
+      status: estimateData.status ?? 'draft',
+      ...(ownerId ? { owner_id: ownerId } : {}),
+    }])
     .select()
     .single();
 

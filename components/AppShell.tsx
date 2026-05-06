@@ -26,6 +26,7 @@ export interface AppShellProps {
   onNavigate: (route: AppRoute) => void;
   onNewScan: () => void;
   onOpenSettings?: () => void;
+  onSignOut?: () => void;
   children: React.ReactNode;
 }
 
@@ -84,6 +85,7 @@ const AppShell: React.FC<AppShellProps> = ({
   onNavigate,
   onNewScan,
   onOpenSettings,
+  onSignOut,
   children,
 }) => {
   const { tenant } = useTenant();
@@ -196,9 +198,27 @@ const AppShell: React.FC<AppShellProps> = ({
                   <span>Settings</span>
                 </div>
               )}
-              <div className="es-user-chip">
-                <div className="es-user-avatar">{initialsOf(tenantName)}</div>
-                <div className="es-user-name" title={tenantName}>{tenantName}</div>
+              <div className="es-user-chip" style={{ justifyContent: "space-between" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                  <div className="es-user-avatar">{initialsOf(tenantName)}</div>
+                  <div className="es-user-name" title={tenantName}>{tenantName}</div>
+                </div>
+                {onSignOut && (
+                  <button
+                    onClick={onSignOut}
+                    title="Sign out"
+                    style={{
+                      background: "none", border: "none", cursor: "pointer",
+                      color: "#5C7A9E", padding: "4px 6px", borderRadius: 6,
+                      fontSize: 14, lineHeight: 1, flexShrink: 0,
+                      display: "flex", alignItems: "center",
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.color = "#EDF2FF")}
+                    onMouseLeave={e => (e.currentTarget.style.color = "#5C7A9E")}
+                  >
+                    ↩
+                  </button>
+                )}
               </div>
             </div>
           </aside>
