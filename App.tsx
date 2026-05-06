@@ -21,6 +21,8 @@ import { useTenant } from "./contexts/TenantContext";
 import { useAppRouter } from "./components/Router";
 import { useProjects, type Project as CtxProject } from "./contexts/ProjectContext";
 import type { RiskFlag as DetectionRiskFlag } from "./analyze_pdf";
+import { useAuth } from './contexts/AuthContext';
+import LoginScreen from './components/LoginScreen';
 
 // ─── Design tokens ─────────────────────────────
 const C = {
@@ -1106,6 +1108,10 @@ export default function App() {
     screen === "reports" ||
     screen === "settings" ||
     screen === "project"; // legacy MOCK_PROJECTS detail screen
+
+  const { session, loading: authLoading } = useAuth();
+  if (authLoading) return null;
+  if (!session) return <LoginScreen />;
 
   return (
     <>

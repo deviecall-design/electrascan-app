@@ -10,6 +10,7 @@ import { ProjectProvider } from './contexts/ProjectContext';
 import { RateLibraryProvider } from './contexts/RateLibraryContext';
 import { suppressConsoleWarnings } from './utils/suppressWarnings';
 import { RouterProvider } from './components/Router';
+import { AuthProvider } from './contexts/AuthContext';
 
 // Suppress specific PDF.js warnings to prevent performance issues
 suppressConsoleWarnings();
@@ -22,6 +23,7 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
+    <AuthProvider>
     <ToastProvider>
       <LicenseProvider>
         <TenantProvider>
@@ -35,5 +37,6 @@ root.render(
         </TenantProvider>
       </LicenseProvider>
     </ToastProvider>
+    </AuthProvider>
   </React.StrictMode>
 );
