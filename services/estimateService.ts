@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient';
+import { getCurrentTenantId } from '../lib/tenants';
 
 const N8N_WEBHOOK_URL = 'https://damienc13.app.n8n.cloud/webhook/electrascan-estimate';
 
@@ -12,7 +13,7 @@ export async function saveEstimate(estimateData: {
   // 1. Save to Supabase
   const { data, error } = await supabase
     .from('estimates')
-    .insert([{ ...estimateData, status: estimateData.status ?? 'draft' }])
+    .insert([{ ...estimateData, status: estimateData.status ?? 'draft', tenant_id: getCurrentTenantId() }])
     .select()
     .single();
 

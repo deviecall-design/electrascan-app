@@ -9,6 +9,7 @@
  */
 
 import { supabase } from "./supabaseClient";
+import { getCurrentTenantId } from "../lib/tenants";
 
 // ─── Row types (mirror the SQL schema) ──────────────────────────────────
 export interface EstimateRow {
@@ -92,11 +93,19 @@ export async function fetchRateLibrary() {
 // ─── Insert functions ───────────────────────────────────────────────────
 
 export async function insertEstimate(row: Omit<EstimateRow, "id" | "created_at">) {
-  return supabase.from("estimates").insert([row]).select().single();
+  return supabase
+    .from("estimates")
+    .insert([{ ...row, tenant_id: getCurrentTenantId() }])
+    .select()
+    .single();
 }
 
 export async function insertScan(row: Pick<ScanRow, "file_name" | "client">) {
-  return supabase.from("scans").insert([row]).select().single();
+  return supabase
+    .from("scans")
+    .insert([{ ...row, tenant_id: getCurrentTenantId() }])
+    .select()
+    .single();
 }
 
 export async function updateScan(id: string, updates: Partial<ScanRow>) {
@@ -106,7 +115,7 @@ export async function updateScan(id: string, updates: Partial<ScanRow>) {
 export async function upsertRate(row: Omit<RateRow, "id" | "synced_at">) {
   return supabase
     .from("rate_library")
-    .upsert([row], { onConflict: "code,owner_id" })
+    .upsert([{ ...row, tenant_id: getCurrentTenantId() }], { onConflict: "code,owner_id" })
     .select()
     .single();
 }
