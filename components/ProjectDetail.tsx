@@ -13,7 +13,7 @@ import {
 } from "../contexts/ProjectContext";
 import ProjectEstimateEditor from "./ProjectEstimateEditor";
 import ApprovalsScreen, { type ApprovalEstimateLike } from "./ApprovalsScreen";
-import VariationReport, {
+import {
   type VariationEstimateLike,
   type VariationLineItem,
 } from "./VariationReport";
@@ -450,97 +450,230 @@ function toVariationEstimate(e: ProjectEstimate): VariationEstimateLike {
   };
 }
 
+// ─── Variation diff helpers ────────────────────────────────
+type VarChangeType = "added" | "removed" | "changed";
+interface VarChange {
+  type: VarChangeType;
+  description: string;
+  room: string;
+  qtyPrev: number;
+  qtyCurr: number;
+  delta: number;
+}
+
+function diffVariationItems(prev: VariationLineItem[], curr: VariationLineItem[]): VarChange[] {
+  const key = (li: VariationLineItem) =>
+    `${li.room.trim().toLowerCase()}|${li.description.trim().toLowerCase()}`;
+  const map = new Map<string, { p?: VariationLineItem; c?: VariationLineItem }>();
+  for (const li of prev) map.set(key(li), { ...map.get(key(li)), p: li });
+  for (const li of curr) map.set(key(li), { ...map.get(key(li)), c: li });
+  const changes: VarChange[] = [];
+  for (const { p, c } of map.values()) {
+    if (p && !c) {
+      changes.push({ type: "removed", description: p.description, room: p.room, qtyPrev: p.qty, qtyCurr: 0, delta: -(p.qty * p.unitPrice) });
+    } else if (!p && c) {
+      changes.push({ type: "added", description: c.description, room: c.room, qtyPrev: 0, qtyCurr: c.qty, delta: c.qty * c.unitPrice });
+    } else if (p && c) {
+      const totalA = p.qty * p.unitPrice;
+      const totalB = c.qty * c.unitPrice;
+      if (totalA !== totalB) {
+        changes.push({ type: "changed", description: c.description, room: c.room, qtyPrev: p.qty, qtyCurr: c.qty, delta: totalB - totalA });
+      }
+    }
+  }
+  const order: Record<VarChangeType, number> = { added: 0, changed: 1, removed: 2 };
+  return changes.sort((a, b) => order[a.type] - order[b.type]);
+}
+
+// ─── Single variation card ──────────────────────────────────
+const VariationCard: React.FC<{
+  label: string;
+  date: string;
+  total: number;
+  delta: number | null;
+  changes: VarChange[];
+  isLatest: boolean;
+}> = ({ label, date, total, delta, changes, isLatest }) => {
+  const [open, setOpen] = useState(isLatest && delta !== null);
+
+  const deltaColor = delta === null ? C.muted : delta >= 0 ? "#10B981" : C.red;
+  const changeTypeColor: Record<VarChangeType, string> = {
+    added: "#10B981",
+    removed: C.red,
+    changed: C.amber,
+  };
+  const changeTypeLabel: Record<VarChangeType, string> = {
+    added: "Added",
+    removed: "Removed",
+    changed: "Changed",
+  };
+
+  return (
+    <div style={{
+      background: C.card,
+      border: `1px solid ${isLatest ? C.blue : C.border}`,
+      borderRadius: 14,
+      overflow: "hidden",
+      marginBottom: 10,
+    }}>
+      {/* Card header */}
+      <div
+        style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "14px 16px",
+          cursor: changes.length > 0 ? "pointer" : "default",
+        }}
+        onClick={() => changes.length > 0 && setOpen(o => !o)}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+          <div style={{
+            background: isLatest ? C.blue : C.border,
+            color: isLatest ? "#fff" : C.muted,
+            borderRadius: 8, padding: "3px 9px",
+            fontSize: 11, fontWeight: 700, flexShrink: 0,
+          }}>
+            {label}
+          </div>
+          <div style={{ fontSize: 12, color: C.muted, whiteSpace: "nowrap" }}>{date}</div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{fmtMoney(total)}</div>
+          {delta !== null && (
+            <div style={{
+              fontSize: 12, fontWeight: 700, color: deltaColor,
+              background: `${deltaColor}18`, borderRadius: 6,
+              padding: "2px 8px", whiteSpace: "nowrap",
+            }}>
+              {delta >= 0 ? "+" : ""}{fmtMoney(delta)}
+            </div>
+          )}
+          {changes.length > 0 && (
+            <div style={{ fontSize: 12, color: C.muted, width: 16, textAlign: "center" }}>
+              {open ? "▲" : "▼"}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Expandable diff rows */}
+      {open && changes.length > 0 && (
+        <div style={{ borderTop: `1px solid ${C.border}`, padding: "8px 16px 12px" }}>
+          {changes.map((ch, i) => (
+            <div key={i} style={{
+              display: "flex", alignItems: "baseline", justifyContent: "space-between",
+              padding: "5px 0",
+              borderBottom: i < changes.length - 1 ? `1px solid ${C.border}` : "none",
+              gap: 10,
+            }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
+                <span style={{
+                  fontSize: 10, fontWeight: 700, color: changeTypeColor[ch.type],
+                  textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0,
+                }}>
+                  {changeTypeLabel[ch.type]}
+                </span>
+                <span style={{ fontSize: 12, color: C.muted, flexShrink: 0 }}>{ch.room}</span>
+                <span style={{ fontSize: 13, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {ch.description}
+                </span>
+                {ch.type === "changed" && (
+                  <span style={{ fontSize: 11, color: C.dim, flexShrink: 0 }}>
+                    ×{ch.qtyPrev} → ×{ch.qtyCurr}
+                  </span>
+                )}
+                {ch.type !== "changed" && (
+                  <span style={{ fontSize: 11, color: C.dim, flexShrink: 0 }}>×{ch.qtyCurr || ch.qtyPrev}</span>
+                )}
+              </div>
+              <div style={{
+                fontSize: 12, fontWeight: 700, flexShrink: 0,
+                color: ch.delta >= 0 ? "#10B981" : C.red,
+              }}>
+                {ch.delta >= 0 ? "+" : ""}{fmtMoney(ch.delta)}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Baseline label */}
+      {delta === null && (
+        <div style={{ borderTop: `1px solid ${C.border}`, padding: "8px 16px", fontSize: 11, color: C.muted }}>
+          Baseline estimate — no prior version to compare
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── Variations Tab ────────────────────────────────────────
 const VariationsTab: React.FC<{
   project: Project;
   onBackToOverview: () => void;
   onOpenUpload: () => void;
-}> = ({ project, onBackToOverview, onOpenUpload }) => {
-  // Prefer two distinct estimate records. Fall back to version snapshots on
-  // the latest estimate when only one estimate has been created.
+}> = ({ project, onOpenUpload }) => {
   const ests = project.estimates;
-  let previous: VariationEstimateLike | undefined;
-  let current: VariationEstimateLike | undefined;
 
-  if (ests.length >= 2) {
-    previous = toVariationEstimate(ests[ests.length - 2]);
-    current = toVariationEstimate(ests[ests.length - 1]);
-  } else if (ests.length === 1 && ests[0].versions.length >= 1) {
-    const latest = ests[0];
-    const snap = latest.versions[latest.versions.length - 1];
-    // Recompute totals from the version snapshot using the parent estimate's GST rate.
-    const snapTotals = estimateTotals({
-      ...latest,
-      lineItems: snap.snapshot.lineItems,
-      margin: snap.snapshot.margin,
-      categoryMargins: snap.snapshot.categoryMargins,
-      cableRuns: snap.snapshot.cableRuns,
-    });
-    previous = {
-      id: snap.id,
-      number: `${latest.number} · ${snap.label}`,
-      total: Math.round(snapTotals.total),
-      subtotal: Math.round(snapTotals.subtotal),
-      date: snap.savedAt,
-      lineItems: toVariationLineItems(snap.snapshot.lineItems),
-    };
-    current = toVariationEstimate(latest);
-  }
-
-  if (!previous || !current) {
+  if (ests.length === 0) {
     return (
-      <div
-        style={{
-          background: C.card,
-          border: `1px dashed ${C.border}`,
-          borderRadius: 14,
-          padding: "36px 20px",
-          textAlign: "center",
-        }}
-      >
-        <div style={{ fontSize: 36, marginBottom: 10 }}>🔒</div>
-        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>
-          Variations locked
+      <div style={{
+        background: C.card, border: `1px dashed ${C.border}`,
+        borderRadius: 14, padding: "36px 20px", textAlign: "center",
+      }}>
+        <div style={{ fontSize: 36, marginBottom: 10 }}>📋</div>
+        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>No estimates yet</div>
+        <div style={{ fontSize: 12, color: C.muted, maxWidth: 380, margin: "0 auto 14px", lineHeight: 1.55 }}>
+          Upload a drawing to generate your first estimate. Variations will appear here each time you upload a revised plan.
         </div>
-        <div
-          style={{
-            fontSize: 12,
-            color: C.muted,
-            maxWidth: 420,
-            margin: "0 auto 14px",
-            lineHeight: 1.55,
-          }}
-        >
-          Variations require at least 2 estimate versions. Save a revised
-          estimate to unlock.
-        </div>
-        <button
-          onClick={onOpenUpload}
-          style={{
-            background: C.blue,
-            color: "#fff",
-            border: "none",
-            padding: "10px 18px",
-            fontSize: 13,
-            fontWeight: 700,
-            borderRadius: 10,
-            cursor: "pointer",
-          }}
-        >
-          Upload a new drawing
+        <button onClick={onOpenUpload} style={{
+          background: C.blue, color: "#fff", border: "none",
+          padding: "10px 18px", fontSize: 13, fontWeight: 700, borderRadius: 10, cursor: "pointer",
+        }}>
+          Upload a drawing
         </button>
       </div>
     );
   }
 
+  // Build ordered list of variation estimates from oldest → newest
+  const variations = ests.map(toVariationEstimate);
+
   return (
-    <VariationReport
-      embedded
-      projectName={project.name}
-      previous={previous}
-      current={current}
-      onBack={onBackToOverview}
-      onOpenScan={onOpenUpload}
-    />
+    <div>
+      <div style={{ marginBottom: 14 }}>
+        {variations.map((v, i) => {
+          const prev = i > 0 ? variations[i - 1] : null;
+          const delta = prev !== null ? v.total - prev.total : null;
+          const changes = prev
+            ? diffVariationItems(prev.lineItems ?? [], v.lineItems ?? [])
+            : [];
+          return (
+            <VariationCard
+              key={v.id}
+              label={`Variation ${i + 1}`}
+              date={v.date ? fmtDate(v.date) : "—"}
+              total={v.total}
+              delta={delta}
+              changes={changes}
+              isLatest={i === variations.length - 1}
+            />
+          );
+        })}
+      </div>
+
+      <button
+        onClick={onOpenUpload}
+        style={{
+          width: "100%", background: "none",
+          border: `2px dashed ${C.border}`, borderRadius: 12,
+          padding: "12px", fontSize: 13, fontWeight: 600,
+          color: C.muted, cursor: "pointer",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+        }}
+      >
+        <span>＋</span> Upload revised drawing to add Variation {variations.length + 1}
+      </button>
+    </div>
   );
 };
 
