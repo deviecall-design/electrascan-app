@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useTenant } from "../contexts/TenantContext";
 import type { AppRoute } from "./Router";
+import Logo from "./Logo";
 
 /**
  * AppShell — hybrid dark-sidebar + light-content layout matching the
@@ -134,11 +135,8 @@ const AppShell: React.FC<AppShellProps> = ({
         {!isMobile && (
           <aside className="es-sidebar">
             <div className="es-sidebar-logo">
-              <div className="es-logo-icon">⚡</div>
-              <div style={{ minWidth: 0 }}>
-                <div className="es-logo-text">ElectraScan</div>
-                <div className="es-logo-sub" title={tenantName}>{tenantName}</div>
-              </div>
+              <Logo className="es-logo-svg" dark={true} />
+              <div className="es-logo-sub" title={tenantName}>{tenantName}</div>
             </div>
 
             <nav className="es-sidebar-nav">
@@ -276,26 +274,16 @@ const SHELL_CSS = `
   z-index: 100;
 }
 .es-sidebar-logo {
-  padding: 18px 16px 12px;
+  padding: 14px 16px 10px;
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 4px;
   border-bottom: 1px solid ${TOKENS.sidebarBorder};
 }
-.es-logo-icon {
-  width: 34px; height: 34px; border-radius: 8px;
-  background: linear-gradient(135deg, ${TOKENS.blue}, ${TOKENS.teal});
-  display: flex; align-items: center; justify-content: center;
-  font-size: 16px; font-weight: 800; color: white;
-  flex-shrink: 0;
-}
-.es-logo-text {
-  font-size: 15px;
-  font-weight: 700;
-  color: white;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.es-logo-svg {
+  width: 148px;
+  height: auto;
+  display: block;
 }
 .es-logo-sub {
   font-size: 10px;
@@ -303,6 +291,7 @@ const SHELL_CSS = `
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  padding-left: 2px;
 }
 .es-sidebar-nav {
   flex: 1;

@@ -86,10 +86,22 @@ const WholesalerQuoteModal: React.FC<Props> = ({ estimate, project, onClose }) =
 
   const cableRunsTotal = cableRunsWithPrice.reduce((s, r) => s + r.line_total, 0);
 
+  const lineItemsWithTotal = useMemo(
+    () =>
+      lineItems.map(li => ({
+        ...li,
+        line_total: +(li.qty * li.unitPrice).toFixed(2),
+      })),
+    [lineItems],
+  );
+
+  const lineItemsTotal = lineItemsWithTotal.reduce((s, li) => s + li.line_total, 0);
+  const grandTotal = cableRunsTotal + lineItemsTotal;
+
   const subject = `Quote Request — ${estimateRef || estimateId} — ${projectName} — ${tenant.name}`;
 
   const emailMissing = !recipientEmail.trim();
-  const noBomItems = cableRuns.length === 0 && lineItems.length === 0;
+  const noBomItems = cableRuns.length === 0;
 
   const onSend = async () => {
     if (!wholesaler) {
@@ -115,11 +127,13 @@ const WholesalerQuoteModal: React.FC<Props> = ({ estimate, project, onClose }) =
         unit_price: r.unit_price,
         line_total: r.line_total,
       })),
-      line_items: lineItems.map(li => ({
+      line_items: lineItemsWithTotal.map(li => ({
         description: li.description,
         category: li.category,
         qty: li.qty,
         unit: li.unit,
+        unit_price: li.unitPrice,
+        line_total: li.line_total,
       })),
       notes: notes.trim(),
       tenant: tenant.name,
@@ -304,43 +318,81 @@ const WholesalerQuoteModal: React.FC<Props> = ({ estimate, project, onClose }) =
           </div>
         )}
 
-        <SectionHeader>LINE ITEMS ({lineItems.length})</SectionHeader>
-        {lineItems.length === 0 ? (
-          <EmptyRow>No line items on this estimate.</EmptyRow>
-        ) : (
+        {noBomItems && (
+          <Banner color={C.amber}>
+            No cable runs added yet. Use the Cable / Conduit calculator to add BOM items.
+          </Banner>
+        )}
+
+        {lineItemsWithTotal.length > 0 && (
+          <>
+            <SectionHeader>
+              LINE ITEMS ({lineItemsWithTotal.length})
+            </SectionHeader>
+            <div
+              style={{
+                background: C.card,
+                border: `1px solid ${C.border}`,
+                borderRadius: 10,
+                overflow: "hidden",
+                marginBottom: 14,
+              }}
+            >
+              <HeaderRow
+                cols="3fr 1.5fr 0.8fr 1fr 1fr"
+                labels={["DESCRIPTION", "CATEGORY", "QTY", "UNIT $", "LINE TOTAL"]}
+              />
+              {lineItemsWithTotal.map((li, i) => (
+                <DataRow
+                  key={li.id}
+                  cols="3fr 1.5fr 0.8fr 1fr 1fr"
+                  last={i === lineItemsWithTotal.length - 1}
+                  values={[
+                    li.description,
+                    li.category,
+                    `${li.qty}${li.unit ? ` ${li.unit}` : " EA"}`,
+                    fmtMoney(li.unitPrice),
+                    fmtMoney(li.line_total),
+                  ]}
+                />
+              ))}
+              <div
+                style={{
+                  padding: "8px 12px",
+                  background: `${C.green}15`,
+                  borderTop: `1px solid ${C.border}`,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: C.green,
+                  display: "flex",
+                  justifyContent: "space-between",
+                }}
+              >
+                <span>Subtotal (materials)</span>
+                <span>{fmtMoney(lineItemsTotal)}</span>
+              </div>
+            </div>
+          </>
+        )}
+
+        {(cableRunsWithPrice.length > 0 || lineItemsWithTotal.length > 0) && (
           <div
             style={{
-              background: C.card,
-              border: `1px solid ${C.border}`,
+              padding: "10px 14px",
+              background: `${C.blue}20`,
+              border: `1px solid ${C.blue}55`,
               borderRadius: 10,
-              overflow: "hidden",
+              fontSize: 14,
+              fontWeight: 800,
+              color: C.text,
+              display: "flex",
+              justifyContent: "space-between",
               marginBottom: 14,
             }}
           >
-            <HeaderRow
-              cols="2.4fr 1.2fr 0.6fr"
-              labels={["DESCRIPTION", "CATEGORY", "QTY"]}
-            />
-            {lineItems.map((li, i) => (
-              <DataRow
-                key={li.id}
-                cols="2.4fr 1.2fr 0.6fr"
-                last={i === lineItems.length - 1}
-                values={[
-                  li.description,
-                  li.category,
-                  `${li.qty}${li.unit ? ` ${li.unit}` : ""}`,
-                ]}
-              />
-            ))}
+            <span>Total to order</span>
+            <span style={{ color: C.green }}>{fmtMoney(grandTotal)}</span>
           </div>
-        )}
-
-        {noBomItems && (
-          <Banner color={C.amber}>
-            This estimate has no cable runs or line items yet — there's nothing to
-            quote.
-          </Banner>
         )}
 
         <div

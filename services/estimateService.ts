@@ -15,7 +15,7 @@ export interface WholesalerQuoteRequestPayload {
       line_total: number;
     }
   >;
-  line_items: Array<Pick<EstimateLineItem, 'description' | 'category' | 'qty' | 'unit'>>;
+  line_items: Array<Pick<EstimateLineItem, 'description' | 'category' | 'qty' | 'unit'> & { unit_price: number; line_total: number }>;
   notes: string;
   tenant: string;
   sent_at: string;

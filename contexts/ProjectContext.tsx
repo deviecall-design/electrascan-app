@@ -37,6 +37,7 @@ export interface CableRun {
   lengthMeters: number;
   wasteFactorPct: number; // 10 default
   totalLength: number;
+  unitRate: number; // $/m — stored per run so it can be amended as copper/freight prices move
   approvedUnitPrice?: number; // $/m — set when TLE quote is applied
 }
 

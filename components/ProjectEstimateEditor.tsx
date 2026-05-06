@@ -795,6 +795,13 @@ const CableCalculator: React.FC<{
   const [cableType, setCableType] = useState(CABLE_TYPES[0].label);
   const [waste, setWaste] = useState(10);
   const [priceDraft, setPriceDraft] = useState<Record<string, string>>({});
+  const [rateInput, setRateInput] = useState(CABLE_TYPES[0].unitRate);
+
+  const handleCableTypeChange = (label: string) => {
+    setCableType(label);
+    const defaultRate = CABLE_TYPES.find(c => c.label === label)?.unitRate ?? 0;
+    setRateInput(defaultRate);
+  };
 
   const add = () => {
     const l = Number(lengthInput);
@@ -806,6 +813,7 @@ const CableCalculator: React.FC<{
       lengthMeters: l,
       wasteFactorPct: waste,
       totalLength: total,
+      unitRate: rateInput,
     };
     onChange([...runs, run]);
     setLengthInput("");
@@ -813,10 +821,10 @@ const CableCalculator: React.FC<{
 
   const remove = (id: string) => onChange(runs.filter(r => r.id !== id));
 
-  const grandTotal = runs.reduce((sum, r) => sum + r.totalLength, 0);
+  const updateRate = (id: string, rate: number) =>
+    onChange(runs.map(r => r.id === id ? { ...r, unitRate: rate } : r));
 
-  const rateOf = (typeLabel: string) =>
-    CABLE_TYPES.find(c => c.label === typeLabel)?.unitRate ?? 0;
+  const grandTotalDollars = runs.reduce((sum, r) => sum + r.totalLength * r.unitRate, 0);
 
   const status: BomStatus = bomStatus ?? "draft";
   const uniqueTypes = useMemo(
@@ -869,13 +877,13 @@ const CableCalculator: React.FC<{
         <Field label="CABLE / CONDUIT TYPE">
           <select
             value={cableType}
-            onChange={e => setCableType(e.target.value)}
+            onChange={e => handleCableTypeChange(e.target.value)}
             disabled={readOnly}
             style={drawerInput}
           >
             {CABLE_TYPES.map(c => (
               <option key={c.label} value={c.label}>
-                {c.label} (${c.unitRate.toFixed(2)}/m)
+                {c.label}
               </option>
             ))}
           </select>
@@ -896,6 +904,15 @@ const CableCalculator: React.FC<{
               type="number"
               value={waste}
               onChange={e => setWaste(Number(e.target.value) || 0)}
+              disabled={readOnly}
+              style={drawerInput}
+            />
+          </Field>
+          <Field label="$/m">
+            <input
+              type="number"
+              value={rateInput}
+              onChange={e => setRateInput(Number(e.target.value) || 0)}
               disabled={readOnly}
               style={drawerInput}
             />
@@ -945,10 +962,23 @@ const CableCalculator: React.FC<{
           >
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 600 }}>{r.cableType}</div>
-              <div style={{ fontSize: 11, color: C.muted }}>
+              <div style={{ fontSize: 11, color: C.muted, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                 {r.lengthMeters}m + {r.wasteFactorPct}% waste →{" "}
                 <strong style={{ color: C.text }}>{r.totalLength}m</strong> ·{" "}
-                {fmtMoney(r.totalLength * rateOf(r.cableType))}
+                {!readOnly ? (
+                  <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                    $<input
+                      type="number"
+                      value={r.unitRate}
+                      onChange={e => updateRate(r.id, Number(e.target.value) || 0)}
+                      style={{ width: 54, background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: 5, padding: "1px 4px", fontSize: 11 }}
+                    />/m
+                  </span>
+                ) : (
+                  <span>${r.unitRate.toFixed(2)}/m</span>
+                )}
+                {" · "}
+                <strong style={{ color: C.green }}>{fmtMoney(r.totalLength * r.unitRate)}</strong>
               </div>
             </div>
             {!readOnly && (
@@ -986,7 +1016,7 @@ const CableCalculator: React.FC<{
             }}
           >
             <span>Total to order</span>
-            <span>{grandTotal.toFixed(1)}m</span>
+            <span>{fmtMoney(grandTotalDollars)}</span>
           </div>
           {onRequestQuote && (
             <button
