@@ -3,7 +3,7 @@
  *
  * Single-tenant phase: Vesh Electrical is the only tenant.
  * When multi-tenant auth is wired, replace getCurrentTenantId() with:
- *   return (await supabase.rpc('tenant_id')) as string;
+ *   return (await supabase.rpc('get_tenant_id')) as string;
  */
 
 export const VESH_TENANT_ID = '00000000-0000-0000-0000-000000000001';

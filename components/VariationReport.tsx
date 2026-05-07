@@ -147,8 +147,12 @@ export default function VariationReport({
         <div style={{ fontSize: 11, color: C.muted, marginBottom: 4 }}>
           {baseEstNumber} → <span style={{ color: C.purple, fontWeight: 700 }}>{variationNumber}</span>
         </div>
-        <div style={{ fontSize: 10, color: C.muted, marginBottom: 14, fontStyle: "italic" }}>
-          Exporting this variation will generate a new branded estimate PDF
+        <div style={{
+          fontSize: 10, color: C.amber, marginBottom: 14, fontStyle: "italic",
+          background: `${C.amber}12`, border: `1px solid ${C.amber}33`,
+          borderRadius: 8, padding: "6px 10px",
+        }}>
+          Internal document — not for distribution. Use this to inform your revised estimate before issuing to the builder.
         </div>
 
         {/* KPI strip */}

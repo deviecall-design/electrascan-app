@@ -33,6 +33,7 @@ import EstimateScreen from "./screens/EstimateScreen";
 import PricingScheduleScreen from "./screens/PricingScheduleScreen";
 import VariationReportScreen from "./screens/VariationReportScreen";
 import ApprovalsScreen from "./screens/ApprovalsScreen";
+import ProjectReportsScreen from "./screens/ProjectReportsScreen";
 import SettingsScreen from "./screens/SettingsScreen";
 
 export default function DesktopApp() {
@@ -48,6 +49,7 @@ export default function DesktopApp() {
           <Route path="/pricing-schedule"  element={<PricingScheduleScreen />} />
           <Route path="/variation-report"  element={<VariationReportScreen />} />
           <Route path="/approvals"         element={<ApprovalsScreen />} />
+          <Route path="/projects"          element={<ProjectReportsScreen />} />
           <Route path="/settings"          element={<SettingsScreen />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>

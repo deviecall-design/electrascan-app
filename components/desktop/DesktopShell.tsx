@@ -29,6 +29,7 @@ import {
   Settings as SettingsIcon,
   FileEdit,
   CheckCircle2,
+  FolderOpen,
   Bell,
   Plus,
   Search,
@@ -54,6 +55,7 @@ const PRIMARY_NAV: NavEntry[] = [
   { path: "/estimate",          label: "Estimate",         icon: <FileText size={16} /> },
   { path: "/pricing-schedule",  label: "Pricing Schedule", icon: <BookOpen size={16} /> },
   { path: "/variation-report",  label: "Variation Report", icon: <FileEdit size={16} /> },
+  { path: "/projects",          label: "Project Reports",  icon: <FolderOpen size={16} /> },
   { path: "/approvals",         label: "Approvals",        icon: <CheckCircle2 size={16} /> },
 ];
 

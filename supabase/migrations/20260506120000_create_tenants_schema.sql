@@ -10,11 +10,13 @@
 -- Idempotent: safe to run multiple times on the same database.
 -- Run after all 001–005 migrations.
 
--- ─── 1. TENANTS ──────────────────────────────────────────────────────────────
+-- ─── 1. TENANTS (table + SELECT policy only) ─────────────────────────────────
+-- INSERT/UPDATE policies reference tenant_memberships, so they are deferred
+-- until after that table is created (see section 2b below).
 
 CREATE TABLE IF NOT EXISTS tenants (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name          TEXT NOT NULL,           -- trading name e.g. "Vesh Electrical Services"
+  name          TEXT NOT NULL,
   abn           TEXT,
   address       TEXT,
   contact_email TEXT,
@@ -30,49 +32,11 @@ COMMENT ON TABLE tenants IS
 
 ALTER TABLE tenants ENABLE ROW LEVEL SECURITY;
 
--- Authenticated users can see all tenants — they join via memberships.
--- Owner-level INSERT/UPDATE is enforced through the memberships table.
 DROP POLICY IF EXISTS "Authenticated users can view tenants" ON tenants;
 CREATE POLICY "Authenticated users can view tenants"
   ON tenants FOR SELECT
   TO authenticated
   USING (true);
-
--- Only a tenant owner (verified via membership) may insert a new tenant row.
-DROP POLICY IF EXISTS "Tenant owners can insert tenants" ON tenants;
-CREATE POLICY "Tenant owners can insert tenants"
-  ON tenants FOR INSERT
-  TO authenticated
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM tenant_memberships
-      WHERE tenant_memberships.tenant_id = tenants.id
-        AND tenant_memberships.user_id   = auth.uid()
-        AND tenant_memberships.role      = 'owner'
-    )
-  );
-
--- Only a tenant owner may update their tenant row.
-DROP POLICY IF EXISTS "Tenant owners can update tenants" ON tenants;
-CREATE POLICY "Tenant owners can update tenants"
-  ON tenants FOR UPDATE
-  TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM tenant_memberships
-      WHERE tenant_memberships.tenant_id = tenants.id
-        AND tenant_memberships.user_id   = auth.uid()
-        AND tenant_memberships.role      = 'owner'
-    )
-  )
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM tenant_memberships
-      WHERE tenant_memberships.tenant_id = tenants.id
-        AND tenant_memberships.user_id   = auth.uid()
-        AND tenant_memberships.role      = 'owner'
-    )
-  );
 
 -- ─── updated_at trigger for tenants ──────────────────────────────────────────
 
@@ -113,14 +77,12 @@ CREATE INDEX IF NOT EXISTS idx_tenant_memberships_tenant_id
 
 ALTER TABLE tenant_memberships ENABLE ROW LEVEL SECURITY;
 
--- Users can see their own membership rows.
 DROP POLICY IF EXISTS "Users can view own memberships" ON tenant_memberships;
 CREATE POLICY "Users can view own memberships"
   ON tenant_memberships FOR SELECT
   TO authenticated
   USING (user_id = auth.uid());
 
--- Tenant owners can manage (INSERT/UPDATE/DELETE) memberships for their tenants.
 DROP POLICY IF EXISTS "Tenant owners can insert memberships" ON tenant_memberships;
 CREATE POLICY "Tenant owners can insert memberships"
   ON tenant_memberships FOR INSERT
@@ -160,9 +122,43 @@ CREATE POLICY "Tenant owners can delete memberships"
     )
   );
 
+-- ─── 2b. TENANTS — owner INSERT/UPDATE policies (deferred until memberships exists) ───
+
+DROP POLICY IF EXISTS "Tenant owners can insert tenants" ON tenants;
+CREATE POLICY "Tenant owners can insert tenants"
+  ON tenants FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM tenant_memberships
+      WHERE tenant_memberships.tenant_id = tenants.id
+        AND tenant_memberships.user_id   = auth.uid()
+        AND tenant_memberships.role      = 'owner'
+    )
+  );
+
+DROP POLICY IF EXISTS "Tenant owners can update tenants" ON tenants;
+CREATE POLICY "Tenant owners can update tenants"
+  ON tenants FOR UPDATE
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM tenant_memberships
+      WHERE tenant_memberships.tenant_id = tenants.id
+        AND tenant_memberships.user_id   = auth.uid()
+        AND tenant_memberships.role      = 'owner'
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM tenant_memberships
+      WHERE tenant_memberships.tenant_id = tenants.id
+        AND tenant_memberships.user_id   = auth.uid()
+        AND tenant_memberships.role      = 'owner'
+    )
+  );
+
 -- ─── 3. ADD tenant_id TO CORE TABLES ─────────────────────────────────────────
--- Nullable FK so existing rows remain valid. Set after data migration or
--- via app logic as tenants are assigned.
 
 ALTER TABLE estimates
   ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id);
@@ -182,33 +178,29 @@ ALTER TABLE timesheets
 ALTER TABLE milestone_claims
   ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id);
 
--- Indexes for tenant-scoped queries on the most-queried tables.
-CREATE INDEX IF NOT EXISTS idx_estimates_tenant_id   ON estimates   (tenant_id);
-CREATE INDEX IF NOT EXISTS idx_scans_tenant_id       ON scans       (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_estimates_tenant_id    ON estimates    (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_scans_tenant_id        ON scans        (tenant_id);
 CREATE INDEX IF NOT EXISTS idx_rate_library_tenant_id ON rate_library (tenant_id);
 
 -- ─── 4. HELPER FUNCTION — auth.tenant_id() ───────────────────────────────────
--- Returns the tenant_id for the currently authenticated user.
--- Returns NULL if the user has no membership (e.g. during onboarding).
--- STABLE: safe to call repeatedly within a query without re-evaluation.
 
-CREATE OR REPLACE FUNCTION auth.tenant_id()
+-- Note: auth schema is managed by Supabase — function lives in public instead.
+CREATE OR REPLACE FUNCTION public.get_tenant_id()
 RETURNS UUID
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
 AS $$
   SELECT tenant_id
-  FROM tenant_memberships
+  FROM public.tenant_memberships
   WHERE user_id = auth.uid()
   LIMIT 1;
 $$;
 
-COMMENT ON FUNCTION auth.tenant_id() IS
+COMMENT ON FUNCTION public.get_tenant_id() IS
   'Returns the tenant_id of the first membership for the currently authenticated user, or NULL if none exists. Use in RLS policies to scope rows to a tenant.';
 
 -- ─── 5. SEED — Vesh Electrical ───────────────────────────────────────────────
--- Fixed UUID for idempotency: re-running this migration does not duplicate the row.
 
 INSERT INTO tenants (id, name, abn, contact_email)
 VALUES (

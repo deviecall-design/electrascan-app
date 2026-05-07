@@ -43,19 +43,6 @@ export async function saveEstimate(estimateData: {
   return data;
 }
 
-// TODO: Supabase schema for variation_reports table:
-//   id: uuid (PK)
-//   project_name: text
-//   base_estimate_number: text
-//   base_total: numeric
-//   new_total: numeric
-//   delta: numeric
-//   pct_change: numeric
-//   variation_items: jsonb (array of {description, prevQty, newQty, unitPrice, change})
-//   risks: jsonb (array of {level, title, description})
-//   created_at: timestamptz
-//   status: text (default 'draft')
-// RLS: insert/select for authenticated users only
 export async function saveVariationReport(reportData: {
   project_name: string;
   base_estimate_number: string;
@@ -68,7 +55,7 @@ export async function saveVariationReport(reportData: {
 }) {
   const { data, error } = await supabase
     .from('variation_reports')
-    .insert([{ ...reportData, status: 'draft' }])
+    .insert([{ ...reportData, status: 'draft', tenant_id: getCurrentTenantId() }])
     .select()
     .single();
 
