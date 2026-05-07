@@ -93,6 +93,22 @@ export async function fetchScanById(id: string) {
     .single();
 }
 
+export async function fetchEstimateByRef(ref: string) {
+  return supabase
+    .from("estimates")
+    .select("*")
+    .eq("reference", ref)
+    .single();
+}
+
+export async function fetchMilestoneClaimsForProject(projectId: string) {
+  return supabase
+    .from("milestone_claims")
+    .select("*")
+    .eq("project_id", projectId)
+    .order("created_at", { ascending: true });
+}
+
 export async function fetchRateLibrary() {
   return supabase
     .from("rate_library")
@@ -305,7 +321,7 @@ export interface MilestoneClaimRow {
   milestone_label: string;
   amount: number;
   inv_ref: string;
-  status: "draft";
+  status: string;
   created_at?: string;
 }
 

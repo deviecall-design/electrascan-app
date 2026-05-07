@@ -48,3 +48,15 @@
 
 - **Title:** Handle failed milestone claim writes correctly ✅ 2026-05-07
   **Fix:** `screens/ProjectReportsScreen.tsx` — `handleSubmitClaim` now checks the returned `error`; only advances milestone to `invoiced_draft` on success. Error toast added for failed inserts.
+
+- **Title:** Replace hardcoded `getCurrentTenantId()` with live Supabase RPC ✅ 2026-05-07
+  **Fix:** `lib/tenants.ts` — async with session-scoped cache + fallback to VESH_TENANT_ID. All 6 insert/upsert callers updated to `await`.
+
+- **Title:** Tenant onboarding — first-owner bootstrap path ✅ 2026-05-07
+  **Fix:** `supabase/functions/bootstrap-tenant/index.ts` — Edge Function (service-role) creates tenant + owner membership atomically. Idempotent, rollback on membership failure.
+
+- **Title:** Wire ScanDetailScreen to live Supabase ✅ 2026-05-07
+  **Fix:** `screens/ScanDetailScreen.tsx` — fetches scan on mount; header, step restored from DB stage. `detected_items` JSONB passed to all step components.
+
+- **Title:** Wire ProjectReportsScreen to live Supabase ✅ 2026-05-07
+  **Fix:** `screens/ProjectReportsScreen.tsx` — fetches estimate + milestone_claims on mount; header values + milestone status overlaid from live data.

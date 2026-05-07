@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   BarChart2,
   TrendingDown,
@@ -14,7 +14,13 @@ import {
 import { C, FONT, RADIUS, SPACING } from "../components/desktop/tokens";
 import { PageHeader, Card, Footer, Th, Td, B, MiniStat } from "../components/ui/anthropic";
 import { PrimaryButton, GhostButton } from "../components/ui/anthropic/Button";
-import { submitMilestoneClaim } from "../services/supabaseData";
+import {
+  submitMilestoneClaim,
+  fetchEstimateByRef,
+  fetchMilestoneClaimsForProject,
+  EstimateRow,
+  MilestoneClaimRow,
+} from "../services/supabaseData";
 
 // ─── RAG colours (spec Section 5) ────────────────────────────────────────
 const RAG = {
@@ -516,9 +522,20 @@ function HoursTab() {
   );
 }
 
-function MilestonesTab() {
-  // Local milestone state so Submit Claim can update status optimistically
+function MilestonesTab({ liveClaims }: { liveClaims: MilestoneClaimRow[] | null }) {
   const [milestones, setMilestones] = useState(MILESTONES.map(m => ({ ...m })));
+
+  // Overlay live submitted claims when they load from Supabase
+  useEffect(() => {
+    if (!liveClaims) return;
+    setMilestones(prev =>
+      prev.map(m => {
+        const claim = liveClaims.find(c => c.milestone_id === m.id);
+        if (!claim) return m;
+        return { ...m, status: claim.status as MilestoneStatus, invRef: claim.inv_ref };
+      })
+    );
+  }, [liveClaims]);
   const [submitting, setSubmitting] = useState<string | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
   const [claimError, setClaimError] = useState<string | null>(null);
@@ -875,14 +892,30 @@ function AccountingTab() {
 // ─── Main screen ───────────────────────────────────────────────────────────
 export default function ProjectReportsScreen() {
   const [tab, setTab] = useState<Tab>("overview");
+  const [liveEstimate, setLiveEstimate] = useState<EstimateRow | null>(null);
+  const [liveClaims, setLiveClaims] = useState<MilestoneClaimRow[] | null>(null);
+
+  useEffect(() => {
+    fetchEstimateByRef(PROJECT.ref).then(({ data }) => {
+      if (data) setLiveEstimate(data as EstimateRow);
+    });
+    fetchMilestoneClaimsForProject(PROJECT.ref).then(({ data }) => {
+      if (data) setLiveClaims(data as MilestoneClaimRow[]);
+    });
+  }, []);
+
+  const projectName = liveEstimate?.project_name ?? PROJECT.name;
+  const projectClient = liveEstimate?.client ?? PROJECT.client;
+  const contractValue = liveEstimate?.value ?? PROJECT.contractValue;
+  const contractRef = liveEstimate?.reference ?? PROJECT.ref;
 
   const ragDaysActive = PROJECT.daysActive >= 22 ? RAG.red : PROJECT.daysActive >= 14 ? RAG.amber : RAG.gray;
 
   return (
     <div className="anim-in">
       <PageHeader
-        title={PROJECT.name}
-        sub={`${PROJECT.address} · ${PROJECT.client}`}
+        title={projectName}
+        sub={`${PROJECT.address} · ${projectClient}`}
         cta={
           <div style={{ display: "flex", gap: SPACING.md, alignItems: "center" }}>
             <span style={{
@@ -907,8 +940,8 @@ export default function ProjectReportsScreen() {
         borderRadius: RADIUS.lg,
       }}>
         {[
-          { label: "Contract ref",    value: PROJECT.ref },
-          { label: "Contract value",  value: fmt(PROJECT.contractValue) },
+          { label: "Contract ref",    value: contractRef },
+          { label: "Contract value",  value: fmt(contractValue) },
           { label: "Start date",      value: PROJECT.startDate },
           { label: "Status",          value: "Active" },
           { label: "Margin target",   value: `${PROJECT.marginTarget}%` },
@@ -951,7 +984,7 @@ export default function ProjectReportsScreen() {
       {tab === "overview"   && <OverviewTab />}
       {tab === "burndown"   && <BurndownTab />}
       {tab === "hours"      && <HoursTab />}
-      {tab === "milestones" && <MilestonesTab />}
+      {tab === "milestones" && <MilestonesTab liveClaims={liveClaims} />}
       {tab === "overruns"   && <OverrunsTab />}
       {tab === "accounting" && <AccountingTab />}
 
