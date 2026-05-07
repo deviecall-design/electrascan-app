@@ -75,8 +75,10 @@ export function getActiveCompanyProfile(): CompanyProfile {
  *   "EST-2026-497"     → "EST-2026-497-002" (assumes -001 if no suffix)
  */
 export function incrementEstimateNumber(estimateNumber: string): string {
-  const match = estimateNumber.match(/^(.+)-(\d+)$/);
-  if (!match) return `${estimateNumber}-002`;
+  // Revision suffix is exactly 3 zero-padded digits (e.g. -001, -009, -099).
+  // Anything else (e.g. -497) is a sequence number — treat as no suffix.
+  const match = estimateNumber.match(/^(.+)-(\d{3,})$/);
+  if (!match || !match[2].startsWith('0')) return `${estimateNumber}-002`;
   const [, prefix, rev] = match;
   const nextRev = String(parseInt(rev, 10) + 1).padStart(rev.length, "0");
   return `${prefix}-${nextRev}`;
