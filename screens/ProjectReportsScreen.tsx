@@ -521,6 +521,7 @@ function MilestonesTab() {
   const [milestones, setMilestones] = useState(MILESTONES.map(m => ({ ...m })));
   const [submitting, setSubmitting] = useState<string | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
+  const [claimError, setClaimError] = useState<string | null>(null);
 
   const totalReceived    = milestones.filter(m => m.status === "received").reduce((s, m) => s + m.amount, 0);
   const totalInvoiced    = milestones.filter(m => m.status === "invoiced").reduce((s, m) => s + m.amount, 0);
@@ -535,18 +536,20 @@ function MilestonesTab() {
       const { invRef, error } = await submitMilestoneClaim(
         PROJECT.ref, milestoneId, label, amount,
       );
-      // Optimistic update — advance status to invoiced_draft regardless of
-      // Supabase error (table may not exist yet). The invRef is always returned.
-      const ref = invRef ?? `INV-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 900) + 100)}`;
+      if (error) {
+        setClaimError(`Failed to record milestone claim. Please try again. (${error.message})`);
+        setTimeout(() => setClaimError(null), 8000);
+        return;
+      }
       setMilestones(prev =>
         prev.map(m =>
           m.id === milestoneId
-            ? { ...m, status: "invoiced_draft" as MilestoneStatus, invRef: ref }
+            ? { ...m, status: "invoiced_draft" as MilestoneStatus, invRef: invRef! }
             : m
         )
       );
       setNotification(
-        `Draft invoice ${ref} created. Finance team notified for MYOB review.`
+        `Draft invoice ${invRef} created. Finance team notified for MYOB review.`
       );
       setTimeout(() => setNotification(null), 6000);
     } finally {
@@ -567,6 +570,19 @@ function MilestonesTab() {
         }}>
           <Info size={16} />
           {notification}
+        </div>
+      )}
+
+      {claimError && (
+        <div style={{
+          padding: "12px 16px",
+          backgroundColor: RAG.red.bg, borderRadius: RADIUS.lg,
+          border: `1px solid ${RAG.red.fg}`,
+          display: "flex", alignItems: "center", gap: 10,
+          fontFamily: FONT.heading, fontSize: 13, color: RAG.red.fg,
+        }}>
+          <Info size={16} />
+          {claimError}
         </div>
       )}
 

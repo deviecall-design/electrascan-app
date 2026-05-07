@@ -43,3 +43,8 @@
 
 ## Completed
 
+- **Title:** Remove `tenant_id IS NULL` escape hatch in RLS policies ✅ 2026-05-07
+  **Migration:** `supabase/migrations/20260507130000_close_tenant_rls_hatch.sql` — backfills legacy rows to Vesh tenant, recreates SELECT policies without escape hatch.
+
+- **Title:** Handle failed milestone claim writes correctly ✅ 2026-05-07
+  **Fix:** `screens/ProjectReportsScreen.tsx` — `handleSubmitClaim` now checks the returned `error`; only advances milestone to `invoiced_draft` on success. Error toast added for failed inserts.
