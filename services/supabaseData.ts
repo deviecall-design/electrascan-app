@@ -1,0 +1,347 @@
+/**
+ * Supabase data service — typed fetch/insert functions for all ElectraScan
+ * tables. Each function returns `{ data, error }` following the Supabase
+ * convention; callers should fall back to mock data when `error` is truthy.
+ *
+ * Tables must be created via migrations/001_create_tables.sql before these
+ * functions return real data. Until then, every fetch returns an error and
+ * the screens show their hardcoded fallback arrays.
+ */
+
+import { supabase } from "./supabaseClient";
+import { getCurrentTenantId } from "../lib/tenants";
+
+// ─── Row types (mirror the SQL schema) ──────────────────────────────────
+export interface EstimateRow {
+  id: string;
+  ref: string;
+  reference: string | null;
+  client: string;
+  value: number;
+  status: "draft" | "sent" | "viewed" | "approved";
+  days_since_sent: number;
+  project_name: string | null;
+  drawing_file: string | null;
+  margin_pct: number;
+  subtotal: number;
+  line_items: any[];
+  created_at: string;
+}
+
+export interface ScanRow {
+  id: string;
+  file_name: string;
+  client: string | null;
+  stage: string;
+  items_detected: number;
+  progress: number;
+  estimate_ref: string | null;
+  detected_items: any[];
+  risk_flags: any[];
+  started_at: string;
+  completed_at: string | null;
+}
+
+export interface RateRow {
+  id: string;
+  code: string;
+  category: string;
+  description: string;
+  unit: string;
+  rate: number;
+  labour: number;
+  is_custom: boolean;
+  synced_at: string;
+}
+
+export interface CompanyProfileRow {
+  id: string;
+  owner_id: string;
+  company_name: string;
+  abn: string | null;
+  logo_url: string | null;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// ─── Fetch functions ────────────────────────────────────────────────────
+
+export async function fetchEstimates() {
+  return supabase
+    .from("estimates")
+    .select("*")
+    .order("created_at", { ascending: false });
+}
+
+export async function fetchScans() {
+  return supabase
+    .from("scans")
+    .select("*")
+    .order("started_at", { ascending: false });
+}
+
+export async function fetchRateLibrary() {
+  return supabase
+    .from("rate_library")
+    .select("*")
+    .order("code", { ascending: true });
+}
+
+// ─── Insert functions ───────────────────────────────────────────────────
+
+export async function insertEstimate(row: Omit<EstimateRow, "id" | "created_at">) {
+  return supabase
+    .from("estimates")
+    .insert([{ ...row, tenant_id: getCurrentTenantId() }])
+    .select()
+    .single();
+}
+
+export async function insertScan(row: Pick<ScanRow, "file_name" | "client">) {
+  return supabase
+    .from("scans")
+    .insert([{ ...row, tenant_id: getCurrentTenantId() }])
+    .select()
+    .single();
+}
+
+export async function updateScan(id: string, updates: Partial<ScanRow>) {
+  return supabase.from("scans").update(updates).eq("id", id).select().single();
+}
+
+export async function upsertRate(row: Omit<RateRow, "id" | "synced_at">) {
+  return supabase
+    .from("rate_library")
+    .upsert([{ ...row, tenant_id: getCurrentTenantId() }], { onConflict: "code,owner_id" })
+    .select()
+    .single();
+}
+
+// ─── Company profile ────────────────────────────────────────────────────
+
+export type CompanyProfileInput = Pick<
+  CompanyProfileRow,
+  "company_name" | "abn" | "logo_url" | "address" | "phone" | "email"
+>;
+
+export async function fetchCompanyProfile() {
+  // RLS scopes the row to the signed-in user; maybeSingle() returns null
+  // (rather than an error) when no profile exists yet for fresh tenants.
+  return supabase.from("company_profile").select("*").maybeSingle();
+}
+
+export async function upsertCompanyProfile(input: CompanyProfileInput) {
+  const { data: userResult } = await supabase.auth.getUser();
+  const ownerId = userResult?.user?.id;
+  const row = ownerId ? { owner_id: ownerId, ...input } : input;
+  return supabase
+    .from("company_profile")
+    .upsert([row], { onConflict: "owner_id" })
+    .select()
+    .single();
+}
+
+// ─── Dashboard KPI queries ──────────────────────────────────────────────
+//
+// Each KPI returns `{ value: T | null, error: any }`. A null value (rather
+// than 0) signals the caller to render "—" instead of a falsy number, so
+// fresh tenants don't see misleading zeroes.
+//
+// Auth filtering: all KPI queries filter by the signed-in user's uid
+// (owner_id = auth.uid()). This is necessary for RLS enforcement and is
+// the correct filter for the beta single-tenant phase — tenant_id may not
+// be populated for all rows yet. If no user session exists the query
+// resolves to null (renders "—") rather than erroring.
+//
+// The schema uses status values: 'draft' | 'sent' | 'viewed' | 'approved'.
+// Mapping for win-rate: "won" = approved, "lost" = future 'rejected' status
+// (not yet in schema — handled gracefully via IN clause). Until rejected
+// rows exist, win rate is approved / (approved + sent + viewed) over the
+// last 90 days, treating "pending decision" estimates as not-yet-decided.
+
+export interface KpiResult<T> {
+  value: T | null;
+  error: any;
+}
+
+/** Returns the current authenticated user's id, or null if not signed in. */
+async function getAuthUserId(): Promise<string | null> {
+  const { data } = await supabase.auth.getUser();
+  return data?.user?.id ?? null;
+}
+
+export async function fetchEstimatesThisMonth(): Promise<KpiResult<number>> {
+  const uid = await getAuthUserId();
+  if (!uid) return { value: null, error: "not_authenticated" };
+  const start = new Date();
+  start.setDate(1);
+  start.setHours(0, 0, 0, 0);
+  const { count, error } = await supabase
+    .from("estimates")
+    .select("id", { count: "exact", head: true })
+    .eq("owner_id", uid)
+    .gte("created_at", start.toISOString());
+  return { value: error ? null : (count ?? 0), error };
+}
+
+export async function fetchPendingValue(): Promise<KpiResult<number>> {
+  const uid = await getAuthUserId();
+  if (!uid) return { value: null, error: "not_authenticated" };
+  const { data, error } = await supabase
+    .from("estimates")
+    .select("value")
+    .eq("owner_id", uid)
+    .in("status", ["sent", "viewed"]);
+  if (error || !data) return { value: null, error };
+  const total = data.reduce((s, r: any) => s + Number(r.value ?? 0), 0);
+  return { value: total, error: null };
+}
+
+export async function fetchWinRate(): Promise<KpiResult<number>> {
+  const uid = await getAuthUserId();
+  if (!uid) return { value: null, error: "not_authenticated" };
+  const since = new Date();
+  since.setDate(since.getDate() - 90);
+  const { data, error } = await supabase
+    .from("estimates")
+    .select("status")
+    .eq("owner_id", uid)
+    .gte("created_at", since.toISOString())
+    .in("status", ["approved", "sent", "viewed", "rejected"]);
+  if (error || !data || data.length === 0) return { value: null, error };
+  const won = data.filter((r: any) => r.status === "approved").length;
+  const decided = data.length;
+  if (decided === 0) return { value: null, error: null };
+  return { value: Math.round((won / decided) * 100), error: null };
+}
+
+export async function fetchAvgScanToQuote(): Promise<KpiResult<number>> {
+  // Returns the average time in milliseconds between a scan starting and
+  // the linked estimate being created. Scans link to estimates via
+  // scans.estimate_ref → estimates.ref.
+  const uid = await getAuthUserId();
+  if (!uid) return { value: null, error: "not_authenticated" };
+
+  const { data: scans, error: scansErr } = await supabase
+    .from("scans")
+    .select("estimate_ref, started_at")
+    .eq("owner_id", uid)
+    .not("estimate_ref", "is", null);
+  if (scansErr || !scans || scans.length === 0) return { value: null, error: scansErr };
+
+  const refs = Array.from(new Set(scans.map((s: any) => s.estimate_ref).filter(Boolean)));
+  if (refs.length === 0) return { value: null, error: null };
+
+  const { data: estimates, error: estErr } = await supabase
+    .from("estimates")
+    .select("ref, created_at")
+    .eq("owner_id", uid)
+    .in("ref", refs);
+  if (estErr || !estimates || estimates.length === 0) return { value: null, error: estErr };
+
+  const refToEstCreated = new Map<string, string>();
+  estimates.forEach((e: any) => {
+    if (e.ref && e.created_at) refToEstCreated.set(e.ref, e.created_at);
+  });
+
+  const deltas: number[] = [];
+  scans.forEach((s: any) => {
+    const estCreated = refToEstCreated.get(s.estimate_ref);
+    if (estCreated && s.started_at) {
+      const delta = new Date(estCreated).getTime() - new Date(s.started_at).getTime();
+      if (delta > 0) deltas.push(delta);
+    }
+  });
+
+  if (deltas.length === 0) return { value: null, error: null };
+  const avgMs = deltas.reduce((a, b) => a + b, 0) / deltas.length;
+  return { value: avgMs, error: null };
+}
+
+/**
+ * Format an avg-scan-to-quote duration (ms) as "Xh" or "Xd".
+ * Returns "—" for null/invalid input so callers can pass through.
+ */
+export function formatScanToQuote(ms: number | null): string {
+  if (ms == null || !isFinite(ms) || ms <= 0) return "—";
+  const hours = ms / (1000 * 60 * 60);
+  if (hours < 24) return `${Math.max(1, Math.round(hours))}h`;
+  const days = hours / 24;
+  return `${Math.max(1, Math.round(days))}d`;
+}
+
+// ─── Milestone claims ────────────────────────────────────────────────────
+//
+// milestone_claims table records each Submit Claim action. It creates a
+// DRAFT invoice in MYOB (via a future accounting sync trigger). Callers
+// update the local milestone status to "invoiced_draft" immediately;
+// MYOB sync-back will advance it to "invoiced" once finance approves.
+//
+// Table schema (run via migrations):
+//   id uuid PK, project_id text, milestone_id text,
+//   amount numeric, inv_ref text, status text,
+//   created_by uuid, created_at timestamptz,
+//   tenant_id uuid, owner_id uuid
+
+export interface MilestoneClaimRow {
+  id?: string;
+  project_id: string;
+  milestone_id: string;
+  milestone_label: string;
+  amount: number;
+  inv_ref: string;
+  status: "draft";
+  created_at?: string;
+}
+
+/**
+ * Submit a milestone claim. Creates a draft record in milestone_claims
+ * and returns the generated invoice reference.
+ *
+ * Does NOT auto-send to builder or approve the invoice. Status = "draft".
+ * Finance team is notified in-app; they review and approve in MYOB.
+ */
+export async function submitMilestoneClaim(
+  projectId: string,
+  milestoneId: string,
+  milestoneLabel: string,
+  amount: number,
+): Promise<{ invRef: string | null; error: any }> {
+  const { data: userResult } = await supabase.auth.getUser();
+  const ownerId = userResult?.user?.id ?? null;
+
+  // Generate an invoice reference: INV-YYYY-NNN (3-digit random suffix for
+  // demo; in production this would be a MYOB-assigned sequence number).
+  const year = new Date().getFullYear();
+  const seq = String(Math.floor(Math.random() * 900) + 100);
+  const invRef = `INV-${year}-${seq}`;
+
+  const row: MilestoneClaimRow = {
+    project_id: projectId,
+    milestone_id: milestoneId,
+    milestone_label: milestoneLabel,
+    amount,
+    inv_ref: invRef,
+    status: "draft",
+  };
+
+  const { error } = await supabase
+    .from("milestone_claims")
+    .insert([{
+      ...row,
+      owner_id: ownerId,
+      tenant_id: getCurrentTenantId(),
+    }]);
+
+  if (error) {
+    // Table may not exist yet — log and return the generated ref anyway so
+    // the UI can update its local state optimistically.
+    console.warn("[ElectraScan] milestone_claims insert failed:", error.message);
+    return { invRef, error };
+  }
+
+  return { invRef, error: null };
+}

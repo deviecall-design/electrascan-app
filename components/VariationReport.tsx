@@ -1,692 +1,371 @@
-import { useMemo, useState, type ReactNode } from "react";
-import { jsPDF } from "jspdf";
-import { saveVariationReport } from "../services/variationService";
-import type { RiskFlag as DetectionRiskFlag, DetectionFlag, ComponentType } from "../analyze_pdf";
+import { useState } from "react";
+import { getActiveCompanyProfile, incrementEstimateNumber } from "../services/companyProfile";
+import { downloadVariationPDF } from "../utils/estimatePdf";
 
-// ─── Shared design tokens ────────────────────────────
-// Kept in sync with the `C` palette declared in App.tsx so the screen fits the
-// existing ElectraScan dark-mode UI without introducing a parallel theme.
+// ─── Design tokens (matches App.tsx C) ──────────────────────────────────────
 const C = {
-  bg:     "#0A1628", navy:   "#0F1E35", card:   "#132240",
-  blue:   "#1D6EFD", blueLt: "#4B8FFF", green:  "#00C48C",
-  amber:  "#FFB020", red:    "#FF4D4D", text:   "#EDF2FF",
-  muted:  "#5C7A9E", border: "#1A3358", dim:    "#8BA4C4",
-  purple: "#7C3AED", teal:   "#0EA5E9",
+  bg: "#0A1628", navy: "#0F1E35", card: "#132240",
+  blue: "#1D6EFD", blueLt: "#4B8FFF", green: "#00C48C",
+  amber: "#FFB020", red: "#FF4D4D", text: "#EDF2FF",
+  muted: "#5C7A9E", border: "#1A3358", dim: "#8BA4C4",
+  purple: "#7C3AED",
 };
 
-// ─── Types ───────────────────────────────────────────
-export type ChangeType = "added" | "removed" | "changed";
-export type RiskLevel = "high" | "medium" | "info";
-
-export interface VariationLineItem {
+// ─── Types ──────────────────────────────────────────────────────────────────
+export interface VariationItem {
   description: string;
-  room: string;
-  qty: number;
+  prevQty: number;
+  newQty: number;
   unitPrice: number;
+  change: "added" | "removed" | "increased" | "decreased";
 }
 
-export interface VariationRow {
-  type: ChangeType;
-  room: string;
-  component: string;
-  qty001: number;
-  qty002: number;
-  delta: number;
-}
-
-export interface VariationRiskFlag {
-  id: string;
-  level: RiskLevel;
-  icon: string;
+export interface VariationRisk {
+  level: "high" | "medium" | "info";
   title: string;
-  desc: string;
+  description: string;
 }
 
-export interface VariationEstimateLike {
-  id: string;
-  number: string;
-  total: number;
-  subtotal?: number;
-  date?: string;
-  lineItems?: VariationLineItem[];
-}
-
-export interface VariationReportProps {
+interface VariationReportProps {
   projectName: string;
-  previous: VariationEstimateLike;
-  current: VariationEstimateLike;
+  projectAddress?: string;        // e.g. "8/110 North Steyne, Manly"
+  clientName?: string;            // e.g. "Linda Habak Design"
+  baseEstNumber: string;          // e.g. "EST-2026-497-001"
+  baseTotal: number;              // subtotal ex GST of the base estimate
+  variationItems: VariationItem[];
+  risks?: VariationRisk[];
   onBack: () => void;
-  onOpenScan?: () => void;
-  /**
-   * Risk flags emitted by the detection pipeline for the *current* drawing
-   * version. Each flag has the shape:
-   *
-   *   interface RiskFlag {
-   *     flag: DetectionFlag;          // e.g. HEIGHT_RISK, MISSING_CIRCUIT
-   *     level: "high" | "medium" | "info";
-   *     component_type: ComponentType; // e.g. POOL_OUTDOOR, DOWNLIGHT_RECESSED
-   *     description: string;
-   *   }
-   *
-   * See `analyze_pdf.ts` for the canonical definitions. When this prop is
-   * omitted or an empty array is passed, the report falls back to the
-   * prototype's illustrative risk flags so the UI still demonstrates the
-   * feature during mock-data demos.
-   */
-  detectedRiskFlags?: DetectionRiskFlag[];
+  onExport?: () => void;
+  onDiscard?: () => void;
 }
 
-// ─── Mock fallback ────────────────────────────────────
-// Mirrors the Riverside pool/spa scenario shown in the prototype. Used when the
-// two estimates don't carry line items yet (mock projects in the current app
-// ship with `lineItems: []` — see App.tsx).
-const MOCK_ROWS: VariationRow[] = [
-  { type: "added",   room: "Outdoor",   component: "Pool Equipment Circuit (500W)",     qty001: 0, qty002: 1, delta:  680 },
-  { type: "added",   room: "Outdoor",   component: "Spa Blower Circuit",                qty001: 0, qty002: 1, delta:  420 },
-  { type: "added",   room: "Outdoor",   component: "External Security Camera Circuit",  qty001: 0, qty002: 2, delta:  560 },
-  { type: "changed", room: "Kitchen",   component: "Double GPO — upgraded to USB-A/C",   qty001: 6, qty002: 6, delta:  240 },
-  { type: "changed", room: "Bedrooms",  component: "LED Downlight — upgraded to dimmable", qty001: 9, qty002: 9, delta: 495 },
-  { type: "removed", room: "Garage",    component: "Single GPO (standard)",             qty001: 2, qty002: 0, delta: -170 },
-];
-
-const MOCK_RISKS: VariationRiskFlag[] = [
-  { id: "r1", level: "high",   icon: "⚡", title: "Missing Power Allocation — Pool Equipment",
-    desc: "Pool pump and spa equipment shown on landscape plan. No dedicated sub-board or circuit shown on electrical drawings." },
-  { id: "r2", level: "medium", icon: "⚠️", title: "Height Hazard — Void Lighting > 3.5m",
-    desc: "Feature lighting in double-height void (est. 5.2m). WHS scaffold requirement applies. Add crane/scaffold allowance to estimate." },
-  { id: "r3", level: "info",   icon: "🏠", title: "Automation Dependency — Dali Lighting",
-    desc: "Dimmable downlights specified in Bedrooms. Dali protocol requires separate programming contractor. Confirm scope split with client." },
-];
-
-// ─── Risk-flag mapping ─────────────────────────────────
-// Human-readable titles for each DetectionFlag emitted by the pipeline. Kept
-// in sync with `generateRiskFlags()` in analyze_pdf.ts.
-const FLAG_TITLES: Record<DetectionFlag, string> = {
-  HEIGHT_RISK:           "Height Risk",
-  AUTOMATION_DEPENDENCY: "Automation Dependency",
-  MISSING_CIRCUIT:       "Missing Circuit",
-  SCOPE_CONFIRM:         "Scope Confirmation Required",
-  OUTDOOR_LOCATION:      "Outdoor Location",
-  OFF_FORM_PREMIUM:      "Off-form Premium",
-  CABLE_RUN_LONG:        "Long Cable Run",
-  LOW_CONFIDENCE:        "Low Confidence Detection",
-  SYMBOL_AMBIGUOUS:      "Ambiguous Symbol",
-  LEGEND_MISMATCH:       "Legend Mismatch",
-  NOT_ELECTRICAL_SCOPE:  "Not Electrical Scope",
-  FROM_LEGEND:           "Legend-Derived Quantity",
+// ─── Change type config ─────────────────────────────────────────────────────
+const CHANGE_CFG: Record<VariationItem["change"], { color: string; bg: string; icon: string; label: string }> = {
+  added:     { color: C.green, bg: `${C.green}18`, icon: "+", label: "Added" },
+  removed:   { color: C.red,   bg: `${C.red}18`,   icon: "−", label: "Removed" },
+  increased: { color: C.amber, bg: `${C.amber}18`, icon: "↑", label: "Increased" },
+  decreased: { color: C.blue,  bg: `${C.blue}18`,  icon: "↓", label: "Decreased" },
 };
 
-// Mirror of the `LABELS` map in App.tsx so we can render flag titles with a
-// human component name (e.g. "Height Risk — Downlight").
-const COMPONENT_LABELS: Partial<Record<ComponentType, string>> = {
-  GPO_STANDARD: "Power Point", GPO_DOUBLE: "Double Power Point",
-  GPO_WEATHERPROOF: "Weatherproof GPO", GPO_USB: "USB Power Point",
-  DOWNLIGHT_RECESSED: "Downlight", PENDANT_FEATURE: "Pendant Light",
-  EXHAUST_FAN: "Exhaust Fan",
-  SWITCHING_STANDARD: "Light Switch", SWITCHING_DIMMER: "Dimmer Switch",
-  SWITCHING_2WAY: "2-Way Switch",
-  SWITCHBOARD_MAIN: "Main Switchboard", SWITCHBOARD_SUB: "Sub Board",
-  AC_SPLIT: "Split System AC", AC_DUCTED: "Ducted AC",
-  DATA_CAT6: "Data Point", DATA_TV: "TV/Data Point",
-  SECURITY_CCTV: "CCTV Camera", SECURITY_INTERCOM: "Intercom",
-  SECURITY_ALARM: "Alarm Sensor",
-  EV_CHARGER: "EV Charger", POOL_OUTDOOR: "Pool Equipment",
-  GATE_ACCESS: "Gate/Access", AUTOMATION_HUB: "Home Automation",
-};
+// ─── Helpers ────────────────────────────────────────────────────────────────
+const fmt = (n: number) => `$${Math.abs(n).toLocaleString("en-AU")}`;
+const fmtK = (n: number) => n >= 1000 ? `$${(n / 1000).toFixed(1)}k` : fmt(n);
 
-// Level → icon, matching the prototype's Risk Flag component (§5.3).
-const LEVEL_ICON: Record<DetectionRiskFlag["level"], string> = {
-  high: "⚡", medium: "⚠️", info: "🏠",
-};
-
-function mapDetectedFlag(flag: DetectionRiskFlag, idx: number): VariationRiskFlag {
-  const compLabel = COMPONENT_LABELS[flag.component_type] ?? flag.component_type;
-  const title = `${FLAG_TITLES[flag.flag] ?? flag.flag} — ${compLabel}`;
-  return {
-    id: `${flag.flag}-${flag.component_type}-${idx}`,
-    level: flag.level,
-    icon: LEVEL_ICON[flag.level],
-    title,
-    desc: flag.description,
-  };
-}
-
-// ─── Helpers ───────────────────────────────────────────
-const fmt = (n: number) => {
-  const sign = n < 0 ? "-" : "";
-  return `${sign}$${Math.abs(Math.round(n)).toLocaleString("en-AU")}`;
-};
-const pctStr = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
-const keyOf = (li: VariationLineItem) => `${li.room.trim().toLowerCase()}|${li.description.trim().toLowerCase()}`;
-
-function diffEstimates(
-  previous: VariationEstimateLike,
-  current: VariationEstimateLike,
-): VariationRow[] {
-  const a = previous.lineItems ?? [];
-  const b = current.lineItems ?? [];
-  if (a.length === 0 && b.length === 0) return MOCK_ROWS;
-
-  const byKey = new Map<string, { prev?: VariationLineItem; curr?: VariationLineItem }>();
-  for (const li of a) byKey.set(keyOf(li), { ...byKey.get(keyOf(li)), prev: li });
-  for (const li of b) byKey.set(keyOf(li), { ...byKey.get(keyOf(li)), curr: li });
-
-  const rows: VariationRow[] = [];
-  for (const { prev, curr } of byKey.values()) {
-    if (prev && !curr) {
-      rows.push({ type: "removed", room: prev.room, component: prev.description, qty001: prev.qty, qty002: 0, delta: -(prev.qty * prev.unitPrice) });
-    } else if (!prev && curr) {
-      rows.push({ type: "added", room: curr.room, component: curr.description, qty001: 0, qty002: curr.qty, delta: curr.qty * curr.unitPrice });
-    } else if (prev && curr) {
-      const totalA = prev.qty * prev.unitPrice;
-      const totalB = curr.qty * curr.unitPrice;
-      if (totalA !== totalB) {
-        rows.push({ type: "changed", room: curr.room, component: curr.description, qty001: prev.qty, qty002: curr.qty, delta: totalB - totalA });
-      }
-    }
-  }
-  // Stable-ish order: added first, changed, removed.
-  const order: Record<ChangeType, number> = { added: 0, changed: 1, removed: 2 };
-  rows.sort((x, y) => order[x.type] - order[y.type]);
-  return rows;
-}
-
-// ─── Component ─────────────────────────────────────────
+// ─── Component ──────────────────────────────────────────────────────────────
 export default function VariationReport({
   projectName,
-  previous,
-  current,
+  projectAddress,
+  clientName,
+  baseEstNumber,
+  baseTotal,
+  variationItems,
+  risks = [],
   onBack,
-  onOpenScan,
-  detectedRiskFlags,
+  onExport,
+  onDiscard,
 }: VariationReportProps) {
-  const rows = useMemo(() => diffEstimates(previous, current), [previous, current]);
+  const [tab, setTab] = useState<"summary" | "detail">("summary");
 
-  const addedRows = rows.filter(r => r.type === "added");
-  const removedRows = rows.filter(r => r.type === "removed");
-  const changedRows = rows.filter(r => r.type === "changed");
+  // ── Compute totals ──
+  const newTotal = variationItems.reduce((s, i) => s + i.newQty * i.unitPrice, 0)
+    + baseTotal
+    - variationItems.reduce((s, i) => s + i.prevQty * i.unitPrice, 0);
+  // net delta = sum of (newQty - prevQty) * unitPrice for each item
+  const delta = variationItems.reduce((s, i) => s + (i.newQty - i.prevQty) * i.unitPrice, 0);
+  const pct = baseTotal > 0 ? (delta / baseTotal) * 100 : 0;
 
-  const addedDelta   = addedRows.reduce((s, r) => s + r.delta, 0);
-  const removedDelta = removedRows.reduce((s, r) => s + r.delta, 0);
-  const changedDelta = changedRows.reduce((s, r) => s + r.delta, 0);
-  const totalDelta   = addedDelta + removedDelta + changedDelta;
+  // ── Categorise ──
+  const added = variationItems.filter(i => i.change === "added");
+  const removed = variationItems.filter(i => i.change === "removed");
+  const changed = variationItems.filter(i => i.change === "increased" || i.change === "decreased");
 
-  // If we have real totals on the estimates use them, else derive from the diff.
-  const base = previous.total > 0 ? previous.total : 136200;
-  const revised = current.total > 0 ? current.total : base + totalDelta;
-  const pctChange = base === 0 ? 0 : (totalDelta / base) * 100;
+  const addedDelta = added.reduce((s, i) => s + i.newQty * i.unitPrice, 0);
+  const removedDelta = removed.reduce((s, i) => s + i.prevQty * i.unitPrice, 0);
 
-  // Prefer live flags from the detection pipeline; fall back to prototype
-  // mocks only when no flags are available (e.g. viewing a mock project or
-  // the previous scan didn't surface anything).
-  const risks = useMemo<VariationRiskFlag[]>(() => {
-    if (detectedRiskFlags && detectedRiskFlags.length > 0) {
-      return detectedRiskFlags.map(mapDetectedFlag);
+  // ── Export handler (generates branded PDF) ──
+  // The variation becomes a NEW estimate with an incremented revision number.
+  // E.g. "EST-2026-497-001" → "EST-2026-497-002".
+  const variationNumber = incrementEstimateNumber(baseEstNumber);
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = async () => {
+    if (onExport) {
+      onExport();
+      return;
     }
-    return MOCK_RISKS;
-  }, [detectedRiskFlags]);
-  const usingMockRisks = !detectedRiskFlags || detectedRiskFlags.length === 0;
-  const [notes, setNotes] = useState<Record<string, string>>({});
-  const [noteOpen, setNoteOpen] = useState<string | null>(null);
-  const [noteDraft, setNoteDraft] = useState("");
-  const [exportState, setExportState] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const [exportMsg, setExportMsg] = useState<string>("");
-
-  const openNote = (id: string) => { setNoteOpen(id); setNoteDraft(notes[id] ?? ""); };
-  const saveNote = () => {
-    if (noteOpen) setNotes(prev => ({ ...prev, [noteOpen]: noteDraft }));
-    setNoteOpen(null);
-    setNoteDraft("");
-  };
-
-  const netColor = totalDelta > 0 ? C.red : totalDelta < 0 ? C.green : C.muted;
-
-  const persist = async () => {
-    setExportState("saving");
-    const res = await saveVariationReport({
-      project_name: projectName,
-      from_estimate: previous.number,
-      to_estimate: current.number,
-      base_total: base,
-      revised_total: revised,
-      net_delta: totalDelta,
-      pct_change: Number(pctChange.toFixed(2)),
-      added_count: addedRows.length,
-      removed_count: removedRows.length,
-      changed_count: changedRows.length,
-      rows,
-      risk_flags: risks,
-      notes,
-    });
-    if (res.ok) {
-      setExportState("saved");
-      setExportMsg("Saved to Supabase");
-    } else {
-      setExportState("error");
-      setExportMsg("Saved locally · cloud sync unavailable");
+    try {
+      setExporting(true);
+      const company = getActiveCompanyProfile();
+      await downloadVariationPDF({
+        company,
+        variationNumber,
+        baseEstimateNumber: baseEstNumber,
+        date: new Date().toLocaleDateString("en-AU"),
+        projectName,
+        projectAddress,
+        clientName,
+        baseTotal,
+        variationItems: variationItems.map(i => ({
+          description: i.description,
+          prevQty: i.prevQty,
+          newQty: i.newQty,
+          unitPrice: i.unitPrice,
+          change: i.change,
+        })),
+        risks,
+      });
+    } catch (err) {
+      console.error("Failed to generate variation PDF:", err);
+      // Non-fatal: user can retry. Toast would be nice, but keeps component standalone.
+      alert("Could not generate PDF. Check console for details.");
+    } finally {
+      setExporting(false);
     }
-    window.setTimeout(() => setExportState("idle"), 2800);
-  };
-
-  const exportCSV = () => {
-    const header = ["Change Type", "Room/Zone", "Component", "V001 Qty", "V002 Qty", "Cost Impact ($)"];
-    const lines = rows.map(r => [
-      r.type, r.room, r.component.replaceAll(",", ";"),
-      String(r.qty001), String(r.qty002), String(Math.round(r.delta)),
-    ].join(","));
-    const summary = [
-      "",
-      `Project,${projectName}`,
-      `From,${previous.number}`,
-      `To,${current.number}`,
-      `Base Total,${Math.round(base)}`,
-      `Revised Total,${Math.round(revised)}`,
-      `Net Variation,${Math.round(totalDelta)}`,
-      `Change %,${pctChange.toFixed(2)}`,
-    ].join("\n");
-    const csv = [header.join(","), ...lines, summary].join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `variation-${previous.number}-to-${current.number}.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-    persist();
-  };
-
-  const exportPDF = () => {
-    const doc = new jsPDF({ unit: "pt", format: "a4" });
-    const margin = 40;
-    let y = margin;
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(18);
-    doc.text("Variation Report", margin, y);
-    y += 22;
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(11);
-    doc.setTextColor(90, 90, 90);
-    doc.text(`${previous.number}  →  ${current.number}`, margin, y);
-    y += 14;
-    doc.text(`${projectName}`, margin, y);
-    y += 22;
-
-    // Summary banner
-    doc.setDrawColor(30, 30, 60);
-    doc.setFillColor(20, 36, 64);
-    doc.roundedRect(margin, y, 515, 70, 8, 8, "F");
-    doc.setTextColor(255, 255, 255);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(12);
-    doc.text(`V001 Base:  ${fmt(base)}`, margin + 14, y + 22);
-    doc.setFontSize(18);
-    doc.setTextColor(totalDelta > 0 ? 239 : 16, totalDelta > 0 ? 68 : 185, totalDelta > 0 ? 68 : 129);
-    doc.text(`Net ${totalDelta >= 0 ? "+" : ""}${fmt(totalDelta)} (${pctStr(pctChange)})`, margin + 180, y + 30);
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(12);
-    doc.text(`V002 Revised:  ${fmt(revised)}`, margin + 14, y + 52);
-    y += 90;
-
-    // Chips
-    doc.setTextColor(30, 30, 30);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.text(`Added: ${addedRows.length} (+${fmt(addedDelta).replace("-", "")})  ·  Removed: ${removedRows.length} (${fmt(removedDelta)})  ·  Changed: ${changedRows.length} (+${fmt(changedDelta).replace("-", "")})`, margin, y);
-    y += 18;
-
-    // Table header
-    doc.setFillColor(240, 244, 248);
-    doc.rect(margin, y, 515, 18, "F");
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    doc.setTextColor(100, 116, 139);
-    doc.text("TYPE", margin + 6, y + 12);
-    doc.text("ROOM", margin + 72, y + 12);
-    doc.text("COMPONENT", margin + 160, y + 12);
-    doc.text("V001", margin + 360, y + 12, { align: "center" });
-    doc.text("V002", margin + 400, y + 12, { align: "center" });
-    doc.text("DELTA", margin + 490, y + 12, { align: "right" });
-    y += 18;
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.setTextColor(30, 30, 30);
-
-    rows.forEach(r => {
-      if (y > 780) { doc.addPage(); y = margin; }
-      const tintR = r.type === "added" ? 236 : r.type === "removed" ? 254 : 255;
-      const tintG = r.type === "added" ? 253 : r.type === "removed" ? 242 : 251;
-      const tintB = r.type === "added" ? 245 : r.type === "removed" ? 242 : 235;
-      doc.setFillColor(tintR, tintG, tintB);
-      doc.rect(margin, y, 515, 18, "F");
-
-      doc.setTextColor(
-        r.type === "added" ? 16 : r.type === "removed" ? 239 : 217,
-        r.type === "added" ? 185 : r.type === "removed" ? 68 : 119,
-        r.type === "added" ? 129 : r.type === "removed" ? 68 : 6,
-      );
-      doc.text(r.type.toUpperCase(), margin + 6, y + 12);
-
-      doc.setTextColor(30, 30, 30);
-      doc.text(r.room, margin + 72, y + 12);
-      const comp = r.component.length > 42 ? r.component.slice(0, 41) + "…" : r.component;
-      doc.text(comp, margin + 160, y + 12);
-      doc.text(String(r.qty001 || "—"), margin + 360, y + 12, { align: "center" });
-      doc.text(String(r.qty002 || "—"), margin + 400, y + 12, { align: "center" });
-
-      doc.setTextColor(
-        r.delta > 0 ? 239 : r.delta < 0 ? 16 : 100,
-        r.delta > 0 ? 68  : r.delta < 0 ? 185 : 116,
-        r.delta > 0 ? 68  : r.delta < 0 ? 129 : 139,
-      );
-      doc.text(`${r.delta >= 0 ? "+" : ""}${fmt(r.delta)}`, margin + 508, y + 12, { align: "right" });
-      y += 18;
-    });
-
-    y += 14;
-    doc.setTextColor(30, 30, 30);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(12);
-    doc.text("Risk Flags — Version 002", margin, y);
-    y += 14;
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    risks.forEach(r => {
-      if (y > 780) { doc.addPage(); y = margin; }
-      doc.setTextColor(
-        r.level === "high" ? 239 : r.level === "medium" ? 245 : 14,
-        r.level === "high" ? 68  : r.level === "medium" ? 158 : 165,
-        r.level === "high" ? 68  : r.level === "medium" ? 11  : 233,
-      );
-      doc.setFont("helvetica", "bold");
-      doc.text(`${r.level.toUpperCase()}  ·  ${r.title}`, margin, y);
-      y += 12;
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(60, 60, 60);
-      const lines = doc.splitTextToSize(r.desc, 515);
-      doc.text(lines, margin, y);
-      y += lines.length * 12;
-      if (notes[r.id]) {
-        doc.setTextColor(30, 30, 30);
-        doc.setFont("helvetica", "italic");
-        const nlines = doc.splitTextToSize(`Note: ${notes[r.id]}`, 515);
-        doc.text(nlines, margin, y);
-        y += nlines.length * 12;
-        doc.setFont("helvetica", "normal");
-      }
-      y += 6;
-    });
-
-    doc.save(`variation-${previous.number}-to-${current.number}.pdf`);
-    persist();
   };
 
   return (
     <div style={{ height: "100vh", background: C.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      {/* Header */}
+      {/* ── Header ── */}
       <div style={{ background: C.navy, borderBottom: `1px solid ${C.border}`, padding: "14px 18px", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-          <button onClick={onBack}
-            style={{ background: "none", border: "none", color: C.muted, fontSize: 13, cursor: "pointer", padding: 0 }}>
-            ← Back
+          <button
+            onClick={onBack}
+            style={{ background: "none", border: "none", color: C.muted, fontSize: 13, cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: 4 }}
+          >
+            ← {projectName}
           </button>
-          <div style={{ fontSize: 11, color: C.muted }}>{previous.number} → {current.number}</div>
+          <div style={{
+            fontSize: 11, fontWeight: 700,
+            background: `${C.purple}22`, color: C.purple,
+            padding: "3px 10px", borderRadius: 20,
+            border: `1px solid ${C.purple}55`,
+          }}>
+            Variation Report
+          </div>
         </div>
-        <div style={{ fontSize: 18, fontWeight: 800, color: C.text, letterSpacing: "-0.02em" }}>Variation Report</div>
-        <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{projectName}</div>
+        <div style={{ fontSize: 15, fontWeight: 800, color: C.text, marginBottom: 2 }}>Drawing Revision Comparison</div>
+        <div style={{ fontSize: 11, color: C.muted, marginBottom: 4 }}>
+          {baseEstNumber} → <span style={{ color: C.purple, fontWeight: 700 }}>{variationNumber}</span>
+        </div>
+        <div style={{
+          fontSize: 10, color: C.amber, marginBottom: 14, fontStyle: "italic",
+          background: `${C.amber}12`, border: `1px solid ${C.amber}33`,
+          borderRadius: 8, padding: "6px 10px",
+        }}>
+          Internal document — not for distribution. Use this to inform your revised estimate before issuing to the builder.
+        </div>
+
+        {/* KPI strip */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+          <div style={{ background: C.card, borderRadius: 12, padding: "10px 12px" }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: delta >= 0 ? C.green : C.red }}>
+              {delta >= 0 ? "+" : "−"}{fmtK(Math.abs(delta))}
+            </div>
+            <div style={{ fontSize: 10, color: C.muted }}>Net change ex GST</div>
+          </div>
+          <div style={{ background: C.card, borderRadius: 12, padding: "10px 12px" }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: delta >= 0 ? C.green : C.red }}>
+              {pct >= 0 ? "+" : ""}{pct.toFixed(1)}%
+            </div>
+            <div style={{ fontSize: 10, color: C.muted }}>% change</div>
+          </div>
+          <div style={{ background: C.card, borderRadius: 12, padding: "10px 12px" }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>{fmtK(newTotal)}</div>
+            <div style={{ fontSize: 10, color: C.muted }}>New total ex GST</div>
+          </div>
+        </div>
       </div>
 
-      {/* Content */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "14px 16px 96px" }}>
-        {/* Banner */}
-        <div style={{
-          background: `linear-gradient(135deg, ${C.navy}, #1A3A5C)`,
-          border: `1px solid ${C.border}`, borderRadius: 16, padding: "18px 18px",
-          display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, alignItems: "center",
-          marginBottom: 14,
-        }}>
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 20, fontWeight: 800, color: C.blueLt }}>V001</div>
-            <div style={{ fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.5px", marginTop: 2 }}>Base Estimate</div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginTop: 6 }}>{fmt(base)}</div>
-          </div>
-          <div style={{ textAlign: "center", borderLeft: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}` }}>
-            <div style={{ fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.5px" }}>Net Variation</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: netColor, margin: "4px 0" }}>
-              {totalDelta >= 0 ? "+" : ""}{fmt(totalDelta)}
+      {/* ── Tab bar ── */}
+      <div style={{ background: C.navy, borderBottom: `1px solid ${C.border}`, display: "flex", flexShrink: 0 }}>
+        {(["summary", "detail"] as const).map(t => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            style={{
+              flex: 1, background: "none", border: "none",
+              padding: "12px 0", cursor: "pointer",
+              fontSize: 13, fontWeight: 600,
+              color: tab === t ? C.blue : C.muted,
+              borderBottom: tab === t ? `2px solid ${C.blue}` : "2px solid transparent",
+            }}
+          >
+            {t.charAt(0).toUpperCase() + t.slice(1)}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Content ── */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "14px 16px 80px" }}>
+
+        {/* ──── Summary Tab ──── */}
+        {tab === "summary" && (
+          <>
+            {/* Stat cards */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 16 }}>
+              {([
+                [added.length, "Added", C.green, `+${fmt(addedDelta)}`],
+                [removed.length, "Removed", C.red, `−${fmt(removedDelta)}`],
+                [changed.length, "Changed", C.amber, "Qty changes"],
+              ] as [number, string, string, string][]).map(([count, label, color, sub]) => (
+                <div key={label} style={{
+                  background: `${color}12`, border: `1px solid ${color}33`,
+                  borderRadius: 12, padding: "12px 14px",
+                }}>
+                  <div style={{ fontSize: 20, fontWeight: 800, color }}>{count}</div>
+                  <div style={{ fontSize: 10, color, opacity: 0.8 }}>{label}</div>
+                  <div style={{ fontSize: 10, color, fontWeight: 700, marginTop: 2 }}>{sub}</div>
+                </div>
+              ))}
             </div>
-            <div style={{ fontSize: 11, color: C.muted }}>{pctStr(pctChange)} change</div>
-          </div>
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 20, fontWeight: 800, color: C.green }}>V002</div>
-            <div style={{ fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.5px", marginTop: 2 }}>Revised Estimate</div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginTop: 6 }}>{fmt(revised)}</div>
-          </div>
-        </div>
 
-        {/* Summary chips */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 14 }}>
-          <Chip dotColor={C.green} label={`${addedRows.length} added`} value={`+${fmt(addedDelta)}`} valueColor={C.green} />
-          <Chip dotColor={C.red} label={`${removedRows.length} removed`} value={fmt(removedDelta)} valueColor={C.red} />
-          <Chip dotColor={C.amber} label={`${changedRows.length} changed`} value={`${changedDelta >= 0 ? "+" : ""}${fmt(changedDelta)}`} valueColor={C.amber} />
-        </div>
+            {/* Estimate comparison */}
+            <div style={{
+              background: C.card, border: `1px solid ${C.border}`,
+              borderRadius: 14, padding: "16px 18px", marginBottom: 12,
+            }}>
+              <div style={{
+                fontSize: 12, fontWeight: 700, color: C.muted, marginBottom: 12,
+                letterSpacing: "0.06em", textTransform: "uppercase" as const,
+              }}>
+                Estimate Comparison
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                <span style={{ fontSize: 13, color: C.muted }}>{baseEstNumber}</span>
+                <span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{fmt(baseTotal)}</span>
+              </div>
+              <div style={{
+                display: "flex", justifyContent: "space-between",
+                paddingBottom: 12, borderBottom: `1px solid ${C.border}`, marginBottom: 12,
+              }}>
+                <span style={{ fontSize: 13, color: C.muted }}>Variation</span>
+                <span style={{ fontSize: 14, fontWeight: 700, color: delta >= 0 ? C.green : C.red }}>
+                  {delta >= 0 ? "+" : "−"}{fmt(Math.abs(delta))}
+                </span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>New estimate total</span>
+                <span style={{ fontSize: 18, fontWeight: 800, color: C.green }}>{fmt(newTotal)}</span>
+              </div>
+            </div>
 
-        {/* Export buttons */}
-        <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-          <button onClick={exportPDF}
-            style={{ flex: 1, background: C.card, border: `1px solid ${C.border}`, color: C.text, fontSize: 13, fontWeight: 700, padding: "10px", borderRadius: 10, cursor: "pointer" }}>
-            Export PDF
-          </button>
-          <button onClick={exportCSV}
-            style={{ flex: 1, background: C.card, border: `1px solid ${C.border}`, color: C.text, fontSize: 13, fontWeight: 700, padding: "10px", borderRadius: 10, cursor: "pointer" }}>
-            Export CSV
-          </button>
-        </div>
-        {exportState !== "idle" && (
-          <div style={{
-            fontSize: 11, color: exportState === "error" ? C.amber : C.green,
-            marginTop: -8, marginBottom: 12, textAlign: "center",
-          }}>
-            {exportState === "saving" ? "Saving…" : exportMsg}
-          </div>
+            {/* Risk flags */}
+            {risks.map((risk, i) => {
+              const riskColor = risk.level === "high" ? C.red : risk.level === "medium" ? C.amber : C.blue;
+              return (
+                <div
+                  key={i}
+                  style={{
+                    background: `${riskColor}18`,
+                    border: `1px solid ${riskColor}44`,
+                    borderRadius: 14, padding: "14px 16px",
+                    marginBottom: i < risks.length - 1 ? 10 : 0,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                    <div style={{
+                      fontSize: 10, fontWeight: 700,
+                      padding: "2px 7px", borderRadius: 5,
+                      background: `${riskColor}22`, color: riskColor,
+                    }}>
+                      {risk.level.toUpperCase()}
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{risk.title}</div>
+                  </div>
+                  <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.6 }}>{risk.description}</div>
+                </div>
+              );
+            })}
+          </>
         )}
 
-        {/* Rows */}
-        <SectionTitle>Changes — {rows.length} item{rows.length === 1 ? "" : "s"}</SectionTitle>
-        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", marginBottom: 18 }}>
-          {rows.length === 0 ? (
-            <div style={{ padding: "28px 14px", textAlign: "center", color: C.muted, fontSize: 13 }}>
-              No differences between {previous.number} and {current.number}.
-            </div>
-          ) : rows.map((r, i) => (
-            <VariationRowCard key={i} row={r} isLast={i === rows.length - 1} />
-          ))}
-        </div>
-
-        {/* Risk flags */}
-        <SectionTitle>
-          Risk Flags — {current.number}
-          {usingMockRisks && risks.length > 0 && (
-            <span style={{ color: C.dim, fontWeight: 500, letterSpacing: 0, textTransform: "none", marginLeft: 6 }}>
-              · sample (no scan data)
-            </span>
-          )}
-        </SectionTitle>
-        {risks.map(r => {
-          const accent = r.level === "high" ? C.red : r.level === "medium" ? C.amber : C.teal;
-          const tint = `${accent}14`;
-          const hasNote = Boolean(notes[r.id]);
+        {/* ──── Detail Tab ──── */}
+        {tab === "detail" && variationItems.map((item, i) => {
+          const cfg = CHANGE_CFG[item.change];
+          const itemDelta = (item.newQty - item.prevQty) * item.unitPrice;
           return (
-            <div key={r.id}
+            <div
+              key={i}
               style={{
-                background: C.card, border: `1px solid ${C.border}`, borderLeft: `3px solid ${accent}`,
-                borderRadius: 12, padding: "12px 14px", marginBottom: 8,
-              }}>
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                <div style={{
-                  background: tint, width: 30, height: 30, borderRadius: 8,
-                  display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0,
-                }}>{r.icon}</div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                    <span style={{
-                      fontSize: 9, fontWeight: 800, color: accent, background: tint,
-                      padding: "2px 6px", borderRadius: 4, letterSpacing: "0.5px", textTransform: "uppercase",
-                    }}>{r.level}</span>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{r.title}</span>
-                  </div>
-                  <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.55 }}>{r.desc}</div>
-                  {hasNote && (
+                background: C.card, border: `1px solid ${C.border}`,
+                borderRadius: 14, padding: "12px 16px", marginBottom: 8,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
                     <div style={{
-                      fontSize: 12, color: C.text, background: `${C.blue}18`, border: `1px solid ${C.blue}55`,
-                      padding: "8px 10px", borderRadius: 8, marginTop: 8,
+                      width: 20, height: 20, borderRadius: 6,
+                      background: cfg.bg, color: cfg.color,
+                      fontSize: 12, fontWeight: 800,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      flexShrink: 0,
                     }}>
-                      <span style={{ color: C.blueLt, fontSize: 10, fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>Note · </span>
-                      {notes[r.id]}
+                      {cfg.icon}
                     </div>
-                  )}
+                    <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{item.description}</div>
+                  </div>
+                  <div style={{ fontSize: 11, color: C.muted, paddingLeft: 28 }}>
+                    {item.change === "added" && `New: ${item.newQty} EA @ ${fmt(item.unitPrice)}`}
+                    {item.change === "removed" && `Removed: ${item.prevQty} EA`}
+                    {(item.change === "increased" || item.change === "decreased") &&
+                      `${item.prevQty} → ${item.newQty} EA @ ${fmt(item.unitPrice)}`}
+                  </div>
                 </div>
-                <button onClick={() => openNote(r.id)}
-                  style={{
-                    background: "none", border: `1px solid ${C.border}`, color: C.dim,
-                    fontSize: 11, fontWeight: 700, padding: "6px 10px", borderRadius: 8, cursor: "pointer", flexShrink: 0,
+                <div style={{ textAlign: "right" as const, flexShrink: 0 }}>
+                  <div style={{
+                    fontSize: 14, fontWeight: 800,
+                    color: itemDelta >= 0 ? C.green : C.red,
                   }}>
-                  {hasNote ? "Edit Note" : "Add Note"}
-                </button>
+                    {itemDelta >= 0 ? "+" : "−"}{fmt(Math.abs(itemDelta))}
+                  </div>
+                </div>
               </div>
             </div>
           );
         })}
 
-        {/* Footer banner */}
-        <div style={{
-          marginTop: 16, background: `${C.blue}14`, border: `1px solid ${C.blue}44`,
-          borderRadius: 12, padding: "12px 14px", fontSize: 12, color: C.blueLt, lineHeight: 1.55,
-        }}>
-          📋 This report is ready to send. <strong>Export as PDF</strong> to attach to your revised estimate submission to the builder.
-        </div>
-      </div>
-
-      {/* Note modal */}
-      {noteOpen && (
-        <div onClick={() => setNoteOpen(null)}
-          style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-          <div onClick={e => e.stopPropagation()}
-            style={{ background: C.navy, border: `1px solid ${C.border}`, borderRadius: 20, padding: 22, maxWidth: 400, width: "100%" }}>
-            <div style={{ fontSize: 16, fontWeight: 700, color: C.text, marginBottom: 6 }}>Add note to risk flag</div>
-            <div style={{ fontSize: 12, color: C.muted, marginBottom: 14, lineHeight: 1.6 }}>
-              Notes are included with the variation report when exported as PDF and sent to the builder.
-            </div>
-            <textarea
-              autoFocus value={noteDraft} onChange={e => setNoteDraft(e.target.value)}
-              placeholder="e.g. Confirmed with client — crane hire quoted separately."
-              style={{
-                width: "100%", minHeight: 96, background: C.bg, border: `1px solid ${C.border}`,
-                borderRadius: 10, padding: "10px 12px", color: C.text, fontSize: 13, fontFamily: "inherit",
-                outline: "none", resize: "vertical",
-              }}
-            />
-            <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
-              <button onClick={() => setNoteOpen(null)}
-                style={{ flex: 1, background: "none", border: `1px solid ${C.border}`, color: C.muted, fontSize: 13, padding: "10px", borderRadius: 10, cursor: "pointer" }}>
-                Cancel
-              </button>
-              <button onClick={saveNote}
-                style={{ flex: 2, background: C.blue, border: "none", color: "#fff", fontSize: 13, fontWeight: 700, padding: "10px", borderRadius: 10, cursor: "pointer" }}>
-                Save Note
-              </button>
-            </div>
+        {/* Empty state */}
+        {tab === "detail" && variationItems.length === 0 && (
+          <div style={{ textAlign: "center", padding: "60px 20px" }}>
+            <div style={{ fontSize: 48, marginBottom: 12 }}>📊</div>
+            <div style={{ color: C.muted, fontSize: 14 }}>No variations detected</div>
+            <div style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>Upload a revised drawing to generate a comparison</div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* Bottom nav */}
+      {/* ── Bottom bar ── */}
       <div style={{
-        position: "fixed", bottom: 0, left: 0, right: 0, background: C.navy, borderTop: `1px solid ${C.border}`,
-        display: "flex", padding: "8px 12px", paddingBottom: "calc(8px + env(safe-area-inset-bottom, 0px))",
+        position: "fixed" as const, bottom: 0, left: 0, right: 0,
+        background: C.navy, borderTop: `1px solid ${C.border}`,
+        padding: "10px 14px", display: "flex", gap: 10,
       }}>
-        <button onClick={onBack}
-          style={{ flex: 1, background: "none", border: "none", padding: "8px 0", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-          <div style={{ fontSize: 20 }}>🏠</div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: C.muted }}>Project</div>
+        <button
+          onClick={onDiscard || onBack}
+          style={{
+            flex: 1, background: C.card, border: `1px solid ${C.border}`,
+            color: C.text, fontSize: 13, fontWeight: 600,
+            padding: "12px", borderRadius: 12, cursor: "pointer",
+          }}
+        >
+          {onDiscard ? "Discard" : "Back"}
         </button>
-        <button onClick={onOpenScan}
-          style={{ flex: 1, background: "none", border: "none", padding: "4px 0", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-          <div style={{ width: 44, height: 44, borderRadius: "50%", background: C.blue, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, marginTop: -10, boxShadow: `0 4px 20px ${C.blue}66` }}>⚡</div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: C.blue }}>Scan</div>
+        <button
+          onClick={handleExport}
+          disabled={exporting}
+          style={{
+            flex: 2,
+            background: exporting ? C.muted : C.purple,
+            border: "none",
+            color: "#fff", fontSize: 14, fontWeight: 700,
+            padding: "12px", borderRadius: 12,
+            cursor: exporting ? "wait" : "pointer",
+            opacity: exporting ? 0.7 : 1,
+          }}
+        >
+          {exporting ? "Generating PDF…" : `📄 Export ${variationNumber} PDF`}
         </button>
-        <button style={{ flex: 1, background: "none", border: "none", padding: "8px 0", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-          <div style={{ fontSize: 20, opacity: 0.9 }}>📊</div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: C.blue }}>Variation</div>
-          <div style={{ width: 20, height: 2, background: C.blue, borderRadius: 1 }} />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ─── Sub-components ─────────────────────────────
-function SectionTitle({ children }: { children: ReactNode }) {
-  return (
-    <div style={{
-      fontSize: 11, fontWeight: 700, color: C.muted, letterSpacing: "0.08em",
-      textTransform: "uppercase", marginBottom: 10, marginTop: 2,
-    }}>{children}</div>
-  );
-}
-
-function Chip({ dotColor, label, value, valueColor }: {
-  dotColor: string; label: string; value: string; valueColor: string;
-}) {
-  return (
-    <div style={{
-      background: C.card, border: `1px solid ${C.border}`, borderRadius: 12,
-      padding: "10px 10px", display: "flex", flexDirection: "column", gap: 4, minWidth: 0,
-    }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: C.muted }}>
-        <span style={{ width: 8, height: 8, borderRadius: "50%", background: dotColor, display: "inline-block" }} />
-        <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>
-      </div>
-      <div style={{ fontSize: 13, fontWeight: 800, color: valueColor }}>{value}</div>
-    </div>
-  );
-}
-
-function VariationRowCard({ row, isLast }: { row: VariationRow; isLast: boolean }) {
-  const accent = row.type === "added" ? "#00C48C" : row.type === "removed" ? "#FF4D4D" : "#FFB020";
-  const bgTint = row.type === "added" ? "rgba(0,196,140,0.05)" : row.type === "removed" ? "rgba(255,77,77,0.05)" : "rgba(255,176,32,0.05)";
-  const deltaColor = row.delta > 0 ? "#FF4D4D" : row.delta < 0 ? "#00C48C" : "#5C7A9E";
-  const badgeText = row.type === "added" ? "+ Added" : row.type === "removed" ? "− Removed" : "± Changed";
-
-  return (
-    <div style={{
-      padding: "12px 14px",
-      borderBottom: isLast ? "none" : `1px solid ${C.border}`,
-      borderLeft: `3px solid ${accent}`, background: bgTint,
-    }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 8 }}>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{
-            display: "inline-block", fontSize: 10, fontWeight: 800, padding: "2px 7px",
-            borderRadius: 5, background: `${accent}22`, color: accent,
-            letterSpacing: "0.5px", marginBottom: 5, textTransform: "uppercase",
-          }}>{badgeText}</div>
-          <div style={{ fontSize: 13, fontWeight: 600, color: C.text, lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis" }}>{row.component}</div>
-          <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{row.room}</div>
-        </div>
-        <div style={{ textAlign: "right", flexShrink: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: deltaColor }}>{row.delta >= 0 ? "+" : ""}{fmt(row.delta)}</div>
-          <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>cost impact</div>
-        </div>
-      </div>
-      <div style={{
-        display: "flex", gap: 12, paddingTop: 8, borderTop: `1px solid ${C.border}`,
-        fontSize: 11, color: C.muted,
-      }}>
-        <div>V001 Qty <span style={{ color: row.qty001 === 0 ? C.dim : C.text, fontWeight: 700 }}>{row.qty001 || "—"}</span></div>
-        <div>V002 Qty <span style={{ color: row.qty002 === 0 ? C.dim : C.text, fontWeight: 700 }}>{row.qty002 || "—"}</span></div>
       </div>
     </div>
   );
