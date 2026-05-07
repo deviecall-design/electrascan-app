@@ -222,6 +222,13 @@ DECLARE
   v_normalised text := upper(trim(p_symbol_raw));
   v_result     symbol_dictionary;
 BEGIN
+  -- Security: callers may only write to their own owner_id.
+  -- SECURITY DEFINER elevates privileges for the INSERT; this guard ensures
+  -- p_owner_id cannot be used to overwrite another user's symbol dictionary.
+  IF p_owner_id IS DISTINCT FROM auth.uid() THEN
+    RAISE EXCEPTION 'upsert_symbol_classification: p_owner_id must match the authenticated user';
+  END IF;
+
   INSERT INTO symbol_dictionary (
     owner_id, entity_id, entity_name, entity_type,
     symbol_raw, symbol_normalised,

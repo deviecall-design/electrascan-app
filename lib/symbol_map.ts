@@ -231,7 +231,7 @@ export const ASNZS_SYMBOL_MAP: Record<string, ComponentType> = {
   // Switching
   "S":      "SWITCHING_STANDARD",
   "S1":     "SWITCHING_STANDARD",
-  "SD":     "SWITCHING_DIMMER",
+  "SWD":    "SWITCHING_DIMMER",   // Switch-dimmer; SD is reserved for smoke detector below
   "S2":     "SWITCHING_2WAY",
   "2W":     "SWITCHING_2WAY",
   "S3":     "SWITCHING_3WAY",
@@ -248,7 +248,7 @@ export const ASNZS_SYMBOL_MAP: Record<string, ComponentType> = {
   "BM":     "MOTORISED_BLIND",
 
   // Safety & Ventilation
-  "SD":     "SMOKE_DETECTOR",      // Note: may conflict with switch dimmer — legend context resolves
+  "SD":     "SMOKE_DETECTOR",      // Primary SD mapping; switch-dimmer uses SWD
   "EF":     "EXHAUST_FAN",
   "CF":     "CEILING_FAN",
 
