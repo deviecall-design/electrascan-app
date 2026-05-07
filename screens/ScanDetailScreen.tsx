@@ -15,6 +15,7 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { fetchScanById, ScanRow } from "../services/supabaseData";
 import {
   ArrowLeft,
   ArrowRight,
@@ -97,9 +98,26 @@ const RATE_LOOKUP: Record<string, { description: string; rate: number; labour: n
 export default function ScanDetailScreen() {
   const navigate = useNavigate();
   const { id } = useParams();
-  // New scans start at Upload; existing scans jump to Detect for the demo.
-  // Once real scans are persisted the step should come from the DB row.
+  const [liveScan, setLiveScan] = useState<ScanRow | null>(null);
   const [step, setStep] = useState(id === "new" ? 1 : 2);
+
+  useEffect(() => {
+    if (!id || id === "new") return;
+    fetchScanById(id).then(({ data }) => {
+      if (data) {
+        setLiveScan(data as ScanRow);
+        // Restore step from persisted stage when available
+        const stageMap: Record<string, number> = {
+          upload: 1, detecting: 2, review: 3, quote: 4,
+        };
+        const persisted = stageMap[data.stage ?? ""];
+        if (persisted) setStep(persisted);
+      }
+    });
+  }, [id]);
+
+  const fileName = liveScan?.file_name ?? "Switchboard_LV2_rev3.pdf";
+  const clientLabel = liveScan?.client ?? "Bondi Tower Residences · Level 2";
 
   return (
     <div className="anim-in">
@@ -113,22 +131,22 @@ export default function ScanDetailScreen() {
 
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 6 }}>
         <h1 style={{ fontFamily: FONT.heading, fontSize: 26, fontWeight: 600, letterSpacing: "-0.02em", margin: 0 }}>
-          Switchboard_LV2_rev3.pdf
+          {fileName}
         </h1>
         <span style={{ fontFamily: FONT.mono, fontSize: 13, color: C.textSubtle }}>
           {id ?? "EST-2026-0143"}
         </span>
       </div>
       <p style={{ color: C.textMuted, fontStyle: "italic", margin: "0 0 28px 0" }}>
-        Bondi Tower Residences · Level 2 · uploaded 14 minutes ago
+        {clientLabel}{liveScan ? "" : " · uploaded 14 minutes ago"}
       </p>
 
       <StepBar step={step} onStep={setStep} />
 
       {step === 1 && <StepUpload onNext={() => setStep(2)} />}
-      {step === 2 && <StepDetecting onNext={() => setStep(3)} />}
-      {step === 3 && <StepReview onNext={() => setStep(4)} onBack={() => setStep(2)} />}
-      {step === 4 && <StepQuote onBack={() => setStep(3)} />}
+      {step === 2 && <StepDetecting onNext={() => setStep(3)} initialItems={liveScan?.detected_items as DetectedItem[] | undefined} />}
+      {step === 3 && <StepReview onNext={() => setStep(4)} onBack={() => setStep(2)} initialItems={liveScan?.detected_items as DetectedItem[] | undefined} />}
+      {step === 4 && <StepQuote onBack={() => setStep(3)} initialItems={liveScan?.detected_items as DetectedItem[] | undefined} />}
 
       <Footer />
     </div>
@@ -224,22 +242,24 @@ function StepUpload({ onNext }: { onNext: () => void }) {
 }
 
 // ─── Step 2: Detecting ──────────────────────────────────────────────────
-function StepDetecting({ onNext }: { onNext: () => void }) {
-  const [revealed, setRevealed] = useState(0);
+function StepDetecting({ onNext, initialItems }: { onNext: () => void; initialItems?: DetectedItem[] }) {
+  const source = initialItems ?? DETECTED_ITEMS;
+  const [revealed, setRevealed] = useState(initialItems ? initialItems.length : 0);
 
   useEffect(() => {
+    if (initialItems) return; // live items already complete — skip animation
     setRevealed(0);
     const id = setInterval(() => {
       setRevealed(n => {
-        if (n >= DETECTED_ITEMS.length) { clearInterval(id); return n; }
+        if (n >= source.length) { clearInterval(id); return n; }
         return n + 1;
       });
     }, 380);
     return () => clearInterval(id);
   }, []);
 
-  const items = DETECTED_ITEMS.slice(0, revealed);
-  const ready = revealed >= DETECTED_ITEMS.length;
+  const items = source.slice(0, revealed);
+  const ready = revealed >= source.length;
 
   return (
     <div className="anim-in" style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: 24 }}>
@@ -263,7 +283,7 @@ function StepDetecting({ onNext }: { onNext: () => void }) {
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12 }}>
           <h3 style={{ fontFamily: FONT.heading, fontSize: 15, fontWeight: 600, margin: 0 }}>
             Detected items{" "}
-            <span style={{ color: C.textSubtle, fontWeight: 400 }}>({revealed}/{DETECTED_ITEMS.length})</span>
+            <span style={{ color: C.textSubtle, fontWeight: 400 }}>({revealed}/{source.length})</span>
           </h3>
           {!ready && <Loader2 size={14} className="spin" color={C.orange} />}
         </div>
@@ -654,14 +674,15 @@ function ReviewQueuePanel({
 }
 
 // ─── Step 3: Review ─────────────────────────────────────────────────────
-function StepReview({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
+function StepReview({ onNext, onBack, initialItems }: { onNext: () => void; onBack: () => void; initialItems?: DetectedItem[] }) {
+  const source = initialItems ?? DETECTED_ITEMS;
   const [items, setItems] = useState(
-    DETECTED_ITEMS.map(it => ({ ...it, ok: false })),
+    source.map(it => ({ ...it, ok: false })),
   );
 
   // Build review queue: items with conf < 0.90 go into the queue
   const [reviewQueue, setReviewQueue] = useState<ReviewQueueItem[]>(
-    DETECTED_ITEMS
+    source
       .filter(it => it.conf < 0.90)
       .map(it => ({
         id: it.id,
@@ -779,15 +800,16 @@ function StepReview({ onNext, onBack }: { onNext: () => void; onBack: () => void
 }
 
 // ─── Step 4: Quote ──────────────────────────────────────────────────────
-function StepQuote({ onBack }: { onBack: () => void }) {
+function StepQuote({ onBack, initialItems }: { onBack: () => void; initialItems?: DetectedItem[] }) {
+  const source = initialItems ?? DETECTED_ITEMS;
   const company = getActiveCompanyProfile();
   const subtotal = useMemo(
     () =>
-      DETECTED_ITEMS.reduce((sum, it) => {
+      source.reduce((sum, it) => {
         const r = RATE_LOOKUP[it.rateCode];
         return sum + (r ? (r.rate + r.labour) * it.qty : 0);
       }, 0),
-    [],
+    [source],
   );
   const margin = Math.round(subtotal * 0.18);
   const gst = Math.round((subtotal + margin) * 0.1);

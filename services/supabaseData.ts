@@ -85,6 +85,14 @@ export async function fetchScans() {
     .limit(50);
 }
 
+export async function fetchScanById(id: string) {
+  return supabase
+    .from("scans")
+    .select("*")
+    .eq("id", id)
+    .single();
+}
+
 export async function fetchRateLibrary() {
   return supabase
     .from("rate_library")
