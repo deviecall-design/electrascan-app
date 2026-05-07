@@ -101,7 +101,7 @@ export async function saveEstimate(estimateData: {
   // 1. Save to Supabase
   const { data, error } = await supabase
     .from('estimates')
-    .insert([{ ...estimateData, status: estimateData.status ?? 'draft', tenant_id: getCurrentTenantId() }])
+    .insert([{ ...estimateData, status: estimateData.status ?? 'draft', tenant_id: await getCurrentTenantId() }])
     .select()
     .single();
 
@@ -143,7 +143,7 @@ export async function saveVariationReport(reportData: {
 }) {
   const { data, error } = await supabase
     .from('variation_reports')
-    .insert([{ ...reportData, status: 'draft', tenant_id: getCurrentTenantId() }])
+    .insert([{ ...reportData, status: 'draft', tenant_id: await getCurrentTenantId() }])
     .select()
     .single();
 

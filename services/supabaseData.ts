@@ -73,21 +73,24 @@ export async function fetchEstimates() {
   return supabase
     .from("estimates")
     .select("*")
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .limit(100);
 }
 
 export async function fetchScans() {
   return supabase
     .from("scans")
     .select("*")
-    .order("started_at", { ascending: false });
+    .order("started_at", { ascending: false })
+    .limit(50);
 }
 
 export async function fetchRateLibrary() {
   return supabase
     .from("rate_library")
     .select("*")
-    .order("code", { ascending: true });
+    .order("code", { ascending: true })
+    .limit(500);
 }
 
 // ─── Insert functions ───────────────────────────────────────────────────
@@ -95,7 +98,7 @@ export async function fetchRateLibrary() {
 export async function insertEstimate(row: Omit<EstimateRow, "id" | "created_at">) {
   return supabase
     .from("estimates")
-    .insert([{ ...row, tenant_id: getCurrentTenantId() }])
+    .insert([{ ...row, tenant_id: await getCurrentTenantId() }])
     .select()
     .single();
 }
@@ -103,7 +106,7 @@ export async function insertEstimate(row: Omit<EstimateRow, "id" | "created_at">
 export async function insertScan(row: Pick<ScanRow, "file_name" | "client">) {
   return supabase
     .from("scans")
-    .insert([{ ...row, tenant_id: getCurrentTenantId() }])
+    .insert([{ ...row, tenant_id: await getCurrentTenantId() }])
     .select()
     .single();
 }
@@ -115,7 +118,7 @@ export async function updateScan(id: string, updates: Partial<ScanRow>) {
 export async function upsertRate(row: Omit<RateRow, "id" | "synced_at">) {
   return supabase
     .from("rate_library")
-    .upsert([{ ...row, tenant_id: getCurrentTenantId() }], { onConflict: "code,owner_id" })
+    .upsert([{ ...row, tenant_id: await getCurrentTenantId() }], { onConflict: "code,owner_id" })
     .select()
     .single();
 }
@@ -203,8 +206,9 @@ export async function fetchPendingValue(): Promise<KpiResult<number>> {
 export async function fetchWinRate(): Promise<KpiResult<number>> {
   const uid = await getAuthUserId();
   if (!uid) return { value: null, error: "not_authenticated" };
+  const WIN_RATE_LOOKBACK_DAYS = 90;
   const since = new Date();
-  since.setDate(since.getDate() - 90);
+  since.setDate(since.getDate() - WIN_RATE_LOOKBACK_DAYS);
   const { data, error } = await supabase
     .from("estimates")
     .select("status")
@@ -333,7 +337,7 @@ export async function submitMilestoneClaim(
     .insert([{
       ...row,
       owner_id: ownerId,
-      tenant_id: getCurrentTenantId(),
+      tenant_id: await getCurrentTenantId(),
     }]);
 
   if (error) {

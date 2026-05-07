@@ -80,14 +80,15 @@ export default function DesktopShell() {
 // ─── Sidebar ────────────────────────────────────────────────────────────
 function Sidebar() {
   const company = getActiveCompanyProfile();
-  const initials = company.name
+  const initials = (company.name ?? "")
     .split(" ")
-    .map(w => w[0])
+    .map((w: string) => w[0])
+    .filter(Boolean)
     .slice(0, 2)
     .join("")
     .toUpperCase();
   // Shortened tenant name for the user-chip line 2 (drops "Pty Ltd", "Services")
-  const shortName = company.name.replace(" Pty Ltd", "").replace(" Services", "");
+  const shortName = (company.name ?? "").replace(" Pty Ltd", "").replace(" Services", "");
 
   return (
     <aside
