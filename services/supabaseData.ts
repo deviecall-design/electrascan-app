@@ -147,6 +147,10 @@ export async function upsertRate(row: Omit<RateRow, "id" | "synced_at">) {
     .single();
 }
 
+export async function deleteRate(id: string) {
+  return supabase.from("rate_library").delete().eq("id", id);
+}
+
 // ─── Company profile ────────────────────────────────────────────────────
 
 export type CompanyProfileInput = Pick<
