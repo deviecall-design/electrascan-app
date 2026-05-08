@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14" fill="#0A1628"/>
+  <!-- Wave 3 — lightest (back) -->
+  <path d="M 10,32 C 14,21 18,21 22,32 C 26,43 30,43 34,32 C 38,21 42,21 46,32 C 47.9,37.5 48.8,39.5 49,37" fill="none" stroke="#3B82F6" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.3"/>
+  <!-- Wave 2 — medium -->
+  <path d="M 10,32 C 14,18 18,18 22,32 C 26,46 30,46 34,32 C 38,18 42,18 46,32 C 47.9,39 48.8,41 49,37" fill="none" stroke="#3B82F6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.65"/>
+  <!-- Wave 1 — boldest (front) -->
+  <path d="M 10,32 C 14,14 18,14 22,32 C 26,50 30,50 34,32 C 38,14 42,14 46,32" fill="none" stroke="#3B82F6" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Baseline -->
+  <line x1="10" y1="32" x2="49" y2="32" stroke="#3B82F6" stroke-width="0.8" opacity="0.2"/>
+</svg>

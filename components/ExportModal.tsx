@@ -66,7 +66,7 @@ const ExportModal: React.FC<ExportModalProps> = ({
 await saveEstimate({
           project_name: projectData.name,
           contractor: projectData.contractor ?? '',
-          total: projectData.totalCost ?? 0,
+          value: projectData.totalCost ?? 0,
           items: planSets.flatMap(p => p.items ?? []),
           status: 'exported'
         });

@@ -125,3 +125,110 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* ────────────────────────────────────────────────────────────────────────
+   ElectraScan — Anthropic design system (warm cream + Lora + Poppins + orange)
+
+   These tokens mirror the TS constants in components/desktop/tokens.ts and
+   are prefixed with --es- so they never collide with shadcn's generic names.
+   The base --background and --foreground are also overridden so any shadcn
+   components we use inherit the warm palette automatically.
+   ──────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* Anthropic surface */
+  --es-bg:          #faf9f5;
+  --es-bg-soft:     #f4f2ea;
+  --es-bg-card:     #ffffff;
+  --es-bg-paper:    #fcfbf7;
+  --es-border:      #e8e6dc;
+  --es-border-soft: #efede4;
+
+  /* Anthropic text */
+  --es-text:        #141413;
+  --es-text-muted:  #6b6a63;
+  --es-text-subtle: #8a887f;
+
+  /* Anthropic brand — orange is earned */
+  --es-orange:      #d97757;
+  --es-orange-dark: #c46a4b;
+  --es-orange-soft: #f5e4da;
+
+  /* Semantic tints */
+  --es-blue:        #6a9bcc;
+  --es-blue-soft:   #e2ecf5;
+  --es-green:       #788c5d;
+  --es-green-soft:  #e4ead9;
+  --es-amber:       #c89450;
+  --es-amber-soft:  #f3e6cf;
+
+  /* Typography — loaded via <link> in index.html */
+  --es-font-heading: 'Poppins', Arial, sans-serif;
+  --es-font-body:    'Lora', Georgia, serif;
+  --es-font-mono:    'JetBrains Mono', ui-monospace, monospace;
+
+  /* Override shadcn base so ported shadcn components inherit the warm palette */
+  --background: #faf9f5;
+  --foreground: #141413;
+  --card: #ffffff;
+  --card-foreground: #141413;
+  --border: #e8e6dc;
+  --primary: #d97757;
+  --primary-foreground: #ffffff;
+  --muted: #f4f2ea;
+  --muted-foreground: #6b6a63;
+}
+
+/* Body styles — warm bg, grain, Lora serif as default */
+html, body, #root { height: 100%; margin: 0; }
+
+body {
+  font-family: var(--es-font-body);
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--es-text);
+  background-color: var(--es-bg);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.035 0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Normalise interactive elements so they inherit the ElectraScan look by
+   default rather than the browser stylesheet. Matches the mockup's reset. */
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: inherit;
+  padding: 0;
+}
+input, textarea {
+  font-family: inherit;
+  outline: none;
+  border: none;
+  background: none;
+  color: inherit;
+}
+table {
+  border-collapse: collapse;
+}
+
+/* Hover utility classes — used by table rows, nav items, buttons, links.
+   Matches the `.es-row`, `.es-nav`, `.es-link`, `.es-btn-*` classes in the
+   mockup. Kept here (not in a utility stylesheet) so a single :hover cascade
+   is the only path that can change hover colour. */
+.es-row:hover { background-color: var(--es-bg-soft); }
+.es-nav:hover { background-color: var(--es-border-soft); }
+.es-link:hover { color: var(--es-orange-dark); }
+.es-btn-primary:hover { background-color: var(--es-orange-dark) !important; }
+.es-btn-ghost:hover { background-color: var(--es-bg-soft); }
+
+/* Anthropic-style motion vocabulary — kept minimal and reusable. */
+@keyframes es-fadeInUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes es-pulse     { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+@keyframes es-spin      { to { transform: rotate(360deg); } }
+@keyframes es-dot       { 0%, 20% { opacity: 0.2; } 50% { opacity: 1; } 100% { opacity: 0.2; } }
+@keyframes es-slideDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+
+.anim-in { animation: es-fadeInUp 450ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.pulse   { animation: es-pulse 1.4s ease-in-out infinite; }
+.spin    { animation: es-spin 1s linear infinite; }

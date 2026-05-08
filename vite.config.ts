@@ -1,6 +1,6 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
@@ -35,5 +35,12 @@ export default defineConfig({
   worker: {
     format: 'es', // Use ES modules for workers
   },
-  assetsInclude: ['**/*.wasm'] // Treat WASM as assets
+  assetsInclude: ['**/*.wasm'], // Treat WASM as assets
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./vitest.setup.ts'],
+    include: ['**/*.test.{ts,tsx}'],
+    exclude: ['node_modules/**', 'supabase/functions/**'],
+  },
 });

@@ -6,12 +6,9 @@ import {
   groupByRoom,
   getReviewItems,
 } from "./analyze_pdf";
-import VariationReport, { VariationEstimateLike } from "./components/VariationReport";
-import ApprovalsScreen, { ApprovalEstimateLike } from "./components/ApprovalsScreen";
-import RateLibrary from "./components/RateLibrary";
-import EmailUpload from "./components/EmailUpload";
-import ReportsScreen from "./components/ReportsScreen";
-import type { RiskFlag as DetectionRiskFlag } from "./analyze_pdf";
+import VariationReport, { VariationItem, VariationRisk } from "./components/VariationReport";
+import { getActiveCompanyProfile } from "./services/companyProfile";
+import { downloadEstimatePDF } from "./utils/estimatePdf";
 
 // ─── Design tokens ─────────────────────────────
 const C = {
@@ -22,7 +19,7 @@ const C = {
   purple: "#7C3AED",
 };
 
-type Screen = "dashboard" | "upload" | "scanning" | "results" | "estimate" | "project" | "variation" | "approvals" | "ratelibrary" | "email" | "reports";
+type Screen = "dashboard" | "upload" | "scanning" | "results" | "estimate" | "project" | "variation";
 type ResultTab = "schedule" | "risks";
 type ProjectStatus = "estimating" | "submitted" | "approved" | "active" | "completed";
 
@@ -130,6 +127,31 @@ const MOCK_PROJECTS: Project[] = [
   },
 ];
 
+// ─── Mock variation data ─────────────────────────
+// Simulates what a revised drawing scan would produce when compared to the base estimate.
+const MOCK_VARIATION_ITEMS: VariationItem[] = [
+  { description: "Recessed pair of Down Lights",    prevQty: 18, newQty: 22, unitPrice: 200,  change: "increased" },
+  { description: "LED Strip Light",                 prevQty: 23, newQty: 28, unitPrice: 400,  change: "increased" },
+  { description: "Motorised Blind",                 prevQty: 14, newQty: 18, unitPrice: 380,  change: "increased" },
+  { description: "ZETR 13 series double powerpoint", prevQty: 6, newQty: 8,  unitPrice: 525,  change: "increased" },
+  { description: "EV Charger",                      prevQty: 0,  newQty: 2,  unitPrice: 1000, change: "added" },
+  { description: "Ceiling Fan",                     prevQty: 4,  newQty: 2,  unitPrice: 450,  change: "decreased" },
+  { description: "Door Bell",                       prevQty: 1,  newQty: 0,  unitPrice: 250,  change: "removed" },
+];
+
+const MOCK_VARIATION_RISKS: VariationRisk[] = [
+  {
+    level: "medium",
+    title: "EV Charger added",
+    description: "2 EV charger points added to drawings. Confirm cable run distance — max 15m from switchboard. Add cable allowance if over.",
+  },
+  {
+    level: "info",
+    title: "Motorised Blind qty increase",
+    description: "4 additional motorised blinds detected. Ensure Dynalite/Dali programming scope covers the extra zones. Confirm with automation contractor.",
+  },
+];
+
 const CSS = `
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   html,body{margin:0;padding:0;background:#0A1628;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif;}
@@ -151,8 +173,8 @@ const toLineItems = (components: DetectedComponent[]): LineItem[] =>
   }));
 
 // ─── Dashboard Screen ───────────────────────────
-function DashboardScreen({ projects, onNewScan, onOpenProject, onOpenRateLibrary, onOpenEmail }: {
-  projects: Project[]; onNewScan: () => void; onOpenProject: (p: Project) => void; onOpenRateLibrary: () => void; onOpenEmail: () => void;
+function DashboardScreen({ projects, onNewScan, onOpenProject }: {
+  projects: Project[]; onNewScan: () => void; onOpenProject: (p: Project) => void;
 }) {
   const [filter, setFilter] = useState<ProjectStatus | "all">("all");
   const totalValue = projects.reduce((s, p) => s + p.contractValue, 0);
@@ -171,24 +193,13 @@ function DashboardScreen({ projects, onNewScan, onOpenProject, onOpenRateLibrary
             </div>
             <div style={{ fontSize: 12, color: C.muted, marginTop: 1 }}>Vesh Electrical Services</div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button onClick={onOpenEmail}
-              title="Email Upload inbox"
-              style={{
-                background: C.card, border: `1px solid ${C.border}`, color: C.text,
-                width: 40, height: 40, borderRadius: 12, cursor: "pointer",
-                display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18,
-              }}>
-              📧
-            </button>
-            <button onClick={onNewScan} style={{
-              background: C.blue, border: "none", color: "#fff",
-              fontSize: 13, fontWeight: 700, padding: "10px 16px",
-              borderRadius: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
-            }}>
-              <span style={{ fontSize: 16 }}>⚡</span> New Scan
-            </button>
-          </div>
+          <button onClick={onNewScan} style={{
+            background: C.blue, border: "none", color: "#fff",
+            fontSize: 13, fontWeight: 700, padding: "10px 16px",
+            borderRadius: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
+          }}>
+            <span style={{ fontSize: 16 }}>⚡</span> New Scan
+          </button>
         </div>
 
         {/* KPI strip */}
@@ -294,9 +305,9 @@ function DashboardScreen({ projects, onNewScan, onOpenProject, onOpenRateLibrary
           <div style={{ width: 44, height: 44, borderRadius: "50%", background: C.blue, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, marginTop: -10, boxShadow: `0 4px 20px ${C.blue}66` }}>⚡</div>
           <div style={{ fontSize: 11, fontWeight: 600, color: C.blue }}>Scan</div>
         </button>
-        <button onClick={onOpenRateLibrary} style={{ flex: 1, background: "none", border: "none", padding: "8px 0", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-          <div style={{ fontSize: 20 }}>📚</div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: C.muted }}>Library</div>
+        <button style={{ flex: 1, background: "none", border: "none", padding: "8px 0", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+          <div style={{ fontSize: 20 }}>⚙️</div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: C.muted }}>Settings</div>
         </button>
       </div>
     </div>
@@ -304,8 +315,8 @@ function DashboardScreen({ projects, onNewScan, onOpenProject, onOpenRateLibrary
 }
 
 // ─── Project Detail Screen ──────────────────────
-function ProjectScreen({ project, onBack, onNewScan, onOpenVariation, onOpenApprovals, onOpenReports }: {
-  project: Project; onBack: () => void; onNewScan: () => void; onOpenVariation: (p: Project) => void; onOpenApprovals: (p: Project) => void; onOpenReports: (p: Project) => void;
+function ProjectScreen({ project, onBack, onNewScan, onViewVariation }: {
+  project: Project; onBack: () => void; onNewScan: () => void; onViewVariation: () => void;
 }) {
   const status = STATUS_CONFIG[project.status];
   const latestEst = project.estimates[project.estimates.length - 1];
@@ -426,46 +437,18 @@ function ProjectScreen({ project, onBack, onNewScan, onOpenVariation, onOpenAppr
               <div style={{ fontSize: 11, color: C.muted, fontWeight: 400 }}>Upload Rev {String.fromCharCode(65 + project.estimates.length)} → auto-generate variation report</div>
             </div>
           </button>
-          <button onClick={() => onOpenVariation(project)} style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text, fontSize: 14, fontWeight: 600, padding: "14px", borderRadius: 14, cursor: "pointer", textAlign: "left" as const, display: "flex", alignItems: "center", gap: 10 }}>
+          <button onClick={onViewVariation} style={{ background: C.card, border: `1px solid ${C.purple}`, color: C.text, fontSize: 14, fontWeight: 700, padding: "14px", borderRadius: 14, cursor: "pointer", textAlign: "left" as const, display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{ fontSize: 20 }}>📊</span>
             <div>
-              <div>Variation report</div>
-              <div style={{ fontSize: 11, color: C.muted, fontWeight: 400 }}>
-                {project.estimates.length >= 2
-                  ? `Compare ${project.estimates[project.estimates.length - 2].number} → ${project.estimates[project.estimates.length - 1].number}`
-                  : project.estimates.length === 1
-                    ? `Preview change deltas vs baseline`
-                    : `Scan a drawing first to generate a baseline`}
-              </div>
+              <div style={{ color: C.purple }}>Variation report</div>
+              <div style={{ fontSize: 11, color: C.muted, fontWeight: 400 }}>Compare drawing versions — auto-diff against {project.estimates[project.estimates.length - 1]?.number ?? "base estimate"}</div>
             </div>
           </button>
-          <button
-            onClick={() => onOpenApprovals(project)}
-            disabled={project.estimates.length === 0}
-            style={{
-              background: C.card,
-              border: `1px solid ${project.estimates.length === 0 ? C.border : C.green}55`,
-              color: project.estimates.length === 0 ? C.muted : C.text,
-              fontSize: 14, fontWeight: 600, padding: "14px", borderRadius: 14,
-              cursor: project.estimates.length === 0 ? "not-allowed" : "pointer",
-              textAlign: "left" as const, display: "flex", alignItems: "center", gap: 10,
-              opacity: project.estimates.length === 0 ? 0.6 : 1,
-            }}>
-            <span style={{ fontSize: 20 }}>✅</span>
+          <button style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text, fontSize: 14, fontWeight: 600, padding: "14px", borderRadius: 14, cursor: "pointer", textAlign: "left" as const, display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 20 }}>📁</span>
             <div>
-              <div>Approval workflow</div>
-              <div style={{ fontSize: 11, color: C.muted, fontWeight: 400 }}>
-                {project.estimates.length === 0
-                  ? "Scan a drawing first to generate an estimate to approve"
-                  : `Track ${project.estimates[project.estimates.length - 1].number} through builder review`}
-              </div>
-            </div>
-          </button>
-          <button onClick={() => onOpenReports(project)} style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text, fontSize: 14, fontWeight: 600, padding: "14px", borderRadius: 14, cursor: "pointer", textAlign: "left" as const, display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 20 }}>📈</span>
-            <div>
-              <div>Project reports</div>
-              <div style={{ fontSize: 11, color: C.muted, fontWeight: 400 }}>Budget, burndown, hours, milestones & accounting</div>
+              <div>Full project report</div>
+              <div style={{ fontSize: 11, color: C.muted, fontWeight: 400 }}>All versions, variations & audit trail — coming soon</div>
             </div>
           </button>
         </div>
@@ -688,9 +671,29 @@ function EstimateEditor({ result, fileName, onBack }: {
   const deleteItem = (id: string) => !locked && setItems(prev => prev.filter(i => i.id !== id));
   const addItem = () => { if (locked) return; const n: LineItem = { id: `m-${Date.now()}`, description: "New item", room: "General", qty: 1, unitPrice: 0, lineTotal: 0, locked: false, fromDetection: false }; setItems(prev => [...prev, n]); };
 
-  const exportEst = () => {
-    const lines = [`ELECTRICAL ESTIMATE\n${estNumber}\n\nVesh Electrical Services Pty Ltd\n7/108 Old Pittwater Road, Brookvale NSW 2100\n\nDate: ${new Date().toLocaleDateString("en-AU")}\nDrawing: ${fileName}\n\n${"─".repeat(60)}\nITEM                                    QTY    RATE      TOTAL\n${"─".repeat(60)}`, ...items.map(i => `${i.description.padEnd(40)} ${String(i.qty).padStart(3)}  $${String(i.unitPrice).padStart(7)}  $${String(i.qty * i.unitPrice).padStart(8)}`), `${"─".repeat(60)}\n\nSubtotal ex GST:      ${fmt(subtotal).padStart(12)}\nMargin (${margin}%):          ${fmt(marginAmt).padStart(12)}\nSubtotal with margin: ${fmt(subtotalM).padStart(12)}\nGST (10%):            ${fmt(gst).padStart(12)}\nTOTAL INC GST:        ${fmt(total).padStart(12)}\n\nValid for 30 days.`].join("\n");
-    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([lines], { type: "text/plain" })); a.download = `${estNumber}.txt`; a.click();
+  const exportEst = async () => {
+    // Generate a branded PDF estimate using the active tenant's CompanyProfile.
+    // Falls back to a basic alert on error (no ToastContext here; fine for now).
+    try {
+      const company = getActiveCompanyProfile();
+      await downloadEstimatePDF({
+        company,
+        estimateNumber: estNumber,
+        date: new Date().toLocaleDateString("en-AU"),
+        drawingFile: fileName,
+        projectName: fileName.replace(/\.pdf$/i, "").replace(/[_-]/g, " "),
+        items: items.map(i => ({
+          description: i.description,
+          room: i.room,
+          qty: i.qty,
+          unitPrice: i.unitPrice,
+        })),
+        marginPercent: margin,
+      });
+    } catch (err) {
+      console.error("Failed to generate estimate PDF:", err);
+      alert("Could not generate PDF. Check console for details.");
+    }
   };
 
   return (
@@ -785,39 +788,12 @@ function EstimateEditor({ result, fileName, onBack }: {
       </div>
 
       {/* Bottom bar */}
-      {/* Export Quote is the primary action and is available as soon as the
-          estimate has line items — it's no longer gated on the submission /
-          lock status. Lock & Finalise remains a separate secondary action
-          shown only while the estimate is still a draft. */}
       <div style={{ position: "fixed" as const, bottom: 0, left: 0, right: 0, background: C.navy, borderTop: `1px solid ${C.border}`, padding: "10px 14px", display: "flex", gap: 10 }}>
-        <button
-          onClick={exportEst}
-          disabled={items.length === 0}
-          style={{
-            flex: locked ? 1 : 2,
-            background: items.length === 0 ? C.card : C.blue,
-            border: items.length === 0 ? `1px solid ${C.border}` : "none",
-            color: items.length === 0 ? C.muted : "#fff",
-            fontSize: 14, fontWeight: 700, padding: "12px", borderRadius: 12,
-            cursor: items.length === 0 ? "not-allowed" : "pointer",
-            opacity: items.length === 0 ? 0.6 : 1,
-          }}
-        >📤 Export Quote</button>
-        {!locked && (
-          <button
-            onClick={() => setShowLock(true)}
-            disabled={items.length === 0}
-            style={{
-              flex: 2,
-              background: items.length === 0 ? C.card : C.green,
-              border: items.length === 0 ? `1px solid ${C.border}` : "none",
-              color: items.length === 0 ? C.muted : "#fff",
-              fontSize: 14, fontWeight: 700, padding: "12px", borderRadius: 12,
-              cursor: items.length === 0 ? "not-allowed" : "pointer",
-              opacity: items.length === 0 ? 0.6 : 1,
-            }}
-          >🔒 Lock & Finalise</button>
-        )}
+        <button onClick={exportEst} style={{ flex: 1, background: C.card, border: `1px solid ${C.border}`, color: C.text, fontSize: 13, fontWeight: 600, padding: "12px", borderRadius: 12, cursor: "pointer" }}>Export</button>
+        {!locked
+          ? <button onClick={() => setShowLock(true)} style={{ flex: 2, background: C.green, border: "none", color: "#fff", fontSize: 14, fontWeight: 700, padding: "12px", borderRadius: 12, cursor: "pointer" }}>🔒 Lock & Finalise</button>
+          : <button onClick={exportEst} style={{ flex: 2, background: C.blue, border: "none", color: "#fff", fontSize: 14, fontWeight: 700, padding: "12px", borderRadius: 12, cursor: "pointer" }}>📤 Export Quote</button>
+        }
       </div>
     </div>
   );
@@ -831,96 +807,32 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>(MOCK_PROJECTS);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
-  const [variationPair, setVariationPair] = useState<{
-    projectName: string;
-    previous: VariationEstimateLike;
-    current: VariationEstimateLike;
-    detectedRiskFlags?: DetectionRiskFlag[];
-  } | null>(null);
-  const [approvalsContext, setApprovalsContext] = useState<{
-    projectName: string;
-    projectSummary: string;
-    currentEstimate: ApprovalEstimateLike;
-    priorEstimate?: ApprovalEstimateLike;
-  } | null>(null);
 
   const handleFile = async (f: File) => {
     setFile(f); setError(null); setScreen("scanning");
     try {
+      console.log("[ElectraScan][app] handleFile: calling detectElectricalComponents for", f.name);
       const d = await detectElectricalComponents(f, "001");
+      console.log("[ElectraScan][app] detectElectricalComponents returned:", {
+        components: d?.components?.length ?? 0,
+        legend_items: d?.legend_items?.length ?? 0,
+        legend_found: d?.legend_found,
+        scale_detected: d?.scale_detected,
+        estimate_subtotal: d?.estimate_subtotal,
+        risk_flags: d?.risk_flags?.length ?? 0,
+      });
+      console.log("[ElectraScan][app] detection.components value before fallback check:", d?.components);
+      if (!d?.components || d.components.length === 0) {
+        console.warn("[ElectraScan][app] detection.components is empty/null — UI will render an empty state (or fall back to mock if a parent wired one).");
+      }
       setResult(d); setScreen("results");
     } catch (err: any) {
+      console.error("[ElectraScan][app] detectElectricalComponents threw:", err);
       setError(err?.message ?? "Detection failed."); setScreen("upload");
     }
   };
 
   const goToScan = () => { setScreen("upload"); setFile(null); setResult(null); setError(null); };
-
-  const openVariation = (project: Project) => {
-    // Pick the two most-recent estimates. Synthesise a baseline if the project
-    // only has one estimate so the report still renders a meaningful delta —
-    // this mirrors the prototype's V001 → V002 comparison UX.
-    const ests = project.estimates;
-    let previous: VariationEstimateLike;
-    let current: VariationEstimateLike;
-    if (ests.length >= 2) {
-      const p = ests[ests.length - 2];
-      const c = ests[ests.length - 1];
-      previous = { id: p.id, number: p.number, total: p.total, subtotal: p.subtotal, date: p.date, lineItems: p.lineItems };
-      current  = { id: c.id, number: c.number, total: c.total, subtotal: c.subtotal, date: c.date, lineItems: c.lineItems };
-    } else if (ests.length === 1) {
-      const c = ests[0];
-      const baselineTotal = Math.round(c.total / 1.09);
-      previous = {
-        id: `${c.id}-baseline`,
-        number: c.number.replace(/-(\d+)$/, (_, n) => `-${String(Math.max(Number(n) - 1, 1)).padStart(3, "0")}`),
-        total: baselineTotal,
-        subtotal: Math.round(baselineTotal / 1.1),
-        date: c.date,
-        lineItems: [],
-      };
-      current = { id: c.id, number: c.number, total: c.total, subtotal: c.subtotal, date: c.date, lineItems: c.lineItems };
-    } else {
-      // No estimates yet — fall back to demo numbers.
-      previous = { id: "v001", number: `EST-${new Date().getFullYear()}-001-001`, total: 136200, lineItems: [] };
-      current  = { id: "v002", number: `EST-${new Date().getFullYear()}-001-002`, total: 148500, lineItems: [] };
-    }
-    // If the current in-memory scan result belongs to the project being
-    // opened, pass its risk flags through. The detection pipeline populates
-    // `result.risk_flags` via generateRiskFlags() in analyze_pdf.ts.
-    const scanFlags = result?.risk_flags;
-    setVariationPair({
-      projectName: project.name,
-      previous,
-      current,
-      detectedRiskFlags: scanFlags && scanFlags.length > 0 ? scanFlags : undefined,
-    });
-    setSelectedProject(project);
-    setScreen("variation");
-  };
-
-  const openApprovals = (project: Project) => {
-    const ests = project.estimates;
-    if (ests.length === 0) return;
-    const current = ests[ests.length - 1];
-    const prior = ests.length >= 2 ? ests[ests.length - 2] : undefined;
-    const toApproval = (e: Estimate): ApprovalEstimateLike => ({
-      id: e.id,
-      number: e.number,
-      total: e.total,
-      componentCount: e.lineItems.length || undefined,
-      date: e.date,
-      status: e.status,
-    });
-    setApprovalsContext({
-      projectName: project.name,
-      projectSummary: `${project.name} · ${project.client}`,
-      currentEstimate: toApproval(current),
-      priorEstimate: prior ? toApproval(prior) : undefined,
-    });
-    setSelectedProject(project);
-    setScreen("approvals");
-  };
 
   const handleNewEstimate = () => {
     if (!result || !file) return;
@@ -956,46 +868,24 @@ export default function App() {
   return (
     <>
       <style>{CSS}</style>
-      {screen === "dashboard" && <DashboardScreen projects={projects} onNewScan={goToScan} onOpenProject={p => { setSelectedProject(p); setScreen("project"); }} onOpenRateLibrary={() => setScreen("ratelibrary")} onOpenEmail={() => setScreen("email")} />}
-      {screen === "project" && selectedProject && <ProjectScreen project={selectedProject} onBack={() => setScreen("dashboard")} onNewScan={goToScan} onOpenVariation={openVariation} onOpenApprovals={openApprovals} onOpenReports={(p) => { setSelectedProject(p); setScreen("reports"); }} />}
+      {screen === "dashboard" && <DashboardScreen projects={projects} onNewScan={goToScan} onOpenProject={p => { setSelectedProject(p); setScreen("project"); }} />}
+      {screen === "project" && selectedProject && <ProjectScreen project={selectedProject} onBack={() => setScreen("dashboard")} onNewScan={goToScan} onViewVariation={() => setScreen("variation")} />}
+      {screen === "variation" && selectedProject && (
+        <VariationReport
+          projectName={selectedProject.name}
+          projectAddress={selectedProject.address}
+          clientName={selectedProject.client}
+          baseEstNumber={selectedProject.estimates[selectedProject.estimates.length - 1]?.number ?? "EST-2026-000-001"}
+          baseTotal={selectedProject.estimates[selectedProject.estimates.length - 1]?.subtotal ?? 0}
+          variationItems={MOCK_VARIATION_ITEMS}
+          risks={MOCK_VARIATION_RISKS}
+          onBack={() => setScreen("project")}
+        />
+      )}
       {screen === "upload" && <UploadScreen onFile={handleFile} onBack={() => setScreen("dashboard")} error={error} />}
       {screen === "scanning" && file && <ScanningScreen fileName={file.name} />}
       {screen === "results" && result && file && <ResultsScreen result={result} fileName={file.name} onBack={goToScan} onBuildEstimate={handleNewEstimate} />}
       {screen === "estimate" && result && file && <EstimateEditor result={result} fileName={file.name} onBack={() => setScreen("dashboard")} />}
-      {screen === "variation" && variationPair && (
-        <VariationReport
-          projectName={variationPair.projectName}
-          previous={variationPair.previous}
-          current={variationPair.current}
-          detectedRiskFlags={variationPair.detectedRiskFlags}
-          onBack={() => setScreen(selectedProject ? "project" : "dashboard")}
-          onOpenScan={goToScan}
-        />
-      )}
-      {screen === "approvals" && approvalsContext && (
-        <ApprovalsScreen
-          projectName={approvalsContext.projectName}
-          projectSummary={approvalsContext.projectSummary}
-          currentEstimate={approvalsContext.currentEstimate}
-          priorEstimate={approvalsContext.priorEstimate}
-          onBack={() => setScreen(selectedProject ? "project" : "dashboard")}
-        />
-      )}
-      {screen === "ratelibrary" && (
-        <RateLibrary onBack={() => setScreen("dashboard")} />
-      )}
-      {screen === "email" && (
-        <EmailUpload
-          onBack={() => setScreen("dashboard")}
-          onUploadManual={goToScan}
-        />
-      )}
-      {screen === "reports" && (
-        <ReportsScreen
-          projectName={selectedProject?.name}
-          onBack={() => setScreen(selectedProject ? "project" : "dashboard")}
-        />
-      )}
     </>
   );
 }

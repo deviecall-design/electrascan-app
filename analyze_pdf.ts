@@ -180,21 +180,9 @@ Return ONLY valid JSON — no markdown:
 const buildFloorPlanPrompt = (legendItems: LegendItem[]): string => {
   const inScope = legendItems.filter(l => l.in_electrical_scope && l.catalogue_price);
 
-  const symbolDecoder = inScope.length > 0
-    ? inScope.map(l =>
-        `  SYMBOL: ${l.symbol_visual} → "${l.symbol_description}" → ${l.quantity} EA total across whole drawing → type: ${l.mapped_type}`
-      ).join("\n")
-    : `  No legend was extracted. Identify common Australian electrical symbols by appearance:
-  - Filled circles / dots → Downlights (DOWNLIGHT_RECESSED)
-  - Squares with two parallel lines → GPO / power point (GPO_DOUBLE)
-  - Squares with "WP" or weatherproof marker → Weatherproof GPO (GPO_WEATHERPROOF)
-  - Circles or rectangles with "S" / switch glyph → Light switch (SWITCHING_STANDARD)
-  - "DB" or panel boxes → Distribution board (SWITCHBOARD_SUB)
-  - Triangles or fan blades → Exhaust fan (EXHAUST_FAN) or ceiling fan
-  - "TV" / "D" / data jacks → Data / TV outlet (DATA_CAT6 / DATA_TV)
-  - "EV" / car charger glyph → EV charger (EV_CHARGER)
-  - Smoke detector circles with "S" → smoke alarm (use SECURITY_ALARM)
-  - Pendant / feature glyph → PENDANT_FEATURE`;
+  const symbolDecoder = inScope.map(l =>
+    `  SYMBOL: ${l.symbol_visual} → "${l.symbol_description}" → ${l.quantity} EA total across whole drawing → type: ${l.mapped_type}`
+  ).join("\n");
 
   return `You are ElectraScan scanning an Australian electrical floor plan.
 
@@ -263,33 +251,19 @@ async function pdfToImages(file: File): Promise<string[]> {
 }
 
 function extractJSON(raw: string): string {
-  if (!raw) return "";
-  let s = raw.trim();
+  // Strip ``` / ```json fences if the model wrapped its output.
+  let s = raw.replace(/^```(?:json)?\s*/im, "").replace(/\s*```$/im, "").trim();
 
-  const fenced = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fenced && fenced[1]) s = fenced[1].trim();
-
+  // Some responses prepend prose ("Here is the JSON: …") or append a
+  // trailing sentence. Slice out the substring between the first { and the
+  // matching last } so JSON.parse doesn't choke on the surrounding text.
+  // Falls back to the trimmed string if no braces are present.
   const first = s.indexOf("{");
   const last = s.lastIndexOf("}");
   if (first !== -1 && last !== -1 && last > first) {
     s = s.slice(first, last + 1);
   }
-
-  return s.trim();
-}
-
-function safeParse<T = any>(raw: string, label: string): T | null {
-  const cleaned = extractJSON(raw);
-  if (!cleaned) {
-    console.warn(`[ElectraScan v4] ${label}: empty response`);
-    return null;
-  }
-  try {
-    return JSON.parse(cleaned) as T;
-  } catch (err) {
-    console.warn(`[ElectraScan v4] ${label}: JSON parse failed`, err, "snippet:", cleaned.slice(0, 200));
-    return null;
-  }
+  return s;
 }
 
 // ─────────────────────────────────────────────
@@ -349,6 +323,10 @@ function enrichLegendItems(rawItems: any[]): LegendItem[] {
   return rawItems.map(item => {
     const { catalogueItem, price, componentType, automationFlag } =
       matchToVesh(item.symbol_description ?? "");
+    // Always assign a price — use the catalogue match, or fall back to the
+    // FALLBACK_PRICING table so legend items never silently drop from both
+    // the Pass 2 decoder and the buildComponents missed-item sweep.
+    const resolvedPrice = price ?? FALLBACK_PRICING[componentType] ?? 200;
     return {
       symbol_description: item.symbol_description ?? "",
       symbol_visual: item.symbol_visual ?? "unknown symbol",
@@ -356,7 +334,7 @@ function enrichLegendItems(rawItems: any[]): LegendItem[] {
       unit: item.unit ?? "EA",
       mapped_type: componentType,
       catalogue_id: catalogueItem?.id ?? null,
-      catalogue_price: price,
+      catalogue_price: resolvedPrice,
       in_electrical_scope: item.in_electrical_scope !== false,
       automation_flag: automationFlag,
       notes: item.notes ?? "",
@@ -508,7 +486,7 @@ export async function detectElectricalComponents(
 
   try {
     const r = await client.messages.create({
-      model: "claude-sonnet-4-6",
+      model: "claude-sonnet-4-20250514",
       max_tokens: 2000,
       system: LEGEND_SYSTEM_PROMPT,
       messages: [{
@@ -520,15 +498,15 @@ export async function detectElectricalComponents(
       }],
     });
     rawLegendResponse = r.content[0].type === "text" ? r.content[0].text : "";
-    const parsed = safeParse<{ legend_found?: boolean; scale_detected?: string; items?: any[] }>(
-      rawLegendResponse,
-      "Legend parse"
-    );
-    if (parsed) {
-      legendFound = parsed.legend_found ?? false;
-      scaleDetected = parsed.scale_detected ?? "unknown";
-      legendItems = enrichLegendItems(parsed.items ?? []);
-    }
+    console.log("[ElectraScan][detect] Pass 1 raw response (first 500 chars):", rawLegendResponse.slice(0, 500));
+    console.log("[ElectraScan][detect] Pass 1 stop_reason / content blocks:", r.stop_reason, r.content.length);
+    const extracted = extractJSON(rawLegendResponse);
+    console.log("[ElectraScan][detect] Pass 1 extracted JSON (first 500 chars):", extracted.slice(0, 500));
+    const parsed = JSON.parse(extracted);
+    console.log("[ElectraScan][detect] Pass 1 parsed keys:", Object.keys(parsed), "items count:", (parsed.items ?? []).length);
+    legendFound = parsed.legend_found ?? false;
+    scaleDetected = parsed.scale_detected ?? "unknown";
+    legendItems = enrichLegendItems(parsed.items ?? []);
 
     const legendSubtotal = legendItems.filter(l => l.in_electrical_scope && l.catalogue_price)
       .reduce((s, l) => s + (l.catalogue_price! * l.quantity), 0);
@@ -538,6 +516,7 @@ export async function detectElectricalComponents(
     });
   } catch (err) {
     console.warn("[ElectraScan v4] Legend extraction failed:", err);
+    console.warn("[ElectraScan][detect] Pass 1 failure — raw response was:", rawLegendResponse);
   }
 
   // ── PASS 2: Floor plan scan with symbol decoder ─
@@ -545,9 +524,27 @@ export async function detectElectricalComponents(
   let rawResponse = "";
   let roomComponents: any[] = [];
 
+  // The Pass 2 SYMBOL DECODER only includes legend items with a Vesh
+  // catalogue_price match. If the tenant scans plans for a builder whose
+  // symbols aren't yet in the catalogue, the decoder is empty and Claude
+  // has nothing to anchor against — log this so we can spot the case.
+  const decoderInScope = legendItems.filter(l => l.in_electrical_scope && l.catalogue_price);
+  console.log(`[ElectraScan][detect] Pass 2 decoder built from ${decoderInScope.length}/${legendItems.length} legend items`);
+  if (decoderInScope.length === 0) {
+    // All in-scope legend items now have a fallback price (see enrichLegendItems),
+    // so this branch indicates Pass 1 found no electrical items at all — not a
+    // catalogue-match failure. buildComponents will still produce output from the
+    // legend-item missed-item sweep if legendItems has entries.
+    console.warn(
+      "[ElectraScan][detect] Pass 2 decoder is EMPTY — Pass 1 found no in-scope electrical items. " +
+      `legendItems total: ${legendItems.length}. ` +
+      "buildComponents will still produce components from the legend-item fallback sweep."
+    );
+  }
+
   try {
     const r = await client.messages.create({
-      model: "claude-sonnet-4-6",
+      model: "claude-sonnet-4-20250514",
       max_tokens: 4096,
       system: buildFloorPlanPrompt(legendItems),
       messages: [{
@@ -559,24 +556,37 @@ export async function detectElectricalComponents(
       }],
     });
     rawResponse = r.content[0].type === "text" ? r.content[0].text : "";
-    const parsed = safeParse<{ scale_detected?: string; components?: any[] }>(
-      rawResponse,
-      "Floor plan parse"
-    );
-    if (parsed) {
-      if (parsed.scale_detected && scaleDetected === "unknown") scaleDetected = parsed.scale_detected;
-      roomComponents = parsed.components ?? [];
-    }
+    console.log("[ElectraScan][detect] Pass 2 raw response (first 500 chars):", rawResponse.slice(0, 500));
+    console.log("[ElectraScan][detect] Pass 2 stop_reason / content blocks:", r.stop_reason, r.content.length);
+    const extracted = extractJSON(rawResponse);
+    console.log("[ElectraScan][detect] Pass 2 extracted JSON (first 500 chars):", extracted.slice(0, 500));
+    const parsed = JSON.parse(extracted);
+    console.log("[ElectraScan][detect] Pass 2 parsed keys:", Object.keys(parsed), "components count:", (parsed.components ?? []).length);
+    if (parsed.scale_detected && scaleDetected === "unknown") scaleDetected = parsed.scale_detected;
+    roomComponents = parsed.components ?? [];
     console.log(`[ElectraScan v4] Room distribution: ${roomComponents.length} entries across rooms`);
   } catch (err) {
     console.warn("[ElectraScan v4] Room scan failed:", err);
+    console.warn("[ElectraScan][detect] Pass 2 failure — raw response was:", rawResponse);
   }
 
+  console.log(`[ElectraScan][detect] buildComponents inputs: legendItems=${legendItems.length}, roomComponents=${roomComponents.length}`);
   const components = buildComponents(legendItems, roomComponents);
+  console.log(`[ElectraScan][detect] buildComponents output: components=${components.length}`);
   const riskFlags = generateRiskFlags(components);
   const estimateSubtotal = components.reduce((s, c) => s + c.line_total, 0);
 
   console.log(`[ElectraScan v4] Complete: ${components.length} items, $${estimateSubtotal.toLocaleString()}`);
+
+  if (components.length === 0) {
+    console.error(
+      "[ElectraScan][detect] DETECTION RETURNED 0 COMPONENTS. " +
+      "Check the Pass 1 / Pass 2 raw responses above for: (a) JSON parse errors, " +
+      "(b) empty `items` / `components` arrays from the model, " +
+      "(c) an empty Pass 2 decoder (no legend items had a Vesh catalogue match), " +
+      "(d) HTTP/auth errors from the Anthropic SDK."
+    );
+  }
 
   return {
     drawing_version: drawingVersion,
