@@ -78,6 +78,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_symbol_dict_updated_at ON symbol_dictionary;
 CREATE TRIGGER trg_symbol_dict_updated_at
   BEFORE UPDATE ON symbol_dictionary
   FOR EACH ROW EXECUTE FUNCTION update_symbol_dictionary_updated_at();
@@ -139,6 +140,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_legend_lib_updated_at ON legend_library;
 CREATE TRIGGER trg_legend_lib_updated_at
   BEFORE UPDATE ON legend_library
   FOR EACH ROW EXECUTE FUNCTION update_legend_library_updated_at();
@@ -252,4 +254,4 @@ BEGIN
 
   RETURN v_result;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;

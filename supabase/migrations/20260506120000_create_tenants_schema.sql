@@ -190,6 +190,7 @@ RETURNS UUID
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
   SELECT tenant_id
   FROM public.tenant_memberships
