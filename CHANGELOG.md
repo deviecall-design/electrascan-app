@@ -3,6 +3,21 @@
 All notable changes to ElectraScan are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.1.1.0] - 2026-05-08
+
+### Added
+
+- **Rate library CRUD** — Add rate, edit rate, and delete rate operations are now fully wired to Supabase. All three mutations update the UI immediately (optimistic update) and roll back on error with a toast message.
+- `deleteRate(id)` added to `services/supabaseData.ts` — deletes a row from `rate_library` by ID.
+- Add/edit modal in Pricing Schedule screen: code, category, description, unit, material rate, labour rate fields with live total preview.
+- **DocuSign "Send for Approval" real integration** — the button in the Approvals screen now POSTs to `/api/docusign/envelope` with signer name, email, estimate ref, project name, and a placeholder PDF. On success, shows the envelope ID in a green banner and logs to `approval_audit`. On failure, shows an error toast without advancing the sent state.
+- Editable signer name and email fields on the Approvals screen (pre-filled from the first signatory).
+- 13 new tests: `rateLibraryCrud.test.ts` (deleteRate + upsertRate) and `docusignSend.test.ts` (6 integration scenarios covering success, error, audit insert, network failure).
+
+### Changed
+
+- Approvals screen: `Send for Approval` button now shows loading spinner during API call and is disabled until the call resolves.
+
 ## [1.1.0.0] - 2026-05-07
 
 ### Added
