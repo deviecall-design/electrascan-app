@@ -7,7 +7,68 @@ import {
   ChevronRight, Loader2, Check,
   AlertCircle, Keyboard, Bot, Copy
 } from 'lucide-react';
-import { listEstimates, getDashboardKPIs } from '../../services/estimateService';
+import { listEstimates } from '../../services/estimateService';
+import {
+  fetchEstimatesThisMonth,
+  fetchPendingValue,
+  fetchWinRate,
+  fetchAvgScanToQuote,
+  formatScanToQuote,
+} from '../../services/supabaseData';
+
+/**
+ * mapDetectionToItems — converts a DetectionResult.components array (from
+ * analyze_pdf.ts detectElectricalComponents) into the DETECTED_ITEMS shape
+ * expected by the mockup UI.
+ *
+ * Returns an empty array when detection is null/undefined so the caller can
+ * decide whether to fall back to the hardcoded DETECTED_ITEMS constant.
+ */
+function mapDetectionToItems(detection) {
+  if (!detection || !Array.isArray(detection.components) || detection.components.length === 0) {
+    return [];
+  }
+  return detection.components.map((c, i) => {
+    // Map ComponentType to a short symbol badge (mirrors RATE_LIBRARY codes)
+    const symbolMap = {
+      GPO_STANDARD: 'GPO', GPO_DOUBLE: 'GPO', GPO_WEATHERPROOF: 'GPO', GPO_USB: 'GPO',
+      DOWNLIGHT_RECESSED: 'LT', PENDANT_FEATURE: 'LT', EXHAUST_FAN: 'FN',
+      SWITCHING_STANDARD: 'SW', SWITCHING_DIMMER: 'SW', SWITCHING_2WAY: 'SW',
+      SWITCHBOARD_MAIN: 'DB', SWITCHBOARD_SUB: 'DB',
+      DATA_CAT6: 'DC', DATA_TV: 'DC',
+      AC_SPLIT: 'FN', AC_DUCTED: 'FN',
+      SECURITY_CCTV: 'SA', SECURITY_INTERCOM: 'SA', SECURITY_ALARM: 'SA',
+      EV_CHARGER: 'EX', POOL_OUTDOOR: 'EX', GATE_ACCESS: 'EX',
+      AUTOMATION_HUB: 'DC',
+    };
+    // Map ComponentType to nearest RATE_LIBRARY code for display
+    const rateMap = {
+      GPO_STANDARD: 'GPO-004', GPO_DOUBLE: 'GPO-001', GPO_WEATHERPROOF: 'GPO-003', GPO_USB: 'GPO-002',
+      DOWNLIGHT_RECESSED: 'LT-001', PENDANT_FEATURE: 'LT-005', EXHAUST_FAN: 'FN-001',
+      SWITCHING_STANDARD: 'SW-001', SWITCHING_DIMMER: 'SW-003', SWITCHING_2WAY: 'SW-002',
+      SWITCHBOARD_MAIN: 'SB-001', SWITCHBOARD_SUB: 'SB-002',
+      DATA_CAT6: 'DC-001', DATA_TV: 'DC-002',
+      AC_SPLIT: 'FN-002', AC_DUCTED: 'FN-002',
+      SECURITY_CCTV: 'SA-002', SECURITY_INTERCOM: 'SA-002', SECURITY_ALARM: 'SA-001',
+      EV_CHARGER: 'EX-003', POOL_OUTDOOR: 'EX-001', GATE_ACCESS: 'EX-001',
+      AUTOMATION_HUB: 'DC-003',
+    };
+    const label = (c.catalogue_item_name || c.type || 'Unknown item')
+      .replace(/_/g, ' ')
+      .toLowerCase()
+      .replace(/^\w/, (ch) => ch.toUpperCase());
+    return {
+      id: i + 1,
+      symbol: symbolMap[c.type] || 'EL',
+      qty: c.quantity,
+      desc: label,
+      rate: rateMap[c.type] || 'GPO-001',
+      conf: Math.min(1, Math.max(0, (c.confidence ?? 90) / 100)),
+      x: 60 + ((i * 73) % 420),
+      y: 60 + ((i * 61) % 280),
+    };
+  });
+}
 
 function daysAgo(iso) {
   if (!iso) return 0;
@@ -252,25 +313,36 @@ function DashboardView({ go }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const data = await getDashboardKPIs();
-      if (!cancelled) setKpis(data);
+      try {
+        // Fetch all four KPIs in parallel using the owner_id-filtered functions
+        const [monthRes, pendingRes, winRes, avgRes] = await Promise.all([
+          fetchEstimatesThisMonth(),
+          fetchPendingValue(),
+          fetchWinRate(),
+          fetchAvgScanToQuote(),
+        ]);
+        if (!cancelled) {
+          setKpis({
+            estimatesThisMonth: monthRes.value,
+            pendingValue: pendingRes.value,
+            winRatePct: winRes.value,
+            avgScanToQuoteMs: avgRes.value,
+          });
+        }
+      } catch (err) {
+        console.error('[ElectraScan] getDashboardKPIs failed:', err);
+      }
     })();
     return () => { cancelled = true; };
   }, []);
 
   const fmtUSD = (n) => `$${Math.round(n).toLocaleString()}`;
-  const fmtSec = (s) => {
-    if (!s || s <= 0) return null;
-    const m = Math.floor(s / 60);
-    const sec = Math.round(s % 60);
-    return `${m}m ${sec}s`;
-  };
 
   const estimatesThisMonth = kpis?.estimatesThisMonth != null ? String(kpis.estimatesThisMonth) : '24';
   const pendingValueRaw = kpis?.pendingValue;
   const pendingValueDisplay = pendingValueRaw != null && pendingValueRaw > 0 ? fmtUSD(pendingValueRaw) : '$48,290';
   const winRateDisplay = kpis?.winRatePct != null ? `${kpis.winRatePct}%` : '68%';
-  const avgQuote = fmtSec(kpis?.avgScanToQuoteSec) ?? '7m 12s';
+  const avgQuote = kpis?.avgScanToQuoteMs != null ? formatScanToQuote(kpis.avgScanToQuoteMs) : '7m 12s';
 
   return (
     <div className="anim-in">
@@ -382,20 +454,42 @@ function ScansView({ go }) {
 function ScanDetailView({ go }) {
   const [step, setStep] = useState(2);
   const [revealed, setRevealed] = useState(0);
+  // detectedItems — populated from real detection when available,
+  // falls back to DETECTED_ITEMS so the mockup always shows something.
+  const [detectedItems, setDetectedItems] = useState(DETECTED_ITEMS);
 
   useEffect(() => {
     if (step !== 2) return;
     setRevealed(0);
     const id = setInterval(() => {
       setRevealed((n) => {
-        if (n >= DETECTED_ITEMS.length) { clearInterval(id); return n; }
+        const total = detectedItems.length;
+        if (n >= total) {
+          clearInterval(id);
+          // Emit the canonical detection-complete log so the console
+          // shows `[ElectraScan v4] Complete: N items` whether the
+          // result came from the API or the hardcoded fallback.
+          const subtotal = detectedItems.reduce((sum, it) => {
+            const rate = RATE_LIBRARY.find((r) => r.code === it.rate);
+            return sum + (rate ? (rate.rate + rate.labour) * it.qty : 0);
+          }, 0);
+          console.log(`[ElectraScan v4] Complete: ${total} items, $${subtotal.toLocaleString()}`);
+          if (total === 0) {
+            console.warn(
+              '[ElectraScan v4] 0 components detected. ' +
+              'mapDetectionToItems() returned empty — check detectElectricalComponents() response. ' +
+              'Falling back to hardcoded DETECTED_ITEMS.'
+            );
+          }
+          return n;
+        }
         return n + 1;
       });
     }, 380);
     return () => clearInterval(id);
-  }, [step]);
+  }, [step, detectedItems]);
 
-  const allDetected = revealed >= DETECTED_ITEMS.length;
+  const allDetected = revealed >= detectedItems.length;
 
   return (
     <div className="anim-in">
@@ -412,9 +506,9 @@ function ScanDetailView({ go }) {
       <StepBar step={step} onStep={setStep} />
 
       {step === 1 && <StepUpload onNext={() => setStep(2)} />}
-      {step === 2 && <StepDetecting revealed={revealed} onNext={() => setStep(3)} ready={allDetected} />}
-      {step === 3 && <StepReview onNext={() => setStep(4)} onBack={() => setStep(2)} />}
-      {step === 4 && <StepQuote onBack={() => setStep(3)} />}
+      {step === 2 && <StepDetecting items={detectedItems} revealed={revealed} onNext={() => setStep(3)} ready={allDetected} />}
+      {step === 3 && <StepReview items={detectedItems} onNext={() => setStep(4)} onBack={() => setStep(2)} />}
+      {step === 4 && <StepQuote items={detectedItems} onBack={() => setStep(3)} />}
     </div>
   );
 }
@@ -458,8 +552,9 @@ function StepUpload({ onNext }) {
   );
 }
 
-function StepDetecting({ revealed, onNext, ready }) {
-  const items = DETECTED_ITEMS.slice(0, revealed);
+function StepDetecting({ items: allItems, revealed, onNext, ready }) {
+  const items = (allItems || DETECTED_ITEMS).slice(0, revealed);
+  const total = (allItems || DETECTED_ITEMS).length;
   return (
     <div className="anim-in" style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 24 }}>
       <div style={{ backgroundColor: C.bgPaper, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden', position: 'relative' }}>
@@ -479,7 +574,7 @@ function StepDetecting({ revealed, onNext, ready }) {
       <div>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
           <h3 style={{ fontFamily: fontHeading, fontSize: 15, fontWeight: 600, margin: 0 }}>
-            Detected items <span style={{ color: C.textSubtle, fontWeight: 400 }}>({revealed}/{DETECTED_ITEMS.length})</span>
+            Detected items <span style={{ color: C.textSubtle, fontWeight: 400 }}>({revealed}/{total})</span>
           </h3>
           {!ready && <Loader2 size={14} className="spin" color={C.orange} />}
         </div>
@@ -511,8 +606,8 @@ function StepDetecting({ revealed, onNext, ready }) {
   );
 }
 
-function StepReview({ onNext, onBack }) {
-  const [items, setItems] = useState(DETECTED_ITEMS);
+function StepReview({ items: initialItems, onNext, onBack }) {
+  const [items, setItems] = useState(initialItems || DETECTED_ITEMS);
   const needsReview = items.filter((i) => i.conf < 0.8).length;
   const toggle = (id) => setItems((arr) => arr.map((i) => i.id === id ? { ...i, _ok: !i._ok } : i));
 
@@ -571,11 +666,12 @@ function StepReview({ onNext, onBack }) {
   );
 }
 
-function StepQuote({ onBack }) {
-  const subtotal = useMemo(() => DETECTED_ITEMS.reduce((sum, it) => {
+function StepQuote({ items: detectedItems, onBack }) {
+  const sourceItems = detectedItems || DETECTED_ITEMS;
+  const subtotal = useMemo(() => sourceItems.reduce((sum, it) => {
     const r = RATE_LIBRARY.find((x) => x.code === it.rate);
     return sum + (r ? (r.rate + r.labour) * it.qty : 0);
-  }, 0), []);
+  }, 0), [sourceItems]);
   const margin = Math.round(subtotal * 0.18);
   const gst = Math.round((subtotal + margin) * 0.1);
   const total = subtotal + margin + gst;
@@ -650,7 +746,7 @@ function StepQuote({ onBack }) {
         <div style={{ backgroundColor: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20 }}>
           <div style={{ fontFamily: fontHeading, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.textSubtle, marginBottom: 6 }}>Quoted total</div>
           <div style={{ fontFamily: fontHeading, fontSize: 36, fontWeight: 600, letterSpacing: '-0.02em', lineHeight: 1 }}>${total.toLocaleString()}</div>
-          <div style={{ fontSize: 13, color: C.textMuted, fontStyle: 'italic', marginTop: 8 }}>incl. GST · 68 items · 18% margin</div>
+          <div style={{ fontSize: 13, color: C.textMuted, fontStyle: 'italic', marginTop: 8 }}>incl. GST · {sourceItems.length} items · 18% margin</div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 20 }}>
             <MiniStat label="Materials" v={`$${Math.round(subtotal * 0.55).toLocaleString()}`} />
