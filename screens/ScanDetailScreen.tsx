@@ -13,7 +13,7 @@
  * the Detect list will stream from Claude Vision via Supabase Edge Functions.
  */
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { fetchScanById, ScanRow } from "../services/supabaseData";
 import {
@@ -37,7 +37,9 @@ import {
   Send,
   Copy,
   Sparkles,
+  RefreshCw,
 } from "lucide-react";
+import { detectElectricalComponents, DetectionResult } from "../analyze_pdf";
 import { C, FONT, RADIUS } from "../components/desktop/tokens";
 import {
   Card,
@@ -94,12 +96,62 @@ const RATE_LOOKUP: Record<string, { description: string; rate: number; labour: n
   "DC-001":  { description: "Cat6A data point + faceplate",    rate: 135, labour: 55 },
 };
 
+// ─── mapDetectionToItems ─────────────────────────────────────────────────
+// Converts a DetectionResult.components array (from analyze_pdf.ts
+// detectElectricalComponents) into the DetectedItem shape used by this screen.
+// Returns an empty array when detection is null/undefined so the caller can
+// decide whether to fall back to the hardcoded DETECTED_ITEMS constant.
+function mapDetectionToItems(detection: DetectionResult | null | undefined): DetectedItem[] {
+  if (!detection || !Array.isArray(detection.components) || detection.components.length === 0) {
+    return [];
+  }
+  const symbolMap: Record<string, string> = {
+    GPO_STANDARD: "GPO", GPO_DOUBLE: "GPO", GPO_WEATHERPROOF: "GPO", GPO_USB: "GPO",
+    DOWNLIGHT_RECESSED: "LT", PENDANT_FEATURE: "LT", EXHAUST_FAN: "FN",
+    SWITCHING_STANDARD: "SW", SWITCHING_DIMMER: "SW", SWITCHING_2WAY: "SW",
+    SWITCHBOARD_MAIN: "DB", SWITCHBOARD_SUB: "DB",
+    DATA_CAT6: "DC", DATA_TV: "DC",
+    AC_SPLIT: "FN", AC_DUCTED: "FN",
+    SECURITY_CCTV: "SA", SECURITY_INTERCOM: "SA", SECURITY_ALARM: "SA",
+    EV_CHARGER: "EX", POOL_OUTDOOR: "EX", GATE_ACCESS: "EX",
+    AUTOMATION_HUB: "DC",
+  };
+  const rateMap: Record<string, string> = {
+    GPO_STANDARD: "GPO-004", GPO_DOUBLE: "GPO-001", GPO_WEATHERPROOF: "GPO-003", GPO_USB: "GPO-002",
+    DOWNLIGHT_RECESSED: "LT-001", PENDANT_FEATURE: "LT-005", EXHAUST_FAN: "FN-001",
+    SWITCHING_STANDARD: "SW-001", SWITCHING_DIMMER: "SW-003", SWITCHING_2WAY: "SW-002",
+    SWITCHBOARD_MAIN: "SB-001", SWITCHBOARD_SUB: "SB-002",
+    DATA_CAT6: "DC-001", DATA_TV: "DC-002",
+    AC_SPLIT: "FN-002", AC_DUCTED: "FN-002",
+    SECURITY_CCTV: "SA-002", SECURITY_INTERCOM: "SA-002", SECURITY_ALARM: "SA-001",
+    EV_CHARGER: "EX-003", POOL_OUTDOOR: "EX-001", GATE_ACCESS: "EX-001",
+    AUTOMATION_HUB: "DC-003",
+  };
+  return detection.components.map((c, i) => {
+    const label = (c.catalogue_item_name || c.type || "Unknown item")
+      .replace(/_/g, " ")
+      .toLowerCase()
+      .replace(/^\w/, (ch: string) => ch.toUpperCase());
+    return {
+      id: i + 1,
+      symbol: symbolMap[c.type] ?? "EL",
+      qty: c.quantity,
+      desc: label,
+      rateCode: rateMap[c.type] ?? "GPO-001",
+      conf: Math.min(1, Math.max(0, (c.confidence ?? 90) / 100)),
+      x: 60 + ((i * 73) % 420),
+      y: 60 + ((i * 61) % 280),
+    };
+  });
+}
+
 // ─── Screen root ────────────────────────────────────────────────────────
 export default function ScanDetailScreen() {
   const navigate = useNavigate();
   const { id } = useParams();
   const [liveScan, setLiveScan] = useState<ScanRow | null>(null);
   const [step, setStep] = useState(id === "new" ? 1 : 2);
+  const [detectedItems, setDetectedItems] = useState<DetectedItem[]>(DETECTED_ITEMS);
 
   useEffect(() => {
     if (!id || id === "new") return;
@@ -143,10 +195,17 @@ export default function ScanDetailScreen() {
 
       <StepBar step={step} onStep={setStep} />
 
-      {step === 1 && <StepUpload onNext={() => setStep(2)} />}
-      {step === 2 && <StepDetecting onNext={() => setStep(3)} initialItems={liveScan?.detected_items as DetectedItem[] | undefined} />}
-      {step === 3 && <StepReview onNext={() => setStep(4)} onBack={() => setStep(2)} initialItems={liveScan?.detected_items as DetectedItem[] | undefined} />}
-      {step === 4 && <StepQuote onBack={() => setStep(3)} initialItems={liveScan?.detected_items as DetectedItem[] | undefined} />}
+      {step === 1 && (
+        <StepUpload
+          onNext={(items?: DetectedItem[]) => {
+            if (items && items.length > 0) setDetectedItems(items);
+            setStep(2);
+          }}
+        />
+      )}
+      {step === 2 && <StepDetecting onNext={() => setStep(3)} items={detectedItems} />}
+      {step === 3 && <StepReview onNext={() => setStep(4)} onBack={() => setStep(2)} items={detectedItems} />}
+      {step === 4 && <StepQuote onBack={() => setStep(3)} items={detectedItems} />}
 
       <Footer />
     </div>
@@ -212,14 +271,165 @@ function StepBar({ step, onStep }: StepBarProps) {
 }
 
 // ─── Step 1: Upload ─────────────────────────────────────────────────────
-function StepUpload({ onNext }: { onNext: () => void }) {
-  // TODO: real drag-and-drop + file input wired to analyze_pdf.ts.
+type UploadState = "idle" | "detecting" | "error";
+
+function StepUpload({ onNext }: { onNext: (items?: DetectedItem[]) => void }) {
+  const [uploadState, setUploadState] = useState<UploadState>("idle");
+  const [errorMsg, setErrorMsg] = useState<string>("");
+  const [fileName, setFileName] = useState<string>("");
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const runDetection = useCallback(async (file: File) => {
+    setFileName(file.name);
+    setUploadState("detecting");
+    setErrorMsg("");
+    try {
+      const result = await detectElectricalComponents(file);
+      const mapped = mapDetectionToItems(result);
+      // Fall back to DETECTED_ITEMS if the model returned nothing
+      onNext(mapped.length > 0 ? mapped : undefined);
+    } catch (err: any) {
+      console.error("[ElectraScan] Detection failed:", err);
+      setErrorMsg(err?.message ?? "Unknown error during detection.");
+      setUploadState("error");
+    }
+  }, [onNext]);
+
+  const handleFile = useCallback((file: File | null) => {
+    if (!file) return;
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    const isPng = file.type === "image/png" || file.name.toLowerCase().endsWith(".png");
+    if (!isPdf && !isPng) {
+      setErrorMsg("Only PDF or PNG files are accepted.");
+      setUploadState("error");
+      return;
+    }
+    runDetection(file);
+  }, [runDetection]);
+
+  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0] ?? null;
+    handleFile(file);
+  }, [handleFile]);
+
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback(() => {
+    setDragOver(false);
+  }, []);
+
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    handleFile(file);
+    // Reset so the same file can be re-selected after an error
+    e.target.value = "";
+  }, [handleFile]);
+
+  // ── Detecting state ──
+  if (uploadState === "detecting") {
+    return (
+      <div
+        className="anim-in"
+        style={{
+          backgroundColor: C.bgCard,
+          border: `2px dashed ${C.border}`,
+          borderRadius: RADIUS.xl,
+          padding: 64,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 18,
+          textAlign: "center",
+        }}
+      >
+        <div style={{ width: 56, height: 56, borderRadius: RADIUS.xl, backgroundColor: C.orangeSoft, color: C.orange, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Loader2 size={28} className="spin" />
+        </div>
+        <div>
+          <h2 style={{ fontFamily: FONT.heading, fontSize: 20, fontWeight: 600, margin: "0 0 6px 0" }}>
+            Claude Vision is analysing
+          </h2>
+          <p style={{ color: C.textMuted, fontStyle: "italic", margin: 0 }}>
+            {fileName} — detecting electrical symbols…
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: 4 }}>
+          {["Rendering pages", "Reading legend", "Scanning floor plan"].map((label, i) => (
+            <span
+              key={label}
+              style={{
+                fontSize: 11, fontFamily: FONT.heading, padding: "3px 10px",
+                borderRadius: RADIUS.pill,
+                backgroundColor: C.orangeSoft, color: C.orange,
+                animationDelay: `${i * 0.4}s`,
+              }}
+              className="pulse"
+            >
+              {label}
+            </span>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Error state ──
+  if (uploadState === "error") {
+    return (
+      <div
+        className="anim-in"
+        style={{
+          backgroundColor: "#FEF2F2",
+          border: `2px dashed #EF4444`,
+          borderRadius: RADIUS.xl,
+          padding: 64,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 14,
+          textAlign: "center",
+        }}
+      >
+        <div style={{ width: 56, height: 56, borderRadius: RADIUS.xl, backgroundColor: "#FEE2E2", color: "#EF4444", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <AlertCircle size={28} />
+        </div>
+        <h2 style={{ fontFamily: FONT.heading, fontSize: 20, fontWeight: 600, margin: 0, color: "#EF4444" }}>
+          Detection failed
+        </h2>
+        <p style={{ color: "#B91C1C", fontStyle: "italic", margin: 0, maxWidth: 480 }}>
+          {errorMsg}
+        </p>
+        <div style={{ display: "flex", gap: 10 }}>
+          <PrimaryButton
+            onClick={() => { setUploadState("idle"); setErrorMsg(""); setFileName(""); }}
+            icon={<RefreshCw size={15} />}
+          >
+            Try again
+          </PrimaryButton>
+          <GhostButton onClick={() => onNext(undefined)}>
+            Use sample data →
+          </GhostButton>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Idle / drag-and-drop state ──
   return (
     <div
       className="anim-in"
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
       style={{
-        backgroundColor: C.bgCard,
-        border: `2px dashed ${C.border}`,
+        backgroundColor: dragOver ? C.orangeSoft : C.bgCard,
+        border: `2px dashed ${dragOver ? C.orange : C.border}`,
         borderRadius: RADIUS.xl,
         padding: 64,
         display: "flex",
@@ -227,27 +437,47 @@ function StepUpload({ onNext }: { onNext: () => void }) {
         alignItems: "center",
         gap: 14,
         textAlign: "center",
+        transition: "background-color 180ms, border-color 180ms",
+        cursor: "default",
       }}
     >
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf,.png,application/pdf,image/png"
+        style={{ display: "none" }}
+        onChange={handleInputChange}
+      />
       <div style={{ width: 56, height: 56, borderRadius: RADIUS.xl, backgroundColor: C.orangeSoft, color: C.orange, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <UploadIcon size={24} />
       </div>
-      <h2 style={{ fontFamily: FONT.heading, fontSize: 20, fontWeight: 600, margin: 0 }}>Drop your floor plan here</h2>
+      <h2 style={{ fontFamily: FONT.heading, fontSize: 20, fontWeight: 600, margin: 0 }}>
+        Drop your floor plan here
+      </h2>
       <p style={{ color: C.textMuted, fontStyle: "italic", margin: 0, maxWidth: 420 }}>
-        PDF, PNG, or DWG. Claude Vision will detect symbols, map them to your rate library, and draft a quote.
+        PDF or PNG. Claude Vision will detect electrical symbols, map them to your rate library, and draft a quote.
       </p>
-      <PrimaryButton onClick={onNext}>Simulate upload →</PrimaryButton>
+      <div style={{ display: "flex", gap: 10 }}>
+        <PrimaryButton onClick={() => fileInputRef.current?.click()}>
+          Choose file
+        </PrimaryButton>
+        <GhostButton onClick={() => onNext(undefined)}>
+          Use sample data →
+        </GhostButton>
+      </div>
     </div>
   );
 }
 
 // ─── Step 2: Detecting ──────────────────────────────────────────────────
-function StepDetecting({ onNext, initialItems }: { onNext: () => void; initialItems?: DetectedItem[] }) {
-  const source = initialItems ?? DETECTED_ITEMS;
-  const [revealed, setRevealed] = useState(initialItems ? initialItems.length : 0);
+function StepDetecting({ onNext, items: propItems }: { onNext: () => void; items?: DetectedItem[] }) {
+  const source = propItems && propItems.length > 0 ? propItems : DETECTED_ITEMS;
+  // If items came from real detection they are already complete — skip animation
+  const isRealDetection = propItems && propItems !== DETECTED_ITEMS && propItems.length > 0;
+  const [revealed, setRevealed] = useState(isRealDetection ? source.length : 0);
 
   useEffect(() => {
-    if (initialItems) return; // live items already complete — skip animation
+    if (isRealDetection) return; // real detection already complete — skip animation
     setRevealed(0);
     const id = setInterval(() => {
       setRevealed(n => {
@@ -256,7 +486,7 @@ function StepDetecting({ onNext, initialItems }: { onNext: () => void; initialIt
       });
     }, 380);
     return () => clearInterval(id);
-  }, []);
+  }, [source.length]);
 
   const items = source.slice(0, revealed);
   const ready = revealed >= source.length;
@@ -674,8 +904,8 @@ function ReviewQueuePanel({
 }
 
 // ─── Step 3: Review ─────────────────────────────────────────────────────
-function StepReview({ onNext, onBack, initialItems }: { onNext: () => void; onBack: () => void; initialItems?: DetectedItem[] }) {
-  const source = initialItems ?? DETECTED_ITEMS;
+function StepReview({ onNext, onBack, items: propItems }: { onNext: () => void; onBack: () => void; items?: DetectedItem[] }) {
+  const source = propItems && propItems.length > 0 ? propItems : DETECTED_ITEMS;
   const [items, setItems] = useState(
     source.map(it => ({ ...it, ok: false })),
   );
@@ -800,8 +1030,8 @@ function StepReview({ onNext, onBack, initialItems }: { onNext: () => void; onBa
 }
 
 // ─── Step 4: Quote ──────────────────────────────────────────────────────
-function StepQuote({ onBack, initialItems }: { onBack: () => void; initialItems?: DetectedItem[] }) {
-  const source = initialItems ?? DETECTED_ITEMS;
+function StepQuote({ onBack, items: propItems }: { onBack: () => void; items?: DetectedItem[] }) {
+  const source = propItems && propItems.length > 0 ? propItems : DETECTED_ITEMS;
   const company = getActiveCompanyProfile();
   const subtotal = useMemo(
     () =>
