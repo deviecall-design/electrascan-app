@@ -27,3 +27,15 @@ End-of-session checklist:
 ## Tenant
 - Vesh Electrical is the beta tenant
 - Tenant ID constant: `VESH_TENANT_ID` in `lib/tenants.ts`
+
+## Product Roadmap (priority order)
+### Sprint 2 — Accounting Integration
+- **Xero** (priority) + **MYOB** (secondary) — both dominant in AU trade businesses
+- Xero API docs: https://developer.xero.com/
+- Key flows:
+  - Push accepted estimates → Xero quotes/invoices (one click)
+  - Sync customer/contact records (no duplicate entry)
+  - Pull actual job costs back for margin tracking
+  - Generate purchase orders from material takeoffs
+- Frame as: "your estimate becomes your invoice in one click"
+- Strong paid conversion differentiator for AU electrical contractors
