@@ -455,16 +455,11 @@ function StepUpload({ onNext }: { onNext: (items?: DetectedItem[]) => void }) {
         Drop your floor plan here
       </h2>
       <p style={{ color: C.textMuted, fontStyle: "italic", margin: 0, maxWidth: 420 }}>
-        PDF or PNG. Claude Vision will detect electrical symbols, map them to your rate library, and draft a quote.
+        PDF, PNG, or DWG. Claude Vision will detect symbols, map them to your rate library, and draft a quote.
       </p>
-      <div style={{ display: "flex", gap: 10 }}>
-        <PrimaryButton onClick={() => fileInputRef.current?.click()}>
-          Choose file
-        </PrimaryButton>
-        <GhostButton onClick={() => onNext(undefined)}>
-          Use sample data →
-        </GhostButton>
-      </div>
+      <PrimaryButton onClick={() => fileInputRef.current?.click()}>
+        Upload floor plan →
+      </PrimaryButton>
     </div>
   );
 }
