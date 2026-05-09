@@ -32,16 +32,22 @@ export interface AppShellProps {
 
 const TOKENS = {
   bgDark:    "#0D1B2A",
+  bgPage:    "#0f172a",   // slate-900 — page background matches dashboard
   bgLight:   "#F0F4F8",
   navy:      "#1A3A5C",
-  sidebarBorder: "#1e3a5c",
-  blue:      "#1D6EFD",
+  sidebarBorder: "#1e3456",
+  blue:      "#3b82f6",
+  blueDk:    "#1d4ed8",
   teal:      "#0EA5E9",
   darkText:  "#1E293B",
   grayLt:    "#94A3B8",
   grayMd:    "#64748B",
-  grayNav:   "#4B5563",
+  grayNav:   "#4B6275",
   border:    "#E2E8F0",
+  topbarBg:  "#111827",   // topbar in dark mode to match the page feel
+  topbarBorder: "#1e3456",
+  topbarText:   "#f1f5f9",
+  topbarSub:    "#64748b",
   white:     "#FFFFFF",
 };
 
@@ -171,7 +177,7 @@ const AppShell: React.FC<AppShellProps> = ({
 
               <div className="es-nav-section">Quick Actions</div>
               <div
-                className="es-nav-item"
+                className="es-nav-cta"
                 onClick={onNewScan}
                 role="button"
                 tabIndex={0}
@@ -179,7 +185,7 @@ const AppShell: React.FC<AppShellProps> = ({
                   if (e.key === "Enter" || e.key === " ") onNewScan();
                 }}
               >
-                <span className="es-nav-icon">📤</span>
+                <span className="es-nav-icon">⚡</span>
                 <span>Upload Drawings</span>
               </div>
             </nav>
@@ -279,98 +285,161 @@ const SHELL_CSS = `
   display: flex;
   height: 100vh;
   overflow: hidden;
-  background: ${TOKENS.bgLight};
+  background: ${TOKENS.bgPage};
   color: ${TOKENS.darkText};
   font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
-/* Sidebar */
+/* ── Sidebar ── */
 .es-sidebar {
-  width: 220px;
+  width: 224px;
   background: ${TOKENS.bgDark};
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
   z-index: 100;
+  border-right: 1px solid ${TOKENS.sidebarBorder};
 }
+
+/* Logo block */
 .es-sidebar-logo {
-  padding: 14px 16px 10px;
+  padding: 16px 16px 14px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
   border-bottom: 1px solid ${TOKENS.sidebarBorder};
 }
 .es-logo-svg {
-  width: 148px;
+  width: 144px;
   height: auto;
   display: block;
 }
 .es-logo-sub {
   font-size: 10px;
-  color: ${TOKENS.grayLt};
+  color: ${TOKENS.grayMd};
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   padding-left: 2px;
+  letter-spacing: 0.02em;
 }
+
+/* Nav scroll area */
 .es-sidebar-nav {
   flex: 1;
   overflow-y: auto;
-  padding-bottom: 12px;
+  padding: 8px 0 12px;
+  scrollbar-width: none;
 }
+.es-sidebar-nav::-webkit-scrollbar { display: none; }
+
+/* Section label */
 .es-nav-section {
-  padding: 16px 10px 4px;
+  padding: 14px 16px 4px;
   font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 1.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: ${TOKENS.grayNav};
 }
+
+/* Nav item */
 .es-nav-item {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 9px 12px;
-  margin: 1px 6px;
-  border-radius: 7px;
+  margin: 1px 8px;
+  border-radius: 8px;
   font-size: 13px;
   font-weight: 500;
   color: ${TOKENS.grayLt};
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
   user-select: none;
+  border: 1px solid transparent;
 }
 .es-nav-item:hover {
-  background: #1e3a5c;
-  color: white;
+  background: rgba(59,130,246,0.08);
+  color: #e2e8f0;
+  border-color: rgba(59,130,246,0.12);
 }
 .es-nav-item.active {
   background: ${TOKENS.blue};
   color: white;
+  font-weight: 600;
+  box-shadow: 0 2px 10px rgba(59,130,246,0.35);
+  border-color: transparent;
 }
+.es-nav-item.active .es-nav-icon {
+  filter: brightness(1.2);
+}
+
+/* Nav icon */
 .es-nav-icon {
-  font-size: 15px;
-  width: 18px;
-  text-align: center;
+  font-size: 14px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
+
+/* Upload CTA button in nav */
+.es-nav-cta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  margin: 6px 8px 4px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: ${TOKENS.blue};
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, transform 0.1s;
+  user-select: none;
+  background: rgba(59,130,246,0.1);
+  border: 1px solid rgba(59,130,246,0.2);
+}
+.es-nav-cta:hover {
+  background: rgba(59,130,246,0.18);
+  color: #93c5fd;
+  transform: translateY(-1px);
+}
+
+/* Footer */
 .es-sidebar-footer {
-  padding: 12px 16px;
+  padding: 12px 12px;
   border-top: 1px solid ${TOKENS.sidebarBorder};
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 .es-user-chip {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   min-width: 0;
+  padding: 7px 8px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  transition: background 0.15s, border-color 0.15s;
+}
+.es-user-chip:hover {
+  background: rgba(255,255,255,0.04);
+  border-color: ${TOKENS.sidebarBorder};
 }
 .es-user-avatar {
-  width: 28px; height: 28px; border-radius: 50%;
-  background: ${TOKENS.blue};
+  width: 30px; height: 30px; border-radius: 50%;
+  background: linear-gradient(135deg, ${TOKENS.blue}, #1e40af);
   color: white;
   font-size: 11px;
   font-weight: 700;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(59,130,246,0.4);
 }
 .es-user-name {
   font-size: 12px;
@@ -378,9 +447,10 @@ const SHELL_CSS = `
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-weight: 500;
 }
 
-/* Main column */
+/* ── Main column ── */
 .es-main {
   flex: 1;
   display: flex;
@@ -388,25 +458,27 @@ const SHELL_CSS = `
   overflow: hidden;
   min-width: 0;
 }
+
+/* Topbar — dark variant to match page */
 .es-topbar {
   height: 56px;
-  background: ${TOKENS.white};
-  border-bottom: 1px solid ${TOKENS.border};
+  background: ${TOKENS.topbarBg};
+  border-bottom: 1px solid ${TOKENS.topbarBorder};
   display: flex;
   align-items: center;
-  padding: 0 20px;
+  padding: 0 24px;
   gap: 12px;
   flex-shrink: 0;
 }
 .es-topbar-title {
   font-size: 16px;
   font-weight: 700;
-  color: ${TOKENS.darkText};
+  color: ${TOKENS.topbarText};
   line-height: 1.1;
 }
 .es-topbar-sub {
-  font-size: 12px;
-  color: ${TOKENS.grayMd};
+  font-size: 11px;
+  color: ${TOKENS.topbarSub};
   margin-top: 2px;
 }
 .es-topbar-actions {
@@ -418,20 +490,28 @@ const SHELL_CSS = `
 .es-version-badge {
   font-size: 10px;
   font-weight: 600;
-  color: ${TOKENS.grayMd};
-  padding: 4px 9px;
-  border: 1px solid ${TOKENS.border};
+  color: #475569;
+  padding: 4px 10px;
+  border: 1px solid #1e3456;
   border-radius: 20px;
-  background: ${TOKENS.bgLight};
+  background: rgba(255,255,255,0.04);
+  letter-spacing: 0.03em;
 }
+
+/* Page content area */
 .es-page-content {
   flex: 1;
   overflow-y: auto;
   padding: 24px;
-  background: ${TOKENS.bgLight};
+  background: ${TOKENS.bgPage};
+  scrollbar-width: thin;
+  scrollbar-color: #1e3456 transparent;
 }
+.es-page-content::-webkit-scrollbar { width: 6px; }
+.es-page-content::-webkit-scrollbar-track { background: transparent; }
+.es-page-content::-webkit-scrollbar-thumb { background: #1e3456; border-radius: 3px; }
 
-/* Mobile bottom nav */
+/* ── Mobile bottom nav ── */
 .es-bottom-nav {
   display: none;
 }
