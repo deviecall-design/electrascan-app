@@ -168,8 +168,9 @@ export default function ScanDetailScreen() {
     });
   }, [id]);
 
-  const fileName = liveScan?.file_name ?? "Switchboard_LV2_rev3.pdf";
-  const clientLabel = liveScan?.client ?? "Bondi Tower Residences · Level 2";
+  const isNew = id === "new";
+  const fileName = liveScan?.file_name ?? (isNew ? "New scan" : "Switchboard_LV2_rev3.pdf");
+  const clientLabel = liveScan?.client ?? (isNew ? "" : "Bondi Tower Residences · Level 2");
 
   return (
     <div className="anim-in">
@@ -190,7 +191,7 @@ export default function ScanDetailScreen() {
         </span>
       </div>
       <p style={{ color: C.textMuted, fontStyle: "italic", margin: "0 0 28px 0" }}>
-        {clientLabel}{liveScan ? "" : " · uploaded 14 minutes ago"}
+        {clientLabel}{!liveScan && !isNew ? " · uploaded 14 minutes ago" : ""}
       </p>
 
       <StepBar step={step} onStep={setStep} />

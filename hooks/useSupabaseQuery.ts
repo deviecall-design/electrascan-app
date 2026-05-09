@@ -41,7 +41,7 @@ export default function useSupabaseQuery<T>(
     fetcher()
       .then(({ data, error }) => {
         if (cancelled) return;
-        if (error || !data) {
+        if (error || !data || data.length === 0) {
           setState({ data: fallback, loading: false, isLive: false });
         } else {
           setState({ data, loading: false, isLive: true });
