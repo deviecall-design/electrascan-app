@@ -24,19 +24,23 @@ import {
 } from "../analyze_pdf";
 import { peekNextReference } from "../services/estimateReferenceService";
 
-// Light-theme palette (renders inside AppShell's light content area).
+// Dark-theme palette — matches DashboardScreen / AppShell.
 const C = {
-  bg: "#F0F4F8",
-  navy: "#0D1B2A",
-  card: "#FFFFFF",
-  blue: "#1D6EFD",
-  green: "#10B981",
-  amber: "#F59E0B",
-  red: "#EF4444",
-  text: "#1E293B",
-  muted: "#64748B",
-  border: "#E2E8F0",
-  dim: "#94A3B8",
+  bg:      "#0f172a",  // slate-900 page background
+  navy:    "#0f172a",  // alias
+  card:    "#1e293b",  // slate-800 primary surface
+  card2:   "#162032",  // slightly deeper card variant
+  cardHov: "#253347",  // card hover state
+  blue:    "#3b82f6",  // primary blue
+  blueDk:  "#1d4ed8",
+  green:   "#10b981",
+  amber:   "#f59e0b",
+  red:     "#ef4444",
+  purple:  "#8b5cf6",
+  text:    "#f1f5f9",  // slate-100
+  muted:   "#94a3b8",  // slate-400
+  border:  "#334155",  // slate-700
+  dim:     "#64748b",  // slate-500
 };
 
 type Tab = "overview" | "upload" | "estimate" | "schedule" | "approvals" | "variations";
@@ -124,19 +128,20 @@ const ProjectDetail: React.FC<Props> = ({ projectId, onBack }) => {
 
   return (
     <div>
-      {/* Project name + status header (sits inside AppShell's light content) */}
+      {/* Project name + status header */}
       <div
         style={{
           background: C.card,
           border: `1px solid ${C.border}`,
-          borderRadius: 12,
+          borderRadius: 14,
           padding: "16px 20px",
-          marginBottom: 16,
+          marginBottom: 14,
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
           gap: 12,
           flexWrap: "wrap",
+          boxShadow: "0 1px 0 rgba(255,255,255,0.04) inset",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
@@ -155,13 +160,14 @@ const ProjectDetail: React.FC<Props> = ({ projectId, onBack }) => {
               }}
               style={{
                 flex: 1,
-                background: "#fff",
+                background: C.bg,
                 color: C.text,
-                border: `1px solid ${C.border}`,
+                border: `1px solid ${C.blue}`,
                 padding: "6px 10px",
                 borderRadius: 8,
                 fontSize: 18,
                 fontWeight: 700,
+                outline: "none",
               }}
             />
           ) : (
@@ -183,7 +189,10 @@ const ProjectDetail: React.FC<Props> = ({ projectId, onBack }) => {
               }}
             >
               {project.name}
-              <span style={{ fontSize: 12, color: C.dim, fontWeight: 400 }}>✎</span>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: C.dim, flexShrink: 0 }}>
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+              </svg>
             </div>
           )}
         </div>
@@ -191,9 +200,9 @@ const ProjectDetail: React.FC<Props> = ({ projectId, onBack }) => {
           value={project.status}
           onChange={e => setStatus(e.target.value as ProjectStatus)}
           style={{
-            background: palette.bg,
-            color: palette.fg,
-            border: "none",
+            background: `${palette.bg}25`,
+            color: palette.bg,
+            border: `1px solid ${palette.bg}55`,
             padding: "6px 12px",
             borderRadius: 20,
             fontSize: 12,
@@ -202,7 +211,7 @@ const ProjectDetail: React.FC<Props> = ({ projectId, onBack }) => {
           }}
         >
           {["Active", "Won", "Lost", "On Hold"].map(s => (
-            <option key={s} value={s} style={{ color: "#000" }}>
+            <option key={s} value={s} style={{ background: C.card, color: C.text }}>
               {s}
             </option>
           ))}
@@ -246,6 +255,7 @@ const ProjectDetail: React.FC<Props> = ({ projectId, onBack }) => {
               cursor: "pointer",
               borderBottom: `2px solid ${tab === id ? C.blue : "transparent"}`,
               whiteSpace: "nowrap",
+              transition: "color 0.15s",
             }}
           >
             {label}
@@ -394,12 +404,17 @@ const ApprovalsTab: React.FC<{
           background: C.card,
           border: `1px dashed ${C.border}`,
           borderRadius: 14,
-          padding: "36px 20px",
+          padding: "48px 20px",
           textAlign: "center",
         }}
       >
-        <div style={{ fontSize: 36, marginBottom: 10 }}>✅</div>
-        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>
+        <div style={{ width: 48, height: 48, borderRadius: 14, background: `${C.green}22`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={C.green} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+            <polyline points="22 4 12 14.01 9 11.01"/>
+          </svg>
+        </div>
+        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6, color: C.text }}>
           No estimate to approve yet
         </div>
         <div style={{ fontSize: 12, color: C.muted }}>
@@ -512,9 +527,12 @@ const VariationCard: React.FC<{
     <div style={{
       background: C.card,
       border: `1px solid ${isLatest ? C.blue : C.border}`,
+      borderLeft: isLatest ? `3px solid ${C.blue}` : `1px solid ${C.border}`,
       borderRadius: 14,
       overflow: "hidden",
       marginBottom: 10,
+      boxShadow: isLatest ? `0 4px 20px ${C.blue}15` : "none",
+      transition: "box-shadow 0.2s",
     }}>
       {/* Card header */}
       <div
@@ -527,8 +545,9 @@ const VariationCard: React.FC<{
       >
         <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
           <div style={{
-            background: isLatest ? C.blue : C.border,
-            color: isLatest ? "#fff" : C.muted,
+            background: isLatest ? `${C.blue}25` : `${C.border}55`,
+            color: isLatest ? C.blue : C.muted,
+            border: `1px solid ${isLatest ? C.blue : C.border}`,
             borderRadius: 8, padding: "3px 9px",
             fontSize: 11, fontWeight: 700, flexShrink: 0,
           }}>
@@ -541,16 +560,16 @@ const VariationCard: React.FC<{
           {delta !== null && (
             <div style={{
               fontSize: 12, fontWeight: 700, color: deltaColor,
-              background: `${deltaColor}18`, borderRadius: 6,
-              padding: "2px 8px", whiteSpace: "nowrap",
+              background: `${deltaColor}18`, border: `1px solid ${deltaColor}33`,
+              borderRadius: 6, padding: "2px 8px", whiteSpace: "nowrap",
             }}>
               {delta >= 0 ? "+" : ""}{fmtMoney(delta)}
             </div>
           )}
           {changes.length > 0 && (
-            <div style={{ fontSize: 12, color: C.muted, width: 16, textAlign: "center" }}>
-              {open ? "▲" : "▼"}
-            </div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.muted} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}>
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
           )}
         </div>
       </div>
@@ -618,16 +637,24 @@ const VariationsTab: React.FC<{
     return (
       <div style={{
         background: C.card, border: `1px dashed ${C.border}`,
-        borderRadius: 14, padding: "36px 20px", textAlign: "center",
+        borderRadius: 14, padding: "48px 20px", textAlign: "center",
       }}>
-        <div style={{ fontSize: 36, marginBottom: 10 }}>📋</div>
-        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>No estimates yet</div>
+        <div style={{ width: 48, height: 48, borderRadius: 14, background: `${C.blue}22`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={C.blue} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/>
+            <line x1="16" y1="17" x2="8" y2="17"/>
+          </svg>
+        </div>
+        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6, color: C.text }}>No estimates yet</div>
         <div style={{ fontSize: 12, color: C.muted, maxWidth: 380, margin: "0 auto 14px", lineHeight: 1.55 }}>
           Upload a drawing to generate your first estimate. Variations will appear here each time you upload a revised plan.
         </div>
         <button onClick={onOpenUpload} style={{
           background: C.blue, color: "#fff", border: "none",
           padding: "10px 18px", fontSize: 13, fontWeight: 700, borderRadius: 10, cursor: "pointer",
+          boxShadow: `0 4px 16px ${C.blue}40`,
         }}>
           Upload a drawing
         </button>
@@ -666,12 +693,24 @@ const VariationsTab: React.FC<{
         style={{
           width: "100%", background: "none",
           border: `2px dashed ${C.border}`, borderRadius: 12,
-          padding: "12px", fontSize: 13, fontWeight: 600,
+          padding: "14px", fontSize: 13, fontWeight: 600,
           color: C.muted, cursor: "pointer",
-          display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+          transition: "border-color 0.2s, color 0.2s",
+        }}
+        onMouseEnter={e => {
+          e.currentTarget.style.borderColor = C.blue;
+          e.currentTarget.style.color = C.blue;
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.borderColor = C.border;
+          e.currentTarget.style.color = C.muted;
         }}
       >
-        <span>＋</span> Upload revised drawing to add Variation {variations.length + 1}
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+        Upload revised drawing to add Variation {variations.length + 1}
       </button>
     </div>
   );
@@ -756,10 +795,11 @@ const OverviewTab: React.FC<{
             background: C.card,
             border: `1px dashed ${C.border}`,
             borderRadius: 12,
-            padding: "24px 20px",
+            padding: "32px 20px",
             color: C.muted,
             fontSize: 13,
             textAlign: "center",
+            lineHeight: 1.55,
           }}
         >
           No activity yet. Upload a drawing or start an estimate to build history.
@@ -773,50 +813,63 @@ const OverviewTab: React.FC<{
             overflow: "hidden",
           }}
         >
-          {history.map((h, i) => (
-            <div
-              key={h.id}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 14,
-                padding: "12px 16px",
-                borderBottom: i < history.length - 1 ? `1px solid ${C.border}` : "none",
-              }}
-            >
+          {history.map((h, i) => {
+            const iconColor = h.type === "scan" ? C.blue : h.type === "version" ? C.amber : C.green;
+            const historyIcon =
+              h.type === "scan" ? (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                  <polyline points="14 2 14 8 20 8"/>
+                </svg>
+              ) : h.type === "version" ? (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"/>
+                  <polyline points="12 6 12 12 16 14"/>
+                </svg>
+              ) : (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                </svg>
+              );
+            return (
               <div
+                key={h.id}
                 style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 10,
-                  background:
-                    h.type === "scan"
-                      ? `${C.blue}22`
-                      : h.type === "version"
-                      ? `${C.amber}22`
-                      : `${C.green}22`,
-                  color:
-                    h.type === "scan"
-                      ? C.blue
-                      : h.type === "version"
-                      ? C.amber
-                      : C.green,
-                  fontSize: 16,
                   display: "flex",
                   alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0,
+                  gap: 14,
+                  padding: "12px 16px",
+                  borderBottom: i < history.length - 1 ? `1px solid ${C.border}` : "none",
+                  transition: "background 0.15s",
                 }}
+                onMouseEnter={e => { e.currentTarget.style.background = C.cardHov; }}
+                onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
               >
-                {h.type === "scan" ? "📄" : h.type === "version" ? "🕒" : "📝"}
+                <div
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 10,
+                    background: `${iconColor}22`,
+                    color: iconColor,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                    border: `1px solid ${iconColor}33`,
+                  }}
+                >
+                  {historyIcon}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{h.label}</div>
+                  <div style={{ fontSize: 12, color: C.muted }}>{h.detail}</div>
+                </div>
+                <div style={{ fontSize: 11, color: C.dim, whiteSpace: "nowrap" }}>{fmtDateTime(h.at)}</div>
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>{h.label}</div>
-                <div style={{ fontSize: 12, color: C.muted }}>{h.detail}</div>
-              </div>
-              <div style={{ fontSize: 11, color: C.dim }}>{fmtDateTime(h.at)}</div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -829,21 +882,23 @@ const MetaCard: React.FC<{ label: string; value: string }> = ({ label, value }) 
       background: C.card,
       border: `1px solid ${C.border}`,
       borderRadius: 12,
-      padding: 14,
+      padding: "14px 16px",
+      borderTop: `2px solid ${C.border}`,
     }}
   >
     <div
       style={{
-        fontSize: 11,
+        fontSize: 10,
         fontWeight: 700,
-        color: C.muted,
-        letterSpacing: 0.6,
+        color: C.dim,
+        letterSpacing: 0.8,
         marginBottom: 6,
+        textTransform: "uppercase",
       }}
     >
-      {label.toUpperCase()}
+      {label}
     </div>
-    <div style={{ fontSize: 14, fontWeight: 600 }}>{value}</div>
+    <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{value}</div>
   </div>
 );
 
@@ -896,22 +951,34 @@ const UploadTab: React.FC<{
 
   return (
     <div>
+      {/* Info banner */}
       <div
         style={{
-          background: C.card,
-          border: `1px solid ${C.border}`,
-          borderRadius: 14,
-          padding: 16,
-          marginBottom: 14,
+          background: `${C.blue}14`,
+          border: `1px solid ${C.blue}33`,
+          borderLeft: `3px solid ${C.blue}`,
+          borderRadius: 12,
+          padding: "12px 16px",
+          marginBottom: 16,
+          display: "flex",
+          gap: 12,
+          alignItems: "flex-start",
         }}
       >
-        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>
-          Upload a drawing for {project.name}
-        </div>
-        <div style={{ fontSize: 12, color: C.muted }}>
-          ElectraScan reads the legend, detects every component, and appends
-          results to this project. Each scan is versioned — current version will
-          be v{project.scans.length + 1}.
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.blue} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="12" y1="8" x2="12" y2="12"/>
+          <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 2 }}>
+            Upload a drawing for {project.name}
+          </div>
+          <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.5 }}>
+            ElectraScan reads the legend, detects every component, and appends
+            results to this project. Each scan is versioned — current version will
+            be v{project.scans.length + 1}.
+          </div>
         </div>
       </div>
 
@@ -920,15 +987,33 @@ const UploadTab: React.FC<{
           style={{
             background: C.card,
             border: `1px solid ${C.border}`,
-            borderRadius: 14,
-            padding: 40,
+            borderRadius: 18,
+            padding: "48px 20px",
             textAlign: "center",
           }}
         >
-          <div style={{ fontSize: 36, marginBottom: 12 }}>⚡</div>
-          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Scanning drawing…</div>
+          <div style={{
+            width: 56, height: 56, borderRadius: 18,
+            background: `${C.blue}22`, border: `1px solid ${C.blue}44`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            margin: "0 auto 16px",
+          }}>
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={C.blue} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+            </svg>
+          </div>
+          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6, color: C.text }}>Scanning drawing…</div>
           <div style={{ fontSize: 12, color: C.muted }}>
             Reading legend symbols then scanning every room.
+          </div>
+          <div style={{
+            marginTop: 20, height: 4, borderRadius: 2,
+            background: C.border, overflow: "hidden", maxWidth: 240, margin: "20px auto 0",
+          }}>
+            <div style={{
+              height: "100%", background: C.blue, width: "60%",
+              borderRadius: 2, animation: "pulse 1.5s ease-in-out infinite",
+            }} />
           </div>
         </div>
       ) : (
@@ -946,30 +1031,53 @@ const UploadTab: React.FC<{
               if (f) handleFile(f);
             }}
             style={{
-              background: drag ? "rgba(29,110,253,0.04)" : C.card,
+              background: drag ? `${C.blue}0e` : C.card,
               border: `2px dashed ${drag ? C.blue : C.border}`,
               borderRadius: 18,
-              padding: "40px 20px",
+              padding: "48px 20px",
               textAlign: "center",
               transition: "all 0.2s",
+              boxShadow: drag ? `0 0 0 4px ${C.blue}18` : "none",
             }}
           >
-            <div style={{ fontSize: 44, marginBottom: 10 }}>📄</div>
-            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Drop PDF here</div>
-            <div style={{ fontSize: 12, color: C.muted, marginBottom: 14 }}>
-              or click to choose
+            <div style={{
+              width: 56, height: 56, borderRadius: 18,
+              background: drag ? `${C.blue}22` : `${C.border}55`,
+              border: `1px solid ${drag ? C.blue : C.border}`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              margin: "0 auto 16px", transition: "all 0.2s",
+            }}>
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={drag ? C.blue : C.muted} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="12" y1="18" x2="12" y2="12"/>
+                <line x1="9" y1="15" x2="12" y2="12"/>
+                <line x1="15" y1="15" x2="12" y2="12"/>
+              </svg>
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6, color: C.text }}>Drop PDF here</div>
+            <div style={{ fontSize: 12, color: C.muted, marginBottom: 18 }}>
+              or click to choose a file
             </div>
             <span
               style={{
-                display: "inline-block",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
                 background: C.blue,
                 color: "#fff",
                 padding: "10px 22px",
                 fontSize: 13,
                 fontWeight: 700,
                 borderRadius: 10,
+                boxShadow: `0 4px 16px ${C.blue}40`,
               }}
             >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
               Choose PDF
             </span>
           </div>
@@ -989,10 +1097,11 @@ const UploadTab: React.FC<{
         <div
           style={{
             marginTop: 14,
-            background: `${C.red}22`,
-            border: `1px solid ${C.red}`,
+            background: `${C.red}15`,
+            border: `1px solid ${C.red}55`,
+            borderLeft: `3px solid ${C.red}`,
             color: C.red,
-            padding: "10px 14px",
+            padding: "12px 14px",
             borderRadius: 10,
             fontSize: 13,
             whiteSpace: "pre-wrap",
@@ -1002,35 +1111,42 @@ const UploadTab: React.FC<{
             fontFamily: error.includes("Pass 1 response") ? "ui-monospace, SFMono-Regular, Menlo, monospace" : "inherit",
           }}
         >
-          <div style={{ fontWeight: 700, marginBottom: 4 }}>Couldn't read this drawing</div>
+          <div style={{ fontWeight: 700, marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            Couldn't read this drawing
+          </div>
           {error}
         </div>
       )}
 
       {project.scans.length > 0 && (
-        <div style={{ marginTop: 20 }}>
+        <div style={{ marginTop: 22 }}>
           <div
             style={{
               fontSize: 11,
               fontWeight: 700,
-              color: C.muted,
-              letterSpacing: 0.6,
+              color: C.dim,
+              letterSpacing: 0.8,
               marginBottom: 10,
+              textTransform: "uppercase",
             }}
           >
-            SCAN HISTORY
+            Scan History
           </div>
           {project.scans
             .slice()
             .reverse()
-            .map(s => (
+            .map((s, idx) => (
               <div
                 key={s.id}
                 style={{
-                  background: C.card,
-                  border: `1px solid ${C.border}`,
+                  background: idx === 0 ? C.card2 : C.card,
+                  border: `1px solid ${idx === 0 ? C.blue + "55" : C.border}`,
+                  borderLeft: idx === 0 ? `3px solid ${C.blue}` : `1px solid ${C.border}`,
                   borderRadius: 10,
-                  padding: 12,
+                  padding: "12px 14px",
                   marginBottom: 6,
                   display: "flex",
                   justifyContent: "space-between",
@@ -1038,15 +1154,36 @@ const UploadTab: React.FC<{
                   gap: 10,
                 }}
               >
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>
-                    v{s.versionNumber} · {s.fileName}
+                <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1 }}>
+                  <div style={{
+                    width: 28, height: 28, borderRadius: 8,
+                    background: idx === 0 ? `${C.blue}22` : `${C.border}55`,
+                    color: idx === 0 ? C.blue : C.muted,
+                    display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                  }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                      <polyline points="14 2 14 8 20 8"/>
+                    </svg>
                   </div>
-                  <div style={{ fontSize: 11, color: C.muted }}>
-                    {fmtDateTime(s.scannedAt)} · {s.componentCount} components ·{" "}
-                    {fmtMoney(s.subtotal)}
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>
+                      v{s.versionNumber} · {s.fileName}
+                    </div>
+                    <div style={{ fontSize: 11, color: C.muted }}>
+                      {fmtDateTime(s.scannedAt)} · {s.componentCount} components · {fmtMoney(s.subtotal)}
+                    </div>
                   </div>
                 </div>
+                {idx === 0 && (
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, color: C.blue,
+                    background: `${C.blue}18`, border: `1px solid ${C.blue}33`,
+                    padding: "2px 7px", borderRadius: 6, flexShrink: 0,
+                  }}>
+                    Latest
+                  </span>
+                )}
               </div>
             ))}
         </div>
@@ -1068,15 +1205,23 @@ const EstimateTab: React.FC<{
           background: C.card,
           border: `1px dashed ${C.border}`,
           borderRadius: 14,
-          padding: "36px 20px",
+          padding: "48px 20px",
           textAlign: "center",
         }}
       >
-        <div style={{ fontSize: 36, marginBottom: 10 }}>📝</div>
-        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>
+        <div style={{ width: 56, height: 56, borderRadius: 18, background: `${C.amber}18`, border: `1px solid ${C.amber}33`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={C.amber} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/>
+            <line x1="16" y1="17" x2="8" y2="17"/>
+            <line x1="10" y1="9" x2="8" y2="9"/>
+          </svg>
+        </div>
+        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6, color: C.text }}>
           No estimates yet
         </div>
-        <div style={{ fontSize: 12, color: C.muted, marginBottom: 14 }}>
+        <div style={{ fontSize: 12, color: C.muted, marginBottom: 18, lineHeight: 1.5 }}>
           Create a blank estimate or upload a drawing to auto-populate one.
         </div>
         <button
@@ -1085,14 +1230,21 @@ const EstimateTab: React.FC<{
             background: C.blue,
             color: "#fff",
             border: "none",
-            padding: "10px 18px",
+            padding: "10px 22px",
             fontSize: 13,
             fontWeight: 700,
             borderRadius: 10,
             cursor: "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            boxShadow: `0 4px 16px ${C.blue}40`,
           }}
         >
-          ＋ New Estimate
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          New Estimate
         </button>
       </div>
     );
@@ -1209,10 +1361,10 @@ const EstimateTab: React.FC<{
             style={{
               padding: "10px 14px",
               borderBottom: `1px solid ${C.border}`,
-              fontSize: 11,
+              fontSize: 10,
               fontWeight: 700,
-              color: C.muted,
-              letterSpacing: 0.5,
+              color: C.dim,
+              letterSpacing: 0.8,
               textTransform: "uppercase",
             }}
           >
@@ -1220,12 +1372,12 @@ const EstimateTab: React.FC<{
           </div>
           <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
             <thead>
-              <tr style={{ background: C.bg, color: C.muted }}>
-                <th style={{ textAlign: "left", padding: "8px 14px", fontSize: 11, fontWeight: 600, letterSpacing: 0.5 }}>Reference</th>
-                <th style={{ textAlign: "left", padding: "8px 14px", fontSize: 11, fontWeight: 600, letterSpacing: 0.5 }}>Number</th>
-                <th style={{ textAlign: "left", padding: "8px 14px", fontSize: 11, fontWeight: 600, letterSpacing: 0.5 }}>Created</th>
-                <th style={{ textAlign: "left", padding: "8px 14px", fontSize: 11, fontWeight: 600, letterSpacing: 0.5 }}>Status</th>
-                <th style={{ textAlign: "right", padding: "8px 14px", fontSize: 11, fontWeight: 600, letterSpacing: 0.5 }}>Total</th>
+              <tr style={{ background: C.bg }}>
+                <th style={{ textAlign: "left", padding: "8px 14px", fontSize: 10, fontWeight: 700, letterSpacing: 0.8, color: C.dim, textTransform: "uppercase" }}>Reference</th>
+                <th style={{ textAlign: "left", padding: "8px 14px", fontSize: 10, fontWeight: 700, letterSpacing: 0.8, color: C.dim, textTransform: "uppercase" }}>Number</th>
+                <th style={{ textAlign: "left", padding: "8px 14px", fontSize: 10, fontWeight: 700, letterSpacing: 0.8, color: C.dim, textTransform: "uppercase" }}>Created</th>
+                <th style={{ textAlign: "left", padding: "8px 14px", fontSize: 10, fontWeight: 700, letterSpacing: 0.8, color: C.dim, textTransform: "uppercase" }}>Status</th>
+                <th style={{ textAlign: "right", padding: "8px 14px", fontSize: 10, fontWeight: 700, letterSpacing: 0.8, color: C.dim, textTransform: "uppercase" }}>Total</th>
               </tr>
             </thead>
             <tbody>
@@ -1233,12 +1385,12 @@ const EstimateTab: React.FC<{
                 const t = estimateTotals(e);
                 return (
                   <tr key={e.id} style={{ borderTop: `1px solid ${C.border}` }}>
-                    <td style={{ padding: "8px 14px", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontWeight: 700, color: e.reference ? C.text : C.muted }}>
+                    <td style={{ padding: "9px 14px", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontWeight: 700, color: e.reference ? C.blue : C.muted }}>
                       {e.reference ?? "—"}
                     </td>
-                    <td style={{ padding: "8px 14px", color: C.muted }}>{e.number}</td>
-                    <td style={{ padding: "8px 14px", color: C.muted }}>{fmtDate(e.createdAt)}</td>
-                    <td style={{ padding: "8px 14px" }}>
+                    <td style={{ padding: "9px 14px", color: C.muted, fontSize: 12 }}>{e.number}</td>
+                    <td style={{ padding: "9px 14px", color: C.muted, fontSize: 12 }}>{fmtDate(e.createdAt)}</td>
+                    <td style={{ padding: "9px 14px" }}>
                       <span
                         style={{
                           fontSize: 11,
@@ -1247,12 +1399,13 @@ const EstimateTab: React.FC<{
                           borderRadius: 12,
                           background: e.locked ? `${C.green}18` : `${C.amber}18`,
                           color: e.locked ? C.green : C.amber,
+                          border: `1px solid ${e.locked ? C.green + "33" : C.amber + "33"}`,
                         }}
                       >
                         {e.locked ? "Locked" : "Draft"}
                       </span>
                     </td>
-                    <td style={{ padding: "8px 14px", textAlign: "right", fontWeight: 700 }}>
+                    <td style={{ padding: "9px 14px", textAlign: "right", fontWeight: 700, color: C.text }}>
                       {fmtMoney(t.total)}
                     </td>
                   </tr>
@@ -1281,15 +1434,21 @@ const ScheduleTab: React.FC<{ project: Project; onUpload: () => void }> = ({
           background: C.card,
           border: `1px dashed ${C.border}`,
           borderRadius: 14,
-          padding: "36px 20px",
+          padding: "48px 20px",
           textAlign: "center",
         }}
       >
-        <div style={{ fontSize: 36, marginBottom: 10 }}>📋</div>
-        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>
+        <div style={{ width: 56, height: 56, borderRadius: 18, background: `${C.purple}18`, border: `1px solid ${C.purple}33`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={C.purple} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+            <line x1="8" y1="21" x2="16" y2="21"/>
+            <line x1="12" y1="17" x2="12" y2="21"/>
+          </svg>
+        </div>
+        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6, color: C.text }}>
           Upload a drawing to generate a schedule
         </div>
-        <div style={{ fontSize: 12, color: C.muted, marginBottom: 14 }}>
+        <div style={{ fontSize: 12, color: C.muted, marginBottom: 18, lineHeight: 1.5 }}>
           Component schedules are generated from your latest PDF scan.
         </div>
         <button
@@ -1298,13 +1457,22 @@ const ScheduleTab: React.FC<{ project: Project; onUpload: () => void }> = ({
             background: C.blue,
             color: "#fff",
             border: "none",
-            padding: "10px 18px",
+            padding: "10px 22px",
             fontSize: 13,
             fontWeight: 700,
             borderRadius: 10,
             cursor: "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            boxShadow: `0 4px 16px ${C.blue}40`,
           }}
         >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
           Go to Upload
         </button>
       </div>
@@ -1320,28 +1488,35 @@ const ScheduleTab: React.FC<{ project: Project; onUpload: () => void }> = ({
 
   return (
     <div>
+      {/* Schedule meta bar */}
       <div
         style={{
+          background: C.card,
+          border: `1px solid ${C.border}`,
+          borderLeft: `3px solid ${C.purple}`,
+          borderRadius: 12,
+          padding: "12px 16px",
+          marginBottom: 16,
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
-          marginBottom: 12,
+          flexWrap: "wrap",
+          gap: 10,
         }}
       >
         <div>
-          <div style={{ fontSize: 13, fontWeight: 700 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>
             Schedule from v{latestScan.versionNumber}
           </div>
-          <div style={{ fontSize: 11, color: C.muted }}>
+          <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
             {latestScan.fileName} · {fmtDateTime(latestScan.scannedAt)}
           </div>
         </div>
-        <div
-          style={{
-            fontSize: 11,
-            color: C.muted,
-          }}
-        >
+        <div style={{
+          fontSize: 11, fontWeight: 700, color: C.purple,
+          background: `${C.purple}18`, border: `1px solid ${C.purple}33`,
+          padding: "4px 10px", borderRadius: 8,
+        }}>
           {result.components.length} components
         </div>
       </div>
@@ -1356,23 +1531,33 @@ const ScheduleTab: React.FC<{ project: Project; onUpload: () => void }> = ({
               background: C.card,
               border: `1px solid ${C.border}`,
               borderRadius: 12,
-              padding: "12px 16px",
+              overflow: "hidden",
               marginBottom: 10,
             }}
           >
+            {/* Room header */}
             <div
               style={{
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
-                marginBottom: 8,
+                padding: "12px 16px",
+                borderBottom: `1px solid ${C.border}`,
+                background: C.bg,
               }}
             >
-              <div style={{ fontSize: 13, fontWeight: 700 }}>{room}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.text, display: "flex", alignItems: "center", gap: 8 }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={C.muted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                  <polyline points="9 22 9 12 15 12 15 22"/>
+                </svg>
+                {room}
+              </div>
               <div style={{ fontSize: 13, fontWeight: 700, color: C.blue }}>
                 {fmtMoney(total)}
               </div>
             </div>
+            {/* Component rows */}
             {comps.map((c, i) => (
               <div
                 key={i}
@@ -1380,17 +1565,23 @@ const ScheduleTab: React.FC<{ project: Project; onUpload: () => void }> = ({
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
-                  padding: "6px 0",
-                  borderTop: i === 0 ? `1px solid ${C.border}` : "none",
+                  padding: "8px 16px",
+                  borderTop: i > 0 ? `1px solid ${C.border}` : "none",
                   fontSize: 13,
+                  transition: "background 0.15s",
                 }}
+                onMouseEnter={e => { e.currentTarget.style.background = C.cardHov; }}
+                onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
               >
-                <div style={{ color: C.dim }}>
+                <div style={{ color: C.text, fontWeight: 500 }}>
                   {c.catalogue_item_name ?? LABELS[c.type] ?? c.type}
                 </div>
-                <div style={{ color: C.muted }}>
-                  {c.quantity} × {fmtMoney(c.unit_price)} ={" "}
-                  <strong style={{ color: C.text }}>{fmtMoney(c.line_total)}</strong>
+                <div style={{ color: C.muted, fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>{c.quantity}</span>
+                  <span style={{ color: C.dim }}>×</span>
+                  <span>{fmtMoney(c.unit_price)}</span>
+                  <span style={{ color: C.dim }}>=</span>
+                  <strong style={{ color: C.text, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>{fmtMoney(c.line_total)}</strong>
                 </div>
               </div>
             ))}

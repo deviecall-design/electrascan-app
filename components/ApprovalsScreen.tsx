@@ -11,10 +11,10 @@ import { sendEnvelope } from "../services/docusignService";
 
 // ─── Design tokens (mirror App.tsx) ──────────────
 const C = {
-  bg:     "#0A1628", navy:   "#0F1E35", card:   "#132240",
-  blue:   "#1D6EFD", blueLt: "#4B8FFF", green:  "#00C48C",
+  bg:     "#0f172a", navy:   "#0F1E35", card:   "#1e293b",
+  blue:   "#3b82f6", blueLt: "#60a5fa", green:  "#00C48C",
   amber:  "#FFB020", red:    "#FF4D4D", text:   "#EDF2FF",
-  muted:  "#5C7A9E", border: "#1A3358", dim:    "#8BA4C4",
+  muted:  "#5C7A9E", border: "#1e3a5f", dim:    "#8BA4C4",
   purple: "#7C3AED", teal:   "#0EA5E9",
 };
 
@@ -332,6 +332,11 @@ export default function ApprovalsScreen({
 
   const stepStates = useMemo(() => computeStepStates(audit, status), [audit, status]);
 
+  // KPI strip metrics
+  const pendingCount = audit.filter(e => e.action === "pending" || e.action === "submitted").length;
+  const approvedCount = audit.filter(e => e.action === "approved").length;
+  const totalValue = currentEstimate.total;
+
   return (
     <div style={{
       height: embedded ? "auto" : "100vh",
@@ -372,6 +377,16 @@ export default function ApprovalsScreen({
 
       {/* Content */}
       <div style={{ flex: 1, overflowY: embedded ? "visible" : "auto", padding: embedded ? 0 : "14px 16px 96px" }}>
+
+        {/* ─── KPI Strip (MiroFish-style) ─── */}
+        <div style={{
+          display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 14,
+        }}>
+          <KpiMetric label="Pending" value={String(pendingCount)} sub="awaiting action" color={C.amber} />
+          <KpiMetric label="Approved" value={String(approvedCount)} sub={approvedCount > 0 ? "signed off" : "none yet"} color={C.green} />
+          <KpiMetric label="Total Value" value={fmt(totalValue)} sub="inc GST" color={C.blue} />
+        </div>
+
         {/* Status banner */}
         {status === "pending" ? (
           <div style={{
@@ -695,57 +710,64 @@ function ReactFragmentSafe({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+// ─── KpiMetric — MiroFish top-strip card ─────────
+function KpiMetric({ label, value, sub, color }: { label: string; value: string; sub: string; color: string }) {
+  return (
+    <div style={{
+      background: C.card, border: `1px solid ${C.border}`, borderRadius: 14,
+      padding: "14px 16px", display: "flex", flexDirection: "column" as const, gap: 2,
+    }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: "0.08em", textTransform: "uppercase" as const }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 800, color, lineHeight: 1.1 }}>{value}</div>
+      <div style={{ fontSize: 10, color: C.dim }}>{sub}</div>
+    </div>
+  );
+}
+
+// ─── AuditTimeline — MiroFish signals-feed style ──
 function AuditTimeline({ entries }: { entries: ApprovalAuditEntry[] }) {
   return (
-    <div style={{ position: "relative" as const }}>
+    <div style={{ display: "flex", flexDirection: "column" as const, gap: 8 }}>
       {entries.map((e, i) => {
         const color = ACTION_COLOR[e.action] ?? C.muted;
         const roleColor = ROLE_COLOR[e.role];
         const isLast = i === entries.length - 1;
         return (
-          <div key={e.id} style={{ display: "flex", gap: 12, position: "relative" as const, paddingBottom: isLast ? 0 : 14 }}>
-            {/* Timeline line */}
-            {!isLast && (
-              <div style={{ position: "absolute" as const, left: 10, top: 22, bottom: 0, width: 2, background: C.border }} />
-            )}
-            {/* Dot */}
-            <div style={{
-              width: 22, height: 22, borderRadius: 11, background: color, color: "#fff",
-              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800,
-              flexShrink: 0, marginTop: 1, zIndex: 1,
-            }}>
-              {e.action === "approved" ? "✓" : e.action === "rejected" ? "✗" : ""}
+          <div key={e.id} style={{
+            background: C.card, border: `1px solid ${C.border}`,
+            borderRadius: 12, padding: "12px 14px",
+            borderLeft: `3px solid ${color}`,
+            opacity: isLast ? 1 : 0.92,
+          }}>
+            {/* Signals-feed meta line: label · dot · timestamp · status badge */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, flexWrap: "wrap" as const }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{e.label}</span>
+              <span style={{ color: C.border, fontSize: 12 }}>·</span>
+              <span style={{
+                fontSize: 9, fontWeight: 800, padding: "2px 7px", borderRadius: 20,
+                background: `${color}22`, color, textTransform: "uppercase" as const, letterSpacing: "0.6px",
+              }}>
+                {ACTION_LABEL[e.action]}
+              </span>
+              <span style={{
+                fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: 20,
+                background: `${roleColor}18`, color: roleColor, letterSpacing: "0.3px",
+              }}>{e.role}</span>
+              <span style={{ fontSize: 10, fontFamily: "monospace", color: C.dim, marginLeft: "auto" }}>{fmtDate(e.ts)}</span>
             </div>
-            {/* Card */}
-            <div style={{
-              flex: 1, minWidth: 0, background: C.card, border: `1px solid ${C.border}`,
-              borderRadius: 12, padding: "12px 14px",
-            }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" as const }}>
-                <div style={{
-                  fontSize: 10, fontWeight: 800, padding: "2px 7px", borderRadius: 4,
-                  background: `${color}22`, color, textTransform: "uppercase" as const, letterSpacing: "0.5px",
-                }}>
-                  {ACTION_LABEL[e.action]}
-                </div>
-                <div style={{ fontSize: 10, fontFamily: "monospace", color: C.dim }}>{fmtDate(e.ts)}</div>
-              </div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 4 }}>{e.label}</div>
-              <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.5, marginBottom: 8 }}>{e.note}</div>
-              <div style={{ display: "flex", flexWrap: "wrap" as const, alignItems: "center", gap: 8 }}>
-                <span style={{
-                  fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 20,
-                  background: `${roleColor}22`, color: roleColor, letterSpacing: "0.3px",
-                }}>{e.actor} · {e.role}</span>
-                {e.doc && (
-                  <span style={{ fontSize: 10, color: C.dim, fontFamily: "monospace" }}>📎 {e.doc}</span>
-                )}
-                {e.signature ? (
-                  <span style={{ fontSize: 10, fontFamily: "monospace", color: C.green }}>🔐 {e.signature} <span style={{ color: C.dim }}>· Verified</span></span>
-                ) : (
-                  <span style={{ fontSize: 10, color: C.amber, fontStyle: "italic" }}>Awaiting signature</span>
-                )}
-              </div>
+            {/* Description line */}
+            <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.55, marginBottom: 8 }}>{e.note}</div>
+            {/* Footer meta */}
+            <div style={{ display: "flex", flexWrap: "wrap" as const, alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 10, fontWeight: 600, color: C.dim }}>{e.actor}</span>
+              {e.doc && (
+                <span style={{ fontSize: 10, color: C.dim, fontFamily: "monospace" }}>📎 {e.doc}</span>
+              )}
+              {e.signature ? (
+                <span style={{ fontSize: 10, fontFamily: "monospace", color: C.green }}>🔐 {e.signature} <span style={{ color: C.dim }}>· Verified</span></span>
+              ) : (
+                <span style={{ fontSize: 10, color: C.amber, fontStyle: "italic" }}>Awaiting signature</span>
+              )}
             </div>
           </div>
         );

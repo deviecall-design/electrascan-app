@@ -9,12 +9,27 @@ import { drawTenantLetterhead, drawTenantFooter } from "./PdfLetterhead";
 // Kept in sync with the `C` palette declared in App.tsx so the screen fits the
 // existing ElectraScan dark-mode UI without introducing a parallel theme.
 const C = {
-  bg:     "#0A1628", navy:   "#0F1E35", card:   "#132240",
-  blue:   "#1D6EFD", blueLt: "#4B8FFF", green:  "#00C48C",
+  bg:     "#0f172a", navy:   "#0F1E35", card:   "#1e293b",
+  blue:   "#3b82f6", blueLt: "#60a5fa", green:  "#00C48C",
   amber:  "#FFB020", red:    "#FF4D4D", text:   "#EDF2FF",
-  muted:  "#5C7A9E", border: "#1A3358", dim:    "#8BA4C4",
+  muted:  "#5C7A9E", border: "#1e3a5f", dim:    "#8BA4C4",
   purple: "#7C3AED", teal:   "#0EA5E9",
 };
+
+// ─── Variation workflow stages (step-indicator) ───
+interface VariationStage {
+  num: string;      // "01", "02", …
+  title: string;
+  desc: string;
+  icon: string;
+}
+const VARIATION_STAGES: VariationStage[] = [
+  { num: "01", title: "Compare Versions",    desc: "Diff V001 vs V002 drawing sets",       icon: "📂" },
+  { num: "02", title: "Identify Changes",    desc: "Added, removed & changed items",        icon: "🔍" },
+  { num: "03", title: "Flag Risks",          desc: "Height, scope & compliance risks",      icon: "⚡" },
+  { num: "04", title: "Cost Impact",         desc: "Net delta and percentage change",        icon: "💰" },
+  { num: "05", title: "Builder Report",      desc: "Export PDF / CSV for approval",         icon: "📤" },
+];
 
 // ─── Types ───────────────────────────────────────────
 export type ChangeType = "added" | "removed" | "changed";
@@ -515,6 +530,48 @@ export default function VariationReport({
           </div>
         )}
 
+        {/* ─── Variation Workflow Step Indicators ─── */}
+        <div style={{ marginBottom: 18 }}>
+          <div style={{
+            fontSize: 9, fontWeight: 800, color: C.muted, letterSpacing: "0.1em",
+            textTransform: "uppercase" as const, marginBottom: 10,
+          }}>VARIATION WORKFLOW</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8 }}>
+            {VARIATION_STAGES.map((stage, idx) => {
+              // Stages 01–04 are done (we have a full diff); stage 05 is pending export
+              const isDone = idx < 4;
+              const isCurrent = idx === 4;
+              const accentColor = isDone ? C.green : isCurrent ? C.blue : C.muted;
+              return (
+                <div key={stage.num} style={{
+                  background: C.card, border: `1px solid ${isDone ? `${C.green}44` : isCurrent ? `${C.blue}44` : C.border}`,
+                  borderRadius: 12, padding: "10px 10px 12px",
+                  display: "flex", flexDirection: "column" as const, gap: 4,
+                  position: "relative" as const, overflow: "hidden" as const,
+                }}>
+                  {/* Subtle top accent line */}
+                  <div style={{ position: "absolute" as const, top: 0, left: 0, right: 0, height: 2, background: accentColor, borderRadius: "12px 12px 0 0" }} />
+                  {/* Step badge */}
+                  <div style={{
+                    fontSize: 9, fontWeight: 800, color: accentColor,
+                    letterSpacing: "0.06em", textTransform: "uppercase" as const,
+                  }}>Step {stage.num}</div>
+                  {/* Icon chip */}
+                  <div style={{
+                    width: 28, height: 28, borderRadius: 8,
+                    background: `${accentColor}18`, border: `1px solid ${accentColor}33`,
+                    display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14,
+                  }}>{isDone ? "✓" : stage.icon}</div>
+                  {/* Title */}
+                  <div style={{ fontSize: 11, fontWeight: 700, color: isDone ? C.text : isCurrent ? C.text : C.muted, lineHeight: 1.2 }}>{stage.title}</div>
+                  {/* Description */}
+                  <div style={{ fontSize: 9, color: C.dim, lineHeight: 1.4 }}>{stage.desc}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Rows */}
         <SectionTitle>Changes — {rows.length} item{rows.length === 1 ? "" : "s"}</SectionTitle>
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", marginBottom: 18 }}>
@@ -655,7 +712,7 @@ export default function VariationReport({
 function SectionTitle({ children }: { children: ReactNode }) {
   return (
     <div style={{
-      fontSize: 11, fontWeight: 700, color: C.muted, letterSpacing: "0.08em",
+      fontSize: 10, fontWeight: 800, color: C.muted, letterSpacing: "0.10em",
       textTransform: "uppercase", marginBottom: 10, marginTop: 2,
     }}>{children}</div>
   );
@@ -679,38 +736,43 @@ function Chip({ dotColor, label, value, valueColor }: {
 }
 
 function VariationRowCard({ row, isLast }: { row: VariationRow; isLast: boolean }) {
-  const accent = row.type === "added" ? "#00C48C" : row.type === "removed" ? "#FF4D4D" : "#FFB020";
-  const bgTint = row.type === "added" ? "rgba(0,196,140,0.05)" : row.type === "removed" ? "rgba(255,77,77,0.05)" : "rgba(255,176,32,0.05)";
-  const deltaColor = row.delta > 0 ? "#FF4D4D" : row.delta < 0 ? "#00C48C" : "#5C7A9E";
+  const accent = row.type === "added" ? C.green : row.type === "removed" ? C.red : C.amber;
+  const deltaColor = row.delta > 0 ? C.red : row.delta < 0 ? C.green : C.muted;
   const badgeText = row.type === "added" ? "+ Added" : row.type === "removed" ? "− Removed" : "± Changed";
 
   return (
     <div style={{
-      padding: "12px 14px",
+      padding: "11px 16px",
       borderBottom: isLast ? "none" : `1px solid ${C.border}`,
-      borderLeft: `3px solid ${accent}`, background: bgTint,
+      display: "grid",
+      gridTemplateColumns: "auto 1fr auto auto",
+      gap: "0 12px",
+      alignItems: "center",
     }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 8 }}>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{
-            display: "inline-block", fontSize: 10, fontWeight: 800, padding: "2px 7px",
-            borderRadius: 5, background: `${accent}22`, color: accent,
-            letterSpacing: "0.5px", marginBottom: 5, textTransform: "uppercase",
-          }}>{badgeText}</div>
-          <div style={{ fontSize: 13, fontWeight: 600, color: C.text, lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis" }}>{row.component}</div>
-          <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{row.room}</div>
-        </div>
-        <div style={{ textAlign: "right", flexShrink: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: deltaColor }}>{row.delta >= 0 ? "+" : ""}{fmt(row.delta)}</div>
-          <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>cost impact</div>
+      {/* Type badge */}
+      <div style={{
+        fontSize: 9, fontWeight: 800, padding: "3px 8px",
+        borderRadius: 20, background: `${accent}18`, color: accent,
+        letterSpacing: "0.5px", textTransform: "uppercase" as const, whiteSpace: "nowrap" as const,
+      }}>{badgeText}</div>
+      {/* Component + room */}
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: C.text, lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{row.component}</div>
+        <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>{row.room}</div>
+      </div>
+      {/* Qty columns */}
+      <div style={{ textAlign: "center" as const, fontSize: 11, color: C.muted, minWidth: 64 }}>
+        <div style={{ fontSize: 9, color: C.dim, marginBottom: 2 }}>V001 / V002</div>
+        <div style={{ fontWeight: 700, color: C.text }}>
+          <span style={{ color: row.qty001 === 0 ? C.dim : C.text }}>{row.qty001 || "—"}</span>
+          {" / "}
+          <span style={{ color: row.qty002 === 0 ? C.dim : C.text }}>{row.qty002 || "—"}</span>
         </div>
       </div>
-      <div style={{
-        display: "flex", gap: 12, paddingTop: 8, borderTop: `1px solid ${C.border}`,
-        fontSize: 11, color: C.muted,
-      }}>
-        <div>V001 Qty <span style={{ color: row.qty001 === 0 ? C.dim : C.text, fontWeight: 700 }}>{row.qty001 || "—"}</span></div>
-        <div>V002 Qty <span style={{ color: row.qty002 === 0 ? C.dim : C.text, fontWeight: 700 }}>{row.qty002 || "—"}</span></div>
+      {/* Delta */}
+      <div style={{ textAlign: "right" as const, minWidth: 72 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: deltaColor }}>{row.delta >= 0 ? "+" : ""}{fmt(row.delta)}</div>
+        <div style={{ fontSize: 9, color: C.dim }}>impact</div>
       </div>
     </div>
   );
