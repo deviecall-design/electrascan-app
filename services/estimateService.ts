@@ -1,5 +1,6 @@
 import { supabase } from './supabaseClient';
 import type { CableRun, EstimateLineItem } from '../contexts/ProjectContext';
+import { buildTleBom } from './tleMatcher';
 
 const N8N_WEBHOOK_URL = 'https://damienc13.app.n8n.cloud/webhook/electrascan-estimate';
 
@@ -16,9 +17,47 @@ export interface WholesalerQuoteRequestPayload {
     }
   >;
   line_items: Array<Pick<EstimateLineItem, 'description' | 'category' | 'qty' | 'unit'> & { unit_price: number; line_total: number }>;
+  // TLE-matched BOM — only items TLE can supply, with SKU attached
+  tle_matched_bom?: Array<{
+    description: string; category: string; qty: number; unit_price: number;
+    line_total: number; tle_sku: string; tle_product: string;
+    match_status: string; confidence: number;
+  }>;
+  tle_sourced_elsewhere?: string[]; // descriptions of items not at TLE
   notes: string;
   tenant: string;
   sent_at: string;
+}
+
+// Sends a TLE-specific quote request with fuzzy-matched BOM.
+// Items not stocked at TLE (ZETR etc.) are excluded from tle_matched_bom
+// and listed in tle_sourced_elsewhere so the electrician knows to source them elsewhere.
+export async function sendTleQuoteRequest(
+  payload: Omit<WholesalerQuoteRequestPayload, 'tle_matched_bom' | 'tle_sourced_elsewhere'>,
+  lineItemUnitPrices: Record<string, number>,
+  allLineItems: EstimateLineItem[],
+): Promise<{ ok: true; matched: number; excluded: number } | { ok: false; error: string }> {
+  try {
+    const tleBom = await buildTleBom(allLineItems, lineItemUnitPrices);
+    const matchedIds = new Set(tleBom.map(b => b.description));
+    const sourceElsewhere = allLineItems
+      .filter(i => !matchedIds.has(i.description))
+      .map(i => i.description);
+
+    const enrichedPayload: WholesalerQuoteRequestPayload = {
+      ...payload,
+      wholesaler: 'TLE Brookvale',
+      wholesaler_email: payload.wholesaler_email || 'brookvale@tle.mmem.com.au',
+      tle_matched_bom: tleBom,
+      tle_sourced_elsewhere: sourceElsewhere,
+    };
+
+    const result = await sendWholesalerQuoteRequest(enrichedPayload);
+    if (!result.ok) return { ok: false, error: (result as { ok: false; error: string }).error };
+    return { ok: true, matched: tleBom.length, excluded: sourceElsewhere.length };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'unknown' };
+  }
 }
 
 export async function sendWholesalerQuoteRequest(

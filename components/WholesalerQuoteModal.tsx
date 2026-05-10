@@ -6,7 +6,8 @@ import type {
 import { useProjects } from "../contexts/ProjectContext";
 import { useTenant } from "../contexts/TenantContext";
 import { useToast } from "../contexts/ToastContext";
-import { sendWholesalerQuoteRequest } from "../services/estimateService";
+import { sendWholesalerQuoteRequest, sendTleQuoteRequest } from "../services/estimateService";
+import { matchEstimateToTle, type TleBomResult } from "../services/tleMatcher";
 
 const C = {
   bg: "#0A1628",
@@ -59,11 +60,23 @@ const WholesalerQuoteModal: React.FC<Props> = ({ estimate, project, onClose }) =
   const [recipientEmail, setRecipientEmail] = useState<string>(defaultWholesaler?.email ?? "");
   const [notes, setNotes] = useState<string>("");
   const [sending, setSending] = useState(false);
+  const [tleBom, setTleBom] = useState<TleBomResult | null>(null);
+  const [tleMatching, setTleMatching] = useState(false);
 
   const wholesaler = useMemo(
     () => tenant.wholesalers.find(w => w.id === wholesalerId) ?? defaultWholesaler,
     [tenant.wholesalers, wholesalerId, defaultWholesaler],
   );
+
+  const isTle = wholesaler?.name?.toLowerCase().includes("tle");
+
+  React.useEffect(() => {
+    if (!isTle || lineItems.length === 0) { setTleBom(null); return; }
+    setTleMatching(true);
+    matchEstimateToTle(lineItems)
+      .then(setTleBom)
+      .finally(() => setTleMatching(false));
+  }, [isTle, lineItems]);
 
   const onWholesalerChange = (id: string) => {
     setWholesalerId(id);
@@ -113,7 +126,8 @@ const WholesalerQuoteModal: React.FC<Props> = ({ estimate, project, onClose }) =
       return;
     }
     setSending(true);
-    const res = await sendWholesalerQuoteRequest({
+
+    const basePayload = {
       estimate_id: estimateId,
       estimate_ref: estimateRef || estimateId,
       project_name: projectName,
@@ -138,9 +152,19 @@ const WholesalerQuoteModal: React.FC<Props> = ({ estimate, project, onClose }) =
       notes: notes.trim(),
       tenant: tenant.name,
       sent_at: new Date().toISOString(),
-    });
+    };
+
+    const unitPrices = Object.fromEntries(lineItems.map(li => [li.id, li.unitPrice]));
+    const res = isTle
+      ? await sendTleQuoteRequest(basePayload, unitPrices, lineItems)
+      : await sendWholesalerQuoteRequest(basePayload);
+
     setSending(false);
     if (res.ok) {
+      const tleRes = isTle && "matched" in res ? res as { ok: true; matched: number; excluded: number } : null;
+      const detail = tleRes
+        ? ` (${tleRes.matched} items matched to TLE SKUs${tleRes.excluded > 0 ? `, ${tleRes.excluded} sourced elsewhere` : ""})`
+        : "";
       saveEstimate(project.id, {
         ...estimate,
         wholesaleQuoteSentAt: new Date().toISOString(),
@@ -150,10 +174,10 @@ const WholesalerQuoteModal: React.FC<Props> = ({ estimate, project, onClose }) =
         wholesaleQuoteOrderedAt: undefined,
         updatedAt: new Date().toISOString(),
       });
-      addToast(`Quote request sent to ${wholesaler.name}`, "success");
+      addToast(`Quote request sent to ${wholesaler.name}${detail}`, "success");
       onClose();
     } else {
-      addToast(`Send failed: ${res.error}`, "error");
+      addToast(`Send failed: ${(res as { ok: false; error: string }).error}`, "error");
     }
   };
 
@@ -375,6 +399,96 @@ const WholesalerQuoteModal: React.FC<Props> = ({ estimate, project, onClose }) =
           </>
         )}
 
+        {/* TLE BOM matching preview */}
+        {isTle && (
+          <>
+            <SectionHeader>TLE PRODUCT MATCHING</SectionHeader>
+            {tleMatching && (
+              <div style={{ fontSize: 12, color: C.muted, marginBottom: 14 }}>
+                Matching items to TLE catalogue…
+              </div>
+            )}
+            {tleBom && !tleMatching && (
+              <>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    marginBottom: 10,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <Pill color={C.green} label={`${tleBom.summary.matched} Matched`} />
+                  {tleBom.summary.review > 0 && (
+                    <Pill color={C.amber} label={`${tleBom.summary.review} Review`} />
+                  )}
+                  {tleBom.summary.sourceElsewhere > 0 && (
+                    <Pill color={C.red} label={`${tleBom.summary.sourceElsewhere} Source Elsewhere`} />
+                  )}
+                </div>
+                <div
+                  style={{
+                    background: C.card,
+                    border: `1px solid ${C.border}`,
+                    borderRadius: 10,
+                    overflow: "hidden",
+                    marginBottom: 14,
+                  }}
+                >
+                  <HeaderRow
+                    cols="3fr 2fr 1fr"
+                    labels={["ITEM", "TLE SKU", "STATUS"]}
+                  />
+                  {tleBom.items.map((r, i) => {
+                    const topMatch = r.matches[0];
+                    const statusColor =
+                      r.status === "MATCHED" ? C.green
+                      : r.status === "REVIEW" ? C.amber
+                      : r.status === "SOURCE_ELSEWHERE" ? C.red
+                      : C.muted;
+                    const statusLabel =
+                      r.status === "MATCHED" ? `✓ ${topMatch?.sku ?? ""}`
+                      : r.status === "REVIEW" ? `? ${topMatch?.sku ?? ""}`
+                      : r.status === "SOURCE_ELSEWHERE" ? "Source elsewhere"
+                      : "Not found";
+                    return (
+                      <div
+                        key={r.item.id}
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "3fr 2fr 1fr",
+                          padding: "7px 12px",
+                          borderBottom: i === tleBom.items.length - 1 ? "none" : `1px solid ${C.border}`,
+                          fontSize: 12,
+                          alignItems: "center",
+                        }}
+                      >
+                        <div style={{ color: C.text }}>{r.item.description}</div>
+                        <div style={{ color: C.dim, fontSize: 11 }}>
+                          {topMatch?.name ? topMatch.name.substring(0, 40) + (topMatch.name.length > 40 ? "…" : "") : "—"}
+                        </div>
+                        <div style={{ color: statusColor, fontSize: 11, fontWeight: 700, textAlign: "right" }}>
+                          {statusLabel}
+                          {r.confidence > 0 && (
+                            <span style={{ color: C.muted, fontWeight: 400, marginLeft: 4 }}>
+                              {r.confidence}%
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {tleBom.summary.sourceElsewhere > 0 && (
+                  <Banner color={C.amber}>
+                    {tleBom.summary.sourceElsewhere} item{tleBom.summary.sourceElsewhere > 1 ? "s" : ""} not stocked at TLE will be excluded from this quote and must be sourced elsewhere.
+                  </Banner>
+                )}
+              </>
+            )}
+          </>
+        )}
+
         {(cableRunsWithPrice.length > 0 || lineItemsWithTotal.length > 0) && (
           <div
             style={{
@@ -547,6 +661,22 @@ const DataRow: React.FC<{ cols: string; values: React.ReactNode[]; last: boolean
       </div>
     ))}
   </div>
+);
+
+const Pill: React.FC<{ color: string; label: string }> = ({ color, label }) => (
+  <span
+    style={{
+      background: `${color}20`,
+      border: `1px solid ${color}55`,
+      color,
+      padding: "3px 10px",
+      borderRadius: 20,
+      fontSize: 11,
+      fontWeight: 700,
+    }}
+  >
+    {label}
+  </span>
 );
 
 const Banner: React.FC<{ color: string; children: React.ReactNode }> = ({
