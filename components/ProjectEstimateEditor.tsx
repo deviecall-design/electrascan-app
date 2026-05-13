@@ -8,6 +8,7 @@ import {
   type CableRun,
   type BomStatus,
 } from "../contexts/ProjectContext";
+import { useTenant } from "../contexts/TenantContext";
 import WholesalerQuoteModal from "./WholesalerQuoteModal";
 
 const C = {
@@ -71,6 +72,7 @@ const DEFAULT_CATEGORIES = [
 
 const ProjectEstimateEditor: React.FC<Props> = ({ projectId, estimateId }) => {
   const { projects, saveEstimate } = useProjects();
+  const { tenant } = useTenant();
   const project = projects.find(p => p.id === projectId);
   const estimate = project?.estimates.find(e => e.id === estimateId);
 
@@ -170,6 +172,91 @@ const ProjectEstimateEditor: React.FC<Props> = ({ projectId, estimateId }) => {
 
   const readOnly = estimate.locked;
 
+  // ── Export Quote ──────────────────────────────────────────
+  const exportQuote = () => {
+    const ref = estimate.reference || estimate.number;
+    const date = new Date().toLocaleDateString("en-AU", { day: "2-digit", month: "long", year: "numeric" });
+    const line = (label: string, value: string, pad = 52) =>
+      `${label.padEnd(pad)} ${value}`;
+    const sep = "─".repeat(70);
+
+    const groupedByCategory: Record<string, typeof estimate.lineItems> = {};
+    estimate.lineItems.forEach(li => {
+      groupedByCategory[li.category] = groupedByCategory[li.category] || [];
+      groupedByCategory[li.category].push(li);
+    });
+
+    const itemLines: string[] = [];
+    Object.entries(groupedByCategory).forEach(([cat, items]) => {
+      itemLines.push(`\n${cat.toUpperCase()}`);
+      itemLines.push("-".repeat(40));
+      items.forEach(li => {
+        const lTotal = li.qty * li.unitPrice;
+        itemLines.push(
+          `${li.description.substring(0, 38).padEnd(40)}` +
+          `${String(li.qty).padStart(4)} EA` +
+          `  $${li.unitPrice.toFixed(2).padStart(9)}` +
+          `  $${lTotal.toFixed(2).padStart(10)}`
+        );
+        if (li.room) {
+          itemLines.push(`  Location: ${li.room}`);
+        }
+      });
+    });
+
+    const lines = [
+      `${"-".repeat(70)}`,
+      `ELECTRICAL ESTIMATE`,
+      `${"-".repeat(70)}`,
+      ``,
+      `${tenant.name}`,
+      tenant.address ? `${tenant.address}` : "",
+      tenant.abn ? `ABN: ${tenant.abn}` : "",
+      tenant.contactPhone ? `Phone: ${tenant.contactPhone}` : "",
+      tenant.contactEmail ? `Email: ${tenant.contactEmail}` : "",
+      ``,
+      sep,
+      line("REFERENCE:", ref),
+      line("PROJECT:", project?.name ?? "—"),
+      line("CLIENT:", project?.clientName ?? "—"),
+      line("ADDRESS:", project?.address ?? "—"),
+      line("DATE:", date),
+      line("STATUS:", estimate.locked ? "LOCKED / FINALISED" : "DRAFT — Subject to change"),
+      sep,
+      ``,
+      `DESCRIPTION                               QTY         UNIT PRICE    LINE TOTAL`,
+      sep,
+      ...itemLines,
+      ``,
+      sep,
+      line("Subtotal (ex GST):", `$${totals.subtotal.toFixed(2)}`),
+      line(`Margin (${estimate.margin}%):`, `$${totals.marginAmount.toFixed(2)}`),
+      ...(totals.materialsCost > 0
+        ? [line("Materials (cable/conduit):", `$${totals.materialsCost.toFixed(2)}`)]
+        : []),
+      line("Subtotal with margin:", `$${totals.subtotalWithMargin.toFixed(2)}`),
+      line(`GST (${estimate.gstRate}%):`, `$${totals.gst.toFixed(2)}`),
+      sep,
+      line("TOTAL INC GST:", `$${totals.total.toFixed(2)}`),
+      sep,
+      ``,
+      `This estimate is valid for 30 days from the date issued.`,
+      `Prices are in Australian Dollars (AUD) and are exclusive of GST`,
+      `unless otherwise stated. All work subject to site inspection.`,
+    ].filter(l => l !== null && l !== undefined);
+
+    const content = lines.join("\n");
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${ref.replace(/[^a-zA-Z0-9-]/g, "-")}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div style={{ color: C.text }}>
       {/* Toolbar */}
@@ -190,6 +277,9 @@ const ProjectEstimateEditor: React.FC<Props> = ({ projectId, estimateId }) => {
         </ToolbarBtn>
         <ToolbarBtn onClick={() => setShowWholesaler(true)} icon="📨">
           Send BOM
+        </ToolbarBtn>
+        <ToolbarBtn onClick={exportQuote} icon="📄">
+          Export Quote
         </ToolbarBtn>
         <div style={{ position: "relative" }}>
           <ToolbarBtn onClick={() => setShowVersions(v => !v)} icon="🕒">

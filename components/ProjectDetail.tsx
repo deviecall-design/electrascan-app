@@ -1603,7 +1603,10 @@ function categorise(compType: string): string {
   if (t.startsWith("DATA") || t.startsWith("AV") || t.startsWith("TV")) return "AV / Data";
   if (t.startsWith("SECURITY") || t.startsWith("CCTV") || t.startsWith("ALARM")) return "Security";
   if (t.startsWith("EV")) return "EV Charging";
-  if (t.startsWith("AUTOMATION") || t.includes("BLIND")) return "Automation";
+  // AUTOMATION_HUB covers motorised blinds, home automation hubs, and
+  // Dynalite/DALI systems — all belong in Automation, not General.
+  if (t.startsWith("AUTOMATION") || t.includes("BLIND") || t === "AUTOMATION_HUB") return "Automation";
+  if (t.startsWith("GATE") || t.startsWith("POOL")) return "Automation";
   if (t.startsWith("SOLAR") || t.startsWith("BATTERY")) return "Solar / Battery";
   return "General";
 }
