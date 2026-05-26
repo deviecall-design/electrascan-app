@@ -1,6 +1,6 @@
-import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Send, FileDown } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { ArrowLeft, ArrowRight, Send, FileDown, Loader2 } from "lucide-react";
 import { C, FONT, RADIUS } from "../components/desktop/tokens";
 import {
   PageHeader,
@@ -13,6 +13,8 @@ import {
   ConfPill,
 } from "../components/ui/anthropic";
 import { PrimaryButton, GhostButton } from "../components/ui/anthropic/Button";
+import { fetchEstimateByRef, type EstimateRow } from "../services/supabaseData";
+import { compareEstimates, type VariationDelta, type LineItemCompare } from "../services/variationComparison";
 
 // ─── Mock variation data ────────────────────────────────────────────────
 // Same shape as the v2 prototype VARIATION_ITEMS. TODO: compute dynamically
@@ -44,11 +46,65 @@ const BASE_TOTAL = 44635;
 
 export default function VariationReportScreen() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [tab, setTab] = useState<"summary" | "detail">("summary");
+  const [isLoading, setIsLoading] = useState(false);
+  const [v1, setV1] = useState<EstimateRow | null>(null);
+  const [v2, setV2] = useState<EstimateRow | null>(null);
+  const [delta, setDelta] = useState<VariationDelta | null>(null);
 
-  const delta = VARIATION_ITEMS.reduce((s, i) => s + (i.newQty - i.prevQty) * i.unitPrice, 0);
-  const newTotal = BASE_TOTAL + delta;
-  const pct = (delta / BASE_TOTAL) * 100;
+  useEffect(() => {
+    // Load estimates from URL params: ?v1=EST-001&v2=EST-002
+    const v1Ref = searchParams.get("v1");
+    const v2Ref = searchParams.get("v2");
+
+    if (!v1Ref || !v2Ref) {
+      console.warn("[VariationReportScreen] Missing v1 or v2 param; using mock data");
+      return;
+    }
+
+    const loadEstimates = async () => {
+      setIsLoading(true);
+      try {
+        const [e1, e2] = await Promise.all([
+          fetchEstimateByRef(v1Ref),
+          fetchEstimateByRef(v2Ref),
+        ]);
+
+        if (e1.data && e2.data) {
+          setV1(e1.data);
+          setV2(e2.data);
+          const computed = compareEstimates(e1.data, e2.data);
+          setDelta(computed);
+        } else {
+          console.error("[VariationReportScreen] Failed to load estimates:", e1.error, e2.error);
+        }
+      } catch (err) {
+        console.error("[VariationReportScreen] Error loading estimates:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadEstimates();
+  }, [searchParams]);
+
+  // Fallback to mock if no real data loaded
+  const displayDelta = delta || { 
+    totalCostV1: BASE_TOTAL,
+    totalCostV2: BASE_TOTAL + VARIATION_ITEMS.reduce((s, i) => s + (i.newQty - i.prevQty) * i.unitPrice, 0),
+    totalDelta: VARIATION_ITEMS.reduce((s, i) => s + (i.newQty - i.prevQty) * i.unitPrice, 0),
+    itemsAdded: [],
+    itemsRemoved: [],
+    itemsChanged: [],
+    itemsUnchanged: [],
+    qtyAddedTotal: 0,
+    qtyRemovedTotal: 0,
+  };
+
+  const newTotal = displayDelta.totalCostV2;
+  const deltaMoney = displayDelta.totalDelta;
+  const pct = (deltaMoney / BASE_TOTAL) * 100;
 
   const added   = VARIATION_ITEMS.filter(i => i.change === "added");
   const removed = VARIATION_ITEMS.filter(i => i.change === "removed");
