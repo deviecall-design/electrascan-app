@@ -346,7 +346,7 @@ function enrichLegendItems(rawItems: any[]): LegendItem[] {
 // BUILD FINAL COMPONENT LIST
 // ─────────────────────────────────────────────
 
-function buildComponents(legendItems: LegendItem[], roomComponents: any[]): DetectedComponent[] {
+function buildComponents(legendItems: LegendItem[], roomComponents: any[], rateLibrary: any[] = []): DetectedComponent[] {
   const components: DetectedComponent[] = [];
   const legendByDesc = new Map<string, LegendItem>();
   legendItems.forEach(l => legendByDesc.set(l.symbol_description.toLowerCase(), l));
@@ -367,7 +367,22 @@ function buildComponents(legendItems: LegendItem[], roomComponents: any[]): Dete
       legendItem = legendItems.find(l => l.mapped_type === c.type && l.in_electrical_scope);
     }
 
-    const price = legendItem?.catalogue_price ?? FALLBACK_PRICING[c.type as ComponentType] ?? 200;
+    let price = legendItem?.catalogue_price ?? FALLBACK_PRICING[c.type as ComponentType] ?? 200;
+    let tle_product_code = "";
+    let tle_product_name = "";
+
+    // ── RATE LIBRARY LOOKUP (FIX 5) ────
+    // Check if this symbol matches any TLE products in the rate library
+    if (rateLibrary.length > 0 && legendItem) {
+      const rateMatch = findRateLibraryMatch(legendItem.symbol_description, c.type as ComponentType, rateLibrary);
+      if (rateMatch) {
+        price = rateMatch.rate;
+        tle_product_code = rateMatch.code;
+        tle_product_name = rateMatch.description;
+        console.log(`[ElectraScan v4] TLE match: ${legendItem.symbol_description} → ${tle_product_name} @ $${price}`);
+      }
+    }
+
     const qty = c.quantity ?? 1;
     const flags: DetectionFlag[] = [...(c.flags ?? [])];
     if (legendItem?.automation_flag && !flags.includes("AUTOMATION_DEPENDENCY")) {
@@ -382,7 +397,7 @@ function buildComponents(legendItems: LegendItem[], roomComponents: any[]): Dete
       confidence: c.confidence ?? 85,
       needs_review: (c.confidence ?? 85) < 90,
       flags,
-      notes: c.notes ?? "",
+      notes: tle_product_name ? `${c.notes ?? ""} (TLE: ${tle_product_name})` : (c.notes ?? ""),
       unit_price: price,
       line_total: price * qty,
       legend_quantity: legendItem?.quantity,
@@ -401,6 +416,19 @@ function buildComponents(legendItems: LegendItem[], roomComponents: any[]): Dete
     const covered = [...coveredDescs].some(d => d.includes(desc) || desc.includes(d));
     if (!covered) {
       console.log(`[ElectraScan v4] Adding missed legend item: ${l.symbol_description} ×${l.quantity} @ $${l.catalogue_price}`);
+      
+      // Check rate library for missed items too
+      let finalPrice = l.catalogue_price;
+      let tle_note = "";
+      if (rateLibrary.length > 0) {
+        const rateMatch = findRateLibraryMatch(l.symbol_description, l.mapped_type ?? "DOWNLIGHT_RECESSED", rateLibrary);
+        if (rateMatch) {
+          finalPrice = rateMatch.rate;
+          tle_note = ` (TLE: ${rateMatch.description})`;
+          console.log(`[ElectraScan v4] TLE match (missed item): ${l.symbol_description} → ${rateMatch.description} @ $${rateMatch.rate}`);
+        }
+      }
+
       const flags: DetectionFlag[] = ["FROM_LEGEND"];
       if (l.automation_flag) flags.push("AUTOMATION_DEPENDENCY");
       components.push({
@@ -411,9 +439,9 @@ function buildComponents(legendItems: LegendItem[], roomComponents: any[]): Dete
         confidence: 85,
         needs_review: false,
         flags,
-        notes: `${l.symbol_description} — ${l.quantity} ${l.unit} per legend. Symbol: ${l.symbol_visual}`,
-        unit_price: l.catalogue_price,
-        line_total: l.catalogue_price * l.quantity,
+        notes: `${l.symbol_description} — ${l.quantity} ${l.unit} per legend. Symbol: ${l.symbol_visual}${tle_note}`,
+        unit_price: finalPrice,
+        line_total: finalPrice * l.quantity,
         legend_quantity: l.quantity,
         legend_match: true,
         catalogue_item_name: l.symbol_description,
@@ -483,6 +511,106 @@ function applyConfidenceThresholding(components: DetectedComponent[]): DetectedC
   });
 }
 
+// ── MULTI-PASS CONSENSUS (FIX 4) ────────────────────────────────────
+/**
+ * Run Claude on ambiguous detections (confidence < 80%) twice, take consensus.
+ * This reduces hallucination by comparing two independent passes.
+ */
+async function runMultiPassConsensus(
+  client: Anthropic,
+  imageBlocks: Anthropic.ImageBlockParam[],
+  legendItems: LegendItem[],
+  fileName: string,
+  ambiguousComponents: any[]
+): Promise<any[]> {
+  if (ambiguousComponents.length === 0) return [];
+
+  console.log(`[ElectraScan v4] Multi-pass consensus on ${ambiguousComponents.length} ambiguous items...`);
+
+  const ambiguousPrompt = `You are verifying ${ambiguousComponents.length} ambiguous electrical symbols on a floor plan.
+
+AMBIGUOUS ITEMS TO VERIFY:
+${ambiguousComponents.map(c => `- ${c.legend_description}: currently detected as ${c.quantity} units in ${c.room}`).join('\n')}
+
+Re-scan the drawing CAREFULLY and count these specific items. Report what you actually see, not what you expect to see.
+
+Return ONLY valid JSON with revised counts:
+{
+  "consensus_checks": [
+    {
+      "legend_description": "item name",
+      "new_quantity": <count>,
+      "confidence": <0.0-1.0>,
+      "notes": "what you actually see on drawing"
+    }
+  ]
+}`;
+
+  try {
+    const consensusResponse = await client.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 1000,
+      messages: [{
+        role: "user",
+        content: [
+          ...imageBlocks,
+          { type: "text", text: ambiguousPrompt },
+        ],
+      }],
+    });
+
+    const consensusRaw = consensusResponse.content[0].type === "text" ? consensusResponse.content[0].text : "{}";
+    const consensusExtracted = extractJSON(consensusRaw);
+    const consensusParsed = JSON.parse(consensusExtracted);
+    const checks = consensusParsed.consensus_checks ?? [];
+
+    // Merge consensus back into ambiguous components
+    const merged = ambiguousComponents.map(orig => {
+      const consensus = checks.find(c => c.legend_description?.toLowerCase() === orig.legend_description?.toLowerCase());
+      if (consensus && consensus.new_quantity !== orig.quantity) {
+        console.log(`[ElectraScan v4] Consensus adjustment: ${orig.legend_description} ${orig.quantity} → ${consensus.new_quantity} (confidence: ${consensus.confidence})`);
+        return { ...orig, quantity: consensus.new_quantity, confidence: Math.max(orig.confidence, consensus.confidence) };
+      }
+      return orig;
+    });
+
+    return merged;
+  } catch (err) {
+    console.warn("[ElectraScan v4] Multi-pass consensus failed, using original detections:", err);
+    return ambiguousComponents;
+  }
+}
+
+// ── RATE LIBRARY LOOKUP (FIX 5) ────────────────────────────────────
+/**
+ * Look up detected symbols in the rate library.
+ * Returns TLE product info if found, otherwise returns null.
+ */
+function findRateLibraryMatch(
+  description: string,
+  componentType: ComponentType,
+  rateLibrary: any[]
+): { code: string; description: string; rate: number; labour: number } | null {
+  // Try exact or fuzzy match against rate library
+  const lowerDesc = description.toLowerCase();
+  const match = rateLibrary.find(r => 
+    r.description?.toLowerCase().includes(lowerDesc) ||
+    lowerDesc.includes(r.description?.toLowerCase()) ||
+    (r.category?.toLowerCase() === lowerDesc) ||
+    r.code?.toLowerCase() === lowerDesc
+  );
+  
+  if (match) {
+    return {
+      code: match.code || "",
+      description: match.description || "",
+      rate: match.rate ?? 0,
+      labour: match.labour ?? 0,
+    };
+  }
+  return null;
+}
+
 // ─────────────────────────────────────────────
 // MAIN — TWO-PASS WITH SYMBOL DECODER
 // ─────────────────────────────────────────────
@@ -490,7 +618,8 @@ function applyConfidenceThresholding(components: DetectedComponent[]): DetectedC
 export async function detectElectricalComponents(
   file: File,
   drawingVersion: string = "001",
-  apiKey?: string
+  apiKey?: string,
+  rateLibrary: any[] = []
 ): Promise<DetectionResult> {
   const client = new Anthropic({
     apiKey: apiKey ?? (import.meta as any).env.VITE_ANTHROPIC_API_KEY,
@@ -597,8 +726,22 @@ export async function detectElectricalComponents(
     console.warn("[ElectraScan][detect] Pass 2 failure — raw response was:", rawResponse);
   }
 
+  // ── MULTI-PASS CONSENSUS (FIX 4) ────
+  // For items with confidence < 80%, run consensus verification
+  const ambiguous = roomComponents.filter((c: any) => (c.confidence ?? 85) < 0.8);
+  if (ambiguous.length > 0) {
+    console.log(`[ElectraScan v4] Found ${ambiguous.length} ambiguous items, running consensus...`);
+    const consensusResults = await runMultiPassConsensus(client, imageBlocks, legendItems, file.name, ambiguous);
+    // Replace ambiguous components with consensus-verified versions
+    roomComponents = roomComponents.map((c: any) => {
+      const consensusVersion = consensusResults.find(cr => cr.legend_description?.toLowerCase() === c.legend_description?.toLowerCase());
+      return consensusVersion || c;
+    });
+    console.log(`[ElectraScan v4] Multi-pass consensus complete: ${consensusResults.length} items verified`);
+  }
+
   console.log(`[ElectraScan][detect] buildComponents inputs: legendItems=${legendItems.length}, roomComponents=${roomComponents.length}`);
-  let components = buildComponents(legendItems, roomComponents);
+  let components = buildComponents(legendItems, roomComponents, rateLibrary);
   console.log(`[ElectraScan][detect] buildComponents output: components=${components.length}`);
   
   // ── APPLY CONFIDENCE THRESHOLDING (FIX 3) ────
