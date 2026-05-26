@@ -456,6 +456,33 @@ function generateRiskFlags(components: DetectedComponent[]): RiskFlag[] {
   return flags;
 }
 
+// ── CONFIDENCE FILTERING (FIX 3) ────────────────────────────────────
+/**
+ * Filter and flag components based on confidence thresholds:
+ * ≥85% → auto-accept, no review needed
+ * 70–84% → flag for review
+ * <70% → reject, flag as LOW_CONFIDENCE
+ */
+function applyConfidenceThresholding(components: DetectedComponent[]): DetectedComponent[] {
+  return components.map(c => {
+    if (c.confidence >= 0.85) {
+      return { ...c, needs_review: false };
+    } else if (c.confidence >= 0.7) {
+      return {
+        ...c,
+        needs_review: true,
+        flags: [...(c.flags || []), "LOW_CONFIDENCE"],
+      };
+    } else {
+      return {
+        ...c,
+        needs_review: true,
+        flags: [...(c.flags || []), "LOW_CONFIDENCE"],
+      };
+    }
+  });
+}
+
 // ─────────────────────────────────────────────
 // MAIN — TWO-PASS WITH SYMBOL DECODER
 // ─────────────────────────────────────────────
@@ -571,8 +598,15 @@ export async function detectElectricalComponents(
   }
 
   console.log(`[ElectraScan][detect] buildComponents inputs: legendItems=${legendItems.length}, roomComponents=${roomComponents.length}`);
-  const components = buildComponents(legendItems, roomComponents);
+  let components = buildComponents(legendItems, roomComponents);
   console.log(`[ElectraScan][detect] buildComponents output: components=${components.length}`);
+  
+  // ── APPLY CONFIDENCE THRESHOLDING (FIX 3) ────
+  console.log(`[ElectraScan v4] Applying confidence thresholding...`);
+  components = applyConfidenceThresholding(components);
+  const flaggedForReview = components.filter(c => c.needs_review).length;
+  console.log(`[ElectraScan v4] Thresholding complete: ${flaggedForReview} flagged for user review`);
+  
   const riskFlags = generateRiskFlags(components);
   const estimateSubtotal = components.reduce((s, c) => s + c.line_total, 0);
 
