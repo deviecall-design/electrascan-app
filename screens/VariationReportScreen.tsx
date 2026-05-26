@@ -139,8 +139,8 @@ export default function VariationReportScreen() {
 
       {/* KPI strip */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
-        <MiniStat label="Net change" v={`${delta >= 0 ? "+" : "−"}${fmt(Math.abs(delta))}`} tint={delta >= 0 ? C.amber : C.green} />
-        <MiniStat label="% change" v={`${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`} tint={delta >= 0 ? C.amber : C.green} />
+        <MiniStat label="Net change" v={`${deltaMoney >= 0 ? "+" : "−"}${fmt(Math.abs(deltaMoney))}`} tint={deltaMoney >= 0 ? C.amber : C.green} />
+        <MiniStat label="% change" v={`${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`} tint={deltaMoney >= 0 ? C.amber : C.green} />
         <MiniStat label="New total ex GST" v={fmt(newTotal)} />
         <MiniStat label="Items changed" v={String(VARIATION_ITEMS.length)} tint={C.blue} />
       </div>
@@ -212,8 +212,8 @@ export default function VariationReportScreen() {
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", paddingBottom: 14, borderBottom: `1px solid ${C.border}`, marginBottom: 14 }}>
               <span style={{ fontSize: 14, color: C.textMuted }}>Variation</span>
-              <span style={{ fontFamily: FONT.mono, fontSize: 15, fontWeight: 500, color: delta >= 0 ? C.amber : C.green }}>
-                {delta >= 0 ? "+" : "−"}{fmt(Math.abs(delta))}
+              <span style={{ fontFamily: FONT.mono, fontSize: 15, fontWeight: 500, color: deltaMoney >= 0 ? C.amber : C.green }}>
+                {deltaMoney >= 0 ? "+" : "−"}{fmt(Math.abs(deltaMoney))}
               </span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between" }}>
