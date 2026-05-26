@@ -119,6 +119,41 @@ export async function fetchRateLibrary() {
 
 // ─── Insert functions ───────────────────────────────────────────────────
 
+/**
+ * Generate the next estimate reference (EST-YYYY-NNNN format).
+ * Queries the estimates table to find the highest NNNN value for the current year,
+ * then increments it. If no estimates exist for the year, starts at 0001.
+ */
+export async function getNextEstimateRef(): Promise<string> {
+  const year = new Date().getFullYear();
+  const prefix = `EST-${year}`;
+  
+  try {
+    const { data, error } = await supabase
+      .from("estimates")
+      .select("ref")
+      .like("ref", `${prefix}-%`)
+      .order("ref", { ascending: false })
+      .limit(1);
+    
+    if (error || !data || data.length === 0) {
+      // No estimates for this year yet; start at 0001
+      return `${prefix}-0001`;
+    }
+    
+    // Extract the numeric part and increment
+    const lastRef = data[0].ref;
+    const match = lastRef.match(/-(\d+)$/);
+    if (!match) return `${prefix}-0001`;
+    
+    const nextNum = (parseInt(match[1], 10) + 1).toString().padStart(4, "0");
+    return `${prefix}-${nextNum}`;
+  } catch (e) {
+    console.warn("[supabaseData] getNextEstimateRef error:", e);
+    return `${prefix}-0001`;
+  }
+}
+
 export async function insertEstimate(row: Omit<EstimateRow, "id" | "created_at">) {
   return supabase
     .from("estimates")

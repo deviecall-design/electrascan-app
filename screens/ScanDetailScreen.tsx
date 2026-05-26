@@ -152,6 +152,7 @@ export default function ScanDetailScreen() {
   const [liveScan, setLiveScan] = useState<ScanRow | null>(null);
   const [step, setStep] = useState(id === "new" ? 1 : 2);
   const [detectedItems, setDetectedItems] = useState<DetectedItem[]>(DETECTED_ITEMS);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (!id || id === "new") return;
@@ -167,6 +168,28 @@ export default function ScanDetailScreen() {
       }
     });
   }, [id]);
+
+  const handleSendToClient = useCallback(async (estimateRef: string) => {
+    setIsSaving(true);
+    try {
+      // TODO: Wire to actual Supabase save + variation comparison
+      // For now, just navigate to variation report to show the flow works
+      console.log("[ScanDetailScreen] Send to client:", estimateRef);
+      // In Phase 2, this will:
+      // 1. Save EstimateRow with the ref
+      // 2. Update ScanRow with estimate_ref + detected_items
+      // 3. Check for prior estimate for same client/project
+      // 4. If found, auto-navigate to variation report
+      setTimeout(() => {
+        setIsSaving(false);
+        alert(`Estimate ${estimateRef} sent! (This is a mock — Phase 2 will wire the real save.)`);
+      }, 1000);
+    } catch (err) {
+      console.error("[ScanDetailScreen] Error sending estimate:", err);
+      setIsSaving(false);
+      alert("Error sending estimate. Check the console.");
+    }
+  }, []);
 
   const isNew = id === "new";
   const fileName = liveScan?.file_name ?? (isNew ? "New scan" : "Switchboard_LV2_rev3.pdf");
@@ -206,7 +229,7 @@ export default function ScanDetailScreen() {
       )}
       {step === 2 && <StepDetecting onNext={() => setStep(3)} items={detectedItems} />}
       {step === 3 && <StepReview onNext={() => setStep(4)} onBack={() => setStep(2)} items={detectedItems} />}
-      {step === 4 && <StepQuote onBack={() => setStep(3)} items={detectedItems} />}
+      {step === 4 && <StepQuote onBack={() => setStep(3)} items={detectedItems} onSend={handleSendToClient} isSaving={isSaving} />}
 
       <Footer />
     </div>
@@ -1032,9 +1055,26 @@ function StepReview({ onNext, onBack, items: propItems }: { onNext: () => void; 
 }
 
 // ─── Step 4: Quote ──────────────────────────────────────────────────────
-function StepQuote({ onBack, items: propItems }: { onBack: () => void; items?: DetectedItem[] }) {
+function StepQuote({ onBack, items: propItems, onSend, isSaving }: { onBack: () => void; items?: DetectedItem[]; onSend?: (estimateRef: string) => void; isSaving?: boolean }) {
   const source = propItems && propItems.length > 0 ? propItems : DETECTED_ITEMS;
   const company = getActiveCompanyProfile();
+  const [estimateRef, setEstimateRef] = useState<string>(`EST-${new Date().getFullYear()}-0001`);
+
+  // In a real app, this would call getNextEstimateRef() from supabaseData
+  // For now, just generate a mock reference
+  useEffect(() => {
+    const year = new Date().getFullYear();
+    const month = String(new Date().getMonth() + 1).padStart(2, "0");
+    const random = String(Math.floor(Math.random() * 10000)).padStart(4, "0");
+    setEstimateRef(`EST-${year}-${random}`);
+  }, []);
+
+  const handleSendClick = () => {
+    if (onSend) {
+      onSend(estimateRef);
+    }
+  };
+
   const subtotal = useMemo(
     () =>
       source.reduce((sum, it) => {
@@ -1167,7 +1207,9 @@ function StepQuote({ onBack, items: propItems }: { onBack: () => void; items?: D
 
         {/* Actions */}
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <PrimaryButton icon={<Send size={15} />}>Send to client</PrimaryButton>
+          <PrimaryButton icon={<Send size={15} />} onClick={handleSendClick} disabled={isSaving}>
+            {isSaving ? "Sending..." : "Send to client"}
+          </PrimaryButton>
           <GhostButton icon={<FileDown size={14} />}>Download PDF</GhostButton>
           <GhostButton icon={<Copy size={14} />}>Duplicate as template</GhostButton>
         </div>
