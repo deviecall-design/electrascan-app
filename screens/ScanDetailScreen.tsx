@@ -15,7 +15,7 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { fetchScanById, ScanRow } from "../services/supabaseData";
+import { fetchScanById, fetchRateLibrary, ScanRow } from "../services/supabaseData";
 import {
   ArrowLeft,
   ArrowRight,
@@ -286,7 +286,13 @@ function StepUpload({ onNext }: { onNext: (items?: DetectedItem[]) => void }) {
     setUploadState("detecting");
     setErrorMsg("");
     try {
-      const result = await detectElectricalComponents(file);
+      // Fetch rate library (FIX 5 support)
+      const rateLibResult = await fetchRateLibrary();
+      const rateLibData = rateLibResult.data ?? [];
+      console.log(`[ElectraScan] Fetched ${rateLibData.length} rate library items`);
+      
+      // Pass rate library to detection (FIX 5: TLE integration)
+      const result = await detectElectricalComponents(file, "001", undefined, rateLibData);
       const mapped = mapDetectionToItems(result);
       // Fall back to DETECTED_ITEMS if the model returned nothing
       onNext(mapped.length > 0 ? mapped : undefined);

@@ -8,6 +8,7 @@ import {
 } from "./analyze_pdf";
 import VariationReport, { VariationItem, VariationRisk } from "./components/VariationReport";
 import { getActiveCompanyProfile } from "./services/companyProfile";
+import { fetchRateLibrary } from "./services/supabaseData";
 import { downloadEstimatePDF } from "./utils/estimatePdf";
 
 // ─── Design tokens ─────────────────────────────
@@ -812,7 +813,14 @@ export default function App() {
     setFile(f); setError(null); setScreen("scanning");
     try {
       console.log("[ElectraScan][app] handleFile: calling detectElectricalComponents for", f.name);
-      const d = await detectElectricalComponents(f, "001");
+      
+      // Fetch rate library (FIX 5 support)
+      const rateLibResult = await fetchRateLibrary();
+      const rateLibData = rateLibResult.data ?? [];
+      console.log(`[ElectraScan][app] Fetched ${rateLibData.length} rate library items`);
+      
+      // Pass rate library to detection (FIX 5: TLE integration)
+      const d = await detectElectricalComponents(f, "001", undefined, rateLibData);
       console.log("[ElectraScan][app] detectElectricalComponents returned:", {
         components: d?.components?.length ?? 0,
         legend_items: d?.legend_items?.length ?? 0,
