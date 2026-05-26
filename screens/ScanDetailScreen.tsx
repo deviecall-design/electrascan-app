@@ -172,24 +172,68 @@ export default function ScanDetailScreen() {
   const handleSendToClient = useCallback(async (estimateRef: string) => {
     setIsSaving(true);
     try {
-      // TODO: Wire to actual Supabase save + variation comparison
-      // For now, just navigate to variation report to show the flow works
-      console.log("[ScanDetailScreen] Send to client:", estimateRef);
-      // In Phase 2, this will:
-      // 1. Save EstimateRow with the ref
-      // 2. Update ScanRow with estimate_ref + detected_items
-      // 3. Check for prior estimate for same client/project
-      // 4. If found, auto-navigate to variation report
+      // Import needed functions
+      const { insertEstimate, updateScan, getNextEstimateRef } = await import("../services/supabaseData");
+      
+      // Get the actual next reference from Supabase (or use provided one)
+      // For now, use the provided reference from StepQuote
+      const ref = estimateRef || (await getNextEstimateRef());
+      
+      // Create the EstimateRow
+      const estimateData = {
+        ref,
+        reference: ref,
+        client: liveScan?.client || "Unknown Client",
+        project_name: liveScan?.project_name || liveScan?.file_name || "New Project",
+        value: 0, // Will be calculated from line items
+        status: "draft" as const,
+        drawing_file: liveScan?.file_name || null,
+        margin_pct: 18,
+        subtotal: 0,
+        line_items: detectedItems.map(item => ({
+          id: `line-${item.id}`,
+          symbol: item.symbol,
+          description: item.desc,
+          quantity: item.qty,
+          unit: "ea",
+          rate_code: item.rateCode,
+          material_cost: 0,
+          labour_cost: 0,
+          total_cost: 0,
+        })),
+      };
+      
+      const { data: savedEstimate, error: estimateError } = await insertEstimate(estimateData);
+      
+      if (estimateError) {
+        console.error("[ScanDetailScreen] Error saving estimate:", estimateError);
+        throw new Error(estimateError.message);
+      }
+      
+      // Update the scan with the estimate reference
+      if (liveScan?.id) {
+        const { error: scanError } = await updateScan(liveScan.id, {
+          estimate_ref: ref,
+          detected_items: detectedItems,
+          stage: "complete",
+        });
+        
+        if (scanError) {
+          console.error("[ScanDetailScreen] Error updating scan:", scanError);
+        }
+      }
+      
+      console.log("[ScanDetailScreen] Estimate saved:", ref);
       setTimeout(() => {
         setIsSaving(false);
-        alert(`Estimate ${estimateRef} sent! (This is a mock — Phase 2 will wire the real save.)`);
-      }, 1000);
+        alert(`Estimate ${ref} sent successfully! (Phase 2 will trigger variation comparison if a prior version exists.)`);
+      }, 500);
     } catch (err) {
       console.error("[ScanDetailScreen] Error sending estimate:", err);
       setIsSaving(false);
-      alert("Error sending estimate. Check the console.");
+      alert(`Error sending estimate: ${err instanceof Error ? err.message : "Unknown error"}`);
     }
-  }, []);
+  }, [liveScan, detectedItems]);
 
   const isNew = id === "new";
   const fileName = liveScan?.file_name ?? (isNew ? "New scan" : "Switchboard_LV2_rev3.pdf");
