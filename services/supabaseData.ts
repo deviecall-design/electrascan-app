@@ -93,12 +93,19 @@ export async function fetchScanById(id: string) {
     .single();
 }
 
-export async function fetchEstimateByRef(ref: string) {
-  return supabase
-    .from("estimates")
-    .select("*")
-    .eq("reference", ref)
-    .single();
+export async function fetchEstimateByRef(ref: string): Promise<{ data: EstimateRow | null; error: any }> {
+  try {
+    const { data, error } = await supabase
+      .from("estimates")
+      .select("*")
+      .eq("ref", ref)
+      .single();
+    
+    return { data: data as EstimateRow | null, error };
+  } catch (e) {
+    console.warn("[supabaseData] fetchEstimateByRef error:", e);
+    return { data: null, error: e };
+  }
 }
 
 export async function fetchMilestoneClaimsForProject(projectId: string) {
@@ -138,21 +145,6 @@ export async function fetchPriorEstimate(client: string, projectName: string, ex
     return { data: data as EstimateRow | null, error };
   } catch (e) {
     console.warn("[supabaseData] fetchPriorEstimate error:", e);
-    return { data: null, error: e };
-  }
-}
-
-export async function fetchEstimateByRef(ref: string): Promise<{ data: EstimateRow | null; error: any }> {
-  try {
-    const { data, error } = await supabase
-      .from("estimates")
-      .select("*")
-      .eq("ref", ref)
-      .single();
-    
-    return { data: data as EstimateRow | null, error };
-  } catch (e) {
-    console.warn("[supabaseData] fetchEstimateByRef error:", e);
     return { data: null, error: e };
   }
 }
