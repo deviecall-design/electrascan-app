@@ -172,11 +172,9 @@ export default function ScanDetailScreen() {
   const handleSendToClient = useCallback(async (estimateRef: string) => {
     setIsSaving(true);
     try {
-      // Import needed functions
-      const { insertEstimate, updateScan, getNextEstimateRef } = await import("../services/supabaseData");
+      const { insertEstimate, updateScan, getNextEstimateRef, fetchPriorEstimate } = await import("../services/supabaseData");
       
       // Get the actual next reference from Supabase (or use provided one)
-      // For now, use the provided reference from StepQuote
       const ref = estimateRef || (await getNextEstimateRef());
       
       // Create the EstimateRow
@@ -185,7 +183,7 @@ export default function ScanDetailScreen() {
         reference: ref,
         client: liveScan?.client || "Unknown Client",
         project_name: liveScan?.project_name || liveScan?.file_name || "New Project",
-        value: 0, // Will be calculated from line items
+        value: 0,
         status: "draft" as const,
         drawing_file: liveScan?.file_name || null,
         margin_pct: 18,
@@ -224,16 +222,30 @@ export default function ScanDetailScreen() {
       }
       
       console.log("[ScanDetailScreen] Estimate saved:", ref);
-      setTimeout(() => {
-        setIsSaving(false);
-        alert(`Estimate ${ref} sent successfully! (Phase 2 will trigger variation comparison if a prior version exists.)`);
-      }, 500);
+      
+      // Check for prior estimate for same client/project
+      const { data: priorEstimate } = await fetchPriorEstimate(
+        estimateData.client,
+        estimateData.project_name,
+        ref // Exclude the one we just saved
+      );
+      
+      setIsSaving(false);
+      
+      // If prior estimate found, auto-navigate to comparison
+      if (priorEstimate?.ref) {
+        console.log("[ScanDetailScreen] Prior estimate found:", priorEstimate.ref);
+        navigate(`/variation-report?v1=${priorEstimate.ref}&v2=${ref}`);
+      } else {
+        console.log("[ScanDetailScreen] No prior estimate found; first estimate for this project");
+        alert(`Estimate ${ref} sent successfully!`);
+      }
     } catch (err) {
       console.error("[ScanDetailScreen] Error sending estimate:", err);
       setIsSaving(false);
       alert(`Error sending estimate: ${err instanceof Error ? err.message : "Unknown error"}`);
     }
-  }, [liveScan, detectedItems]);
+  }, [liveScan, detectedItems, navigate]);
 
   const isNew = id === "new";
   const fileName = liveScan?.file_name ?? (isNew ? "New scan" : "Switchboard_LV2_rev3.pdf");

@@ -120,6 +120,44 @@ export async function fetchRateLibrary() {
 // ─── Insert functions ───────────────────────────────────────────────────
 
 /**
+ * Fetch the most recent prior estimate for a given client/project.
+ * Returns the estimate with the highest `created_at` before the given time.
+ */
+export async function fetchPriorEstimate(client: string, projectName: string, excludeRef?: string): Promise<{ data: EstimateRow | null; error: any }> {
+  try {
+    const { data, error } = await supabase
+      .from("estimates")
+      .select("*")
+      .eq("client", client)
+      .eq("project_name", projectName)
+      .neq("ref", excludeRef || "")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single();
+    
+    return { data: data as EstimateRow | null, error };
+  } catch (e) {
+    console.warn("[supabaseData] fetchPriorEstimate error:", e);
+    return { data: null, error: e };
+  }
+}
+
+export async function fetchEstimateByRef(ref: string): Promise<{ data: EstimateRow | null; error: any }> {
+  try {
+    const { data, error } = await supabase
+      .from("estimates")
+      .select("*")
+      .eq("ref", ref)
+      .single();
+    
+    return { data: data as EstimateRow | null, error };
+  } catch (e) {
+    console.warn("[supabaseData] fetchEstimateByRef error:", e);
+    return { data: null, error: e };
+  }
+}
+
+/**
  * Generate the next estimate reference (EST-YYYY-NNNN format).
  * Queries the estimates table to find the highest NNNN value for the current year,
  * then increments it. If no estimates exist for the year, starts at 0001.
