@@ -4,38 +4,33 @@
  * 
  * Displays a detected symbol with:
  * - Symbol visual + description
- * - Confidence score (HIGH/MEDIUM/LOW)
+ * - Confidence badge (HIGH/MEDIUM/LOW)
  * - Quantity editor
- * - Accept / Reject / Edit buttons
- * - Learned suggestion badge (if available)
+ * - Accept / Reject buttons
+ * 
+ * User can:
+ * - Accept the detection as-is
+ * - Adjust quantity before accepting
+ * - Reject and remove from estimate
  */
 
 import React, { useState } from "react";
-import { Check, X, Edit2, Lightbulb, TrendingUp } from "lucide-react";
 import { DetectedComponent } from "../analyze_pdf";
-import { C, FONT, RADIUS } from "./desktop/tokens";
-import { ConfPill } from "./ui/anthropic";
+import { C, FONT } from "./desktop/tokens";
 
 export interface SymbolReviewCardProps {
   component: DetectedComponent;
   onAccept: (component: DetectedComponent) => void;
-  onReject: (id: string) => void;
-  onEdit: (id: string) => void;
-  learnedSuggestion?: {
-    type: string;
-    confidence: number;
-  };
+  onReject: (componentType: string) => void;
 }
 
 export const SymbolReviewCard: React.FC<SymbolReviewCardProps> = ({
   component,
   onAccept,
   onReject,
-  onEdit,
-  learnedSuggestion,
 }) => {
-  const [isEditing, setIsEditing] = useState(false);
   const [qty, setQty] = useState(component.quantity);
+  const [isEditing, setIsEditing] = useState(false);
 
   const confLevel =
     component.confidence >= 0.85
@@ -49,306 +44,183 @@ export const SymbolReviewCard: React.FC<SymbolReviewCardProps> = ({
       ? C.green
       : confLevel === "MEDIUM"
         ? C.amber
-        : C.red;
+        : C.orange;
+
+  const confBgColor =
+    confLevel === "HIGH"
+      ? C.greenSoft
+      : confLevel === "MEDIUM"
+        ? C.amberSoft
+        : C.orangeSoft;
 
   const handleAccept = () => {
     const updated = { ...component, quantity: qty };
     onAccept(updated);
   };
 
+  const handleReject = () => {
+    onReject(component.type);
+  };
+
   return (
     <div
       style={{
-        borderRadius: RADIUS.md,
+        borderRadius: "6px",
         border: `1px solid ${C.border}`,
-        padding: 16,
-        marginBottom: 12,
-        backgroundColor: C.bg,
+        backgroundColor: C.bgCard,
+        padding: "16px",
+        marginBottom: "12px",
       }}
     >
-      {/* Header: Symbol + Description + Confidence */}
+      {/* Header: Symbol + Title */}
       <div
         style={{
           display: "flex",
-          alignItems: "flex-start",
           justifyContent: "space-between",
-          marginBottom: 12,
+          alignItems: "start",
+          marginBottom: "12px",
         }}
       >
-        <div style={{ flex: 1 }}>
+        <div>
+          <div style={{ fontFamily: FONT.heading, fontSize: "16px", fontWeight: 600, color: C.text }}>
+            {component.catalogue_item_name || component.type}
+          </div>
           <div
             style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              marginBottom: 4,
+              fontSize: "14px",
+              color: C.textMuted,
+              marginTop: "4px",
             }}
           >
-            <span
-              style={{
-                fontSize: 24,
-                fontWeight: "bold",
-                color: C.text,
-              }}
-            >
-              {component.symbol_visual || "?"}
-            </span>
-            <div>
-              <p
-                style={{
-                  margin: 0,
-                  fontSize: FONT.sizes.sm,
-                  fontWeight: 600,
-                  color: C.text,
-                }}
-              >
-                {component.type}
-              </p>
-              <p
-                style={{
-                  margin: 0,
-                  fontSize: FONT.sizes.xs,
-                  color: C.textSecondary,
-                }}
-              >
-                {component.room || "Unknown location"}
-              </p>
-            </div>
+            {component.room} • {component.drawing_ref}
           </div>
         </div>
 
-        {/* Confidence Pill */}
-        <ConfPill conf={component.confidence} label={confLevel} />
-      </div>
-
-      {/* Learned Suggestion Badge */}
-      {learnedSuggestion && (
+        {/* Confidence Badge */}
         <div
           style={{
-            backgroundColor: "#f0fdf4",
-            border: `1px solid ${C.green}`,
-            borderRadius: RADIUS.sm,
-            padding: "8px 12px",
-            marginBottom: 12,
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            fontSize: FONT.sizes.xs,
+            display: "inline-block",
+            padding: "4px 8px",
+            borderRadius: "4px",
+            backgroundColor: confBgColor,
+            color: confColor,
+            fontSize: "12px",
+            fontWeight: 600,
+            textTransform: "uppercase",
           }}
         >
-          <Lightbulb size={14} color={C.green} />
-          <span style={{ color: C.green, fontWeight: 500 }}>
-            Last time you corrected this to <strong>{learnedSuggestion.type}</strong>
-          </span>
-          <TrendingUp size={12} color={C.green} style={{ marginLeft: "auto" }} />
+          {confLevel} ({Math.round(component.confidence * 100)}%)
         </div>
-      )}
+      </div>
 
       {/* Quantity Editor */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          marginBottom: 12,
-        }}
-      >
-        <label
-          style={{
-            fontSize: FONT.sizes.sm,
-            fontWeight: 500,
-            color: C.text,
-            minWidth: 80,
-          }}
-        >
+      <div style={{ marginBottom: "12px" }}>
+        <label style={{ fontSize: "13px", color: C.textMuted, display: "block", marginBottom: "6px" }}>
           Quantity:
         </label>
-        {isEditing ? (
+        {!isEditing ? (
+          <div
+            onClick={() => setIsEditing(true)}
+            style={{
+              display: "inline-block",
+              padding: "6px 12px",
+              border: `1px solid ${C.border}`,
+              borderRadius: "4px",
+              cursor: "pointer",
+              backgroundColor: C.bgSoft,
+              fontFamily: FONT.heading,
+              fontSize: "16px",
+            }}
+          >
+            {qty} EA
+          </div>
+        ) : (
           <input
             type="number"
-            min="1"
             value={qty}
             onChange={(e) => setQty(parseInt(e.target.value) || 1)}
             onBlur={() => setIsEditing(false)}
             autoFocus
             style={{
-              width: 60,
-              padding: "6px 8px",
-              border: `1px solid ${C.orange}`,
-              borderRadius: RADIUS.sm,
-              fontSize: FONT.sizes.sm,
-              fontWeight: 600,
+              padding: "6px 12px",
+              border: `2px solid ${C.orange}`,
+              borderRadius: "4px",
+              fontSize: "16px",
+              fontFamily: FONT.heading,
             }}
           />
-        ) : (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-            }}
-          >
-            <span
-              style={{
-                fontSize: FONT.sizes.md,
-                fontWeight: 600,
-                color: C.text,
-                minWidth: 30,
-              }}
-            >
-              {qty}
-            </span>
-            <button
-              onClick={() => setIsEditing(true)}
-              style={{
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                padding: 4,
-                color: C.textSecondary,
-              }}
-              title="Edit quantity"
-            >
-              <Edit2 size={14} />
-            </button>
-          </div>
         )}
       </div>
 
-      {/* Notes / Flags */}
-      {component.flags && component.flags.length > 0 && (
-        <div style={{ marginBottom: 12 }}>
-          <div
-            style={{
-              fontSize: FONT.sizes.xs,
-              fontWeight: 600,
-              color: C.textSecondary,
-              marginBottom: 4,
-            }}
-          >
-            Flags:
-          </div>
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 6,
-            }}
-          >
-            {component.flags.map((flag) => (
-              <span
-                key={flag}
-                style={{
-                  backgroundColor: C.amberLight,
-                  color: C.amber,
-                  padding: "4px 8px",
-                  borderRadius: RADIUS.sm,
-                  fontSize: FONT.sizes.xs,
-                  fontWeight: 500,
-                }}
-              >
-                {flag}
-              </span>
-            ))}
+      {/* Details */}
+      {component.notes && (
+        <div style={{ marginBottom: "12px" }}>
+          <div style={{ fontSize: "13px", color: C.textSubtle, fontStyle: "italic" }}>
+            {component.notes}
           </div>
         </div>
       )}
 
+      {/* Flags */}
+      {component.flags && component.flags.length > 0 && (
+        <div style={{ marginBottom: "12px", display: "flex", gap: "6px", flexWrap: "wrap" }}>
+          {component.flags.map((flag) => (
+            <span
+              key={flag}
+              style={{
+                display: "inline-block",
+                padding: "4px 8px",
+                borderRadius: "4px",
+                backgroundColor: C.amberSoft,
+                color: C.amber,
+                fontSize: "11px",
+                fontWeight: 600,
+              }}
+            >
+              {flag}
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* Actions */}
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          justifyContent: "flex-end",
-        }}
-      >
-        <button
-          onClick={() => onReject(component.type)}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            padding: "8px 12px",
-            borderRadius: RADIUS.sm,
-            border: `1px solid ${C.red}`,
-            backgroundColor: "transparent",
-            color: C.red,
-            cursor: "pointer",
-            fontSize: FONT.sizes.sm,
-            fontWeight: 500,
-            transition: "all 0.2s",
-          }}
-          onMouseEnter={(e) => {
-            (e.currentTarget as HTMLButtonElement).style.backgroundColor =
-              "#fef2f2";
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLButtonElement).style.backgroundColor =
-              "transparent";
-          }}
-        >
-          <X size={16} />
-          Reject
-        </button>
-
-        <button
-          onClick={() => onEdit(component.type)}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            padding: "8px 12px",
-            borderRadius: RADIUS.sm,
-            border: `1px solid ${C.textSecondary}`,
-            backgroundColor: "transparent",
-            color: C.textSecondary,
-            cursor: "pointer",
-            fontSize: FONT.sizes.sm,
-            fontWeight: 500,
-            transition: "all 0.2s",
-          }}
-          onMouseEnter={(e) => {
-            (e.currentTarget as HTMLButtonElement).style.backgroundColor =
-              C.bgSecondary;
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLButtonElement).style.backgroundColor =
-              "transparent";
-          }}
-        >
-          <Edit2 size={16} />
-          Edit
-        </button>
-
+      <div style={{ display: "flex", gap: "8px" }}>
         <button
           onClick={handleAccept}
           style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
+            flex: 1,
             padding: "8px 12px",
-            borderRadius: RADIUS.sm,
             border: "none",
+            borderRadius: "4px",
             backgroundColor: C.green,
-            color: "white",
-            cursor: "pointer",
-            fontSize: FONT.sizes.sm,
+            color: "#fff",
+            fontFamily: FONT.heading,
+            fontSize: "14px",
             fontWeight: 600,
-            transition: "all 0.2s",
-          }}
-          onMouseEnter={(e) => {
-            (e.currentTarget as HTMLButtonElement).style.opacity = "0.9";
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLButtonElement).style.opacity = "1";
+            cursor: "pointer",
           }}
         >
-          <Check size={16} />
-          Accept
+          ✓ Accept
+        </button>
+
+        <button
+          onClick={handleReject}
+          style={{
+            flex: 1,
+            padding: "8px 12px",
+            border: `1px solid ${C.border}`,
+            borderRadius: "4px",
+            backgroundColor: C.bgCard,
+            color: C.text,
+            fontFamily: FONT.heading,
+            fontSize: "14px",
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          ✕ Reject
         </button>
       </div>
     </div>
   );
 };
-
-export default SymbolReviewCard;
