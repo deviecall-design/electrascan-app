@@ -1,0 +1,1361 @@
+import React, { useMemo, useState } from "react";
+import {
+  useProjects,
+  estimateTotals,
+  makeId,
+  type ProjectEstimate,
+  type EstimateLineItem,
+  type CableRun,
+  type BomStatus,
+} from "../contexts/ProjectContext";
+import { useTenant } from "../contexts/TenantContext";
+import WholesalerQuoteModal from "./WholesalerQuoteModal";
+
+const C = {
+  bg: "#0A1628",
+  navy: "#0F1E35",
+  card: "#132240",
+  blue: "#1D6EFD",
+  green: "#00C48C",
+  amber: "#FFB020",
+  red: "#FF4D4D",
+  text: "#EDF2FF",
+  muted: "#5C7A9E",
+  border: "#1A3358",
+  dim: "#8BA4C4",
+  purple: "#7C3AED",
+};
+
+interface Props {
+  projectId: string;
+  estimateId: string;
+}
+
+const fmtMoney = (n: number) =>
+  `$${n.toLocaleString("en-AU", { maximumFractionDigits: 0 })}`;
+const fmtDateTime = (iso: string) => {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString("en-AU", {
+      day: "2-digit",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+};
+
+// Cable types with indicative per-metre rates ($ AUD) for the calculator panel.
+const CABLE_TYPES: { label: string; unitRate: number }[] = [
+  { label: "2.5mm² TPS", unitRate: 4.8 },
+  { label: "4mm² TPS", unitRate: 7.2 },
+  { label: "6mm² TPS", unitRate: 11.5 },
+  { label: "10mm² TPS", unitRate: 18.0 },
+  { label: "Cat6 Data", unitRate: 2.4 },
+  { label: "20mm Conduit", unitRate: 3.6 },
+  { label: "25mm Conduit", unitRate: 4.8 },
+];
+
+const DEFAULT_CATEGORIES = [
+  "Power",
+  "Lighting",
+  "Automation",
+  "AV / Data",
+  "Security",
+  "Solar / Battery",
+  "EV Charging",
+  "Switchboard",
+  "General",
+];
+
+const ProjectEstimateEditor: React.FC<Props> = ({ projectId, estimateId }) => {
+  const { projects, saveEstimate } = useProjects();
+  const { tenant } = useTenant();
+  const project = projects.find(p => p.id === projectId);
+  const estimate = project?.estimates.find(e => e.id === estimateId);
+
+  const [showMargin, setShowMargin] = useState(false);
+  const [showCable, setShowCable] = useState(false);
+  const [showVersions, setShowVersions] = useState(false);
+  const [showWholesaler, setShowWholesaler] = useState(false);
+
+  if (!project || !estimate) {
+    return (
+      <div style={{ padding: 32, color: C.muted, fontSize: 14 }}>
+        Estimate not found.
+      </div>
+    );
+  }
+
+  const totals = estimateTotals(estimate);
+  const categories = useMemo(() => {
+    const s = new Set<string>(DEFAULT_CATEGORIES);
+    estimate.lineItems.forEach(li => li.category && s.add(li.category));
+    return Array.from(s);
+  }, [estimate.lineItems]);
+
+  const update = (patch: Partial<ProjectEstimate>) => {
+    saveEstimate(projectId, {
+      ...estimate,
+      ...patch,
+      updatedAt: new Date().toISOString(),
+    });
+  };
+
+  const updateLine = (id: string, patch: Partial<EstimateLineItem>) => {
+    update({
+      lineItems: estimate.lineItems.map(li =>
+        li.id === id ? { ...li, ...patch } : li,
+      ),
+    });
+  };
+
+  const addLine = () => {
+    update({
+      lineItems: [
+        ...estimate.lineItems,
+        {
+          id: makeId(),
+          description: "New item",
+          category: "General",
+          qty: 1,
+          unitPrice: 0,
+          unit: "EA",
+        },
+      ],
+    });
+  };
+
+  const removeLine = (id: string) => {
+    update({ lineItems: estimate.lineItems.filter(li => li.id !== id) });
+  };
+
+  const saveVersion = () => {
+    const snapshot = {
+      lineItems: estimate.lineItems,
+      margin: estimate.margin,
+      categoryMargins: estimate.categoryMargins,
+      cableRuns: estimate.cableRuns,
+      bomStatus: estimate.bomStatus,
+    };
+    const v = {
+      id: makeId(),
+      savedAt: new Date().toISOString(),
+      label: `v${estimate.versions.length + 1} · ${fmtMoney(totals.total)}`,
+      snapshot,
+    };
+    update({ versions: [...estimate.versions, v] });
+  };
+
+  const restoreVersion = (versionId: string) => {
+    const v = estimate.versions.find(x => x.id === versionId);
+    if (!v) return;
+    update({
+      lineItems: v.snapshot.lineItems,
+      margin: v.snapshot.margin,
+      categoryMargins: v.snapshot.categoryMargins,
+      cableRuns: v.snapshot.cableRuns,
+      bomStatus: v.snapshot.bomStatus,
+    });
+    setShowVersions(false);
+  };
+
+  const toggleLock = () => {
+    if (estimate.locked) {
+      update({ locked: false, lockedAt: undefined });
+    } else {
+      update({ locked: true, lockedAt: new Date().toISOString() });
+    }
+  };
+
+  const readOnly = estimate.locked;
+
+  // ── Export Quote ──────────────────────────────────────────
+  const exportQuote = () => {
+    const ref = estimate.reference || estimate.number;
+    const date = new Date().toLocaleDateString("en-AU", { day: "2-digit", month: "long", year: "numeric" });
+    const line = (label: string, value: string, pad = 52) =>
+      `${label.padEnd(pad)} ${value}`;
+    const sep = "─".repeat(70);
+
+    const groupedByCategory: Record<string, typeof estimate.lineItems> = {};
+    estimate.lineItems.forEach(li => {
+      groupedByCategory[li.category] = groupedByCategory[li.category] || [];
+      groupedByCategory[li.category].push(li);
+    });
+
+    const itemLines: string[] = [];
+    Object.entries(groupedByCategory).forEach(([cat, items]) => {
+      itemLines.push(`\n${cat.toUpperCase()}`);
+      itemLines.push("-".repeat(40));
+      items.forEach(li => {
+        const lTotal = li.qty * li.unitPrice;
+        itemLines.push(
+          `${li.description.substring(0, 38).padEnd(40)}` +
+          `${String(li.qty).padStart(4)} EA` +
+          `  $${li.unitPrice.toFixed(2).padStart(9)}` +
+          `  $${lTotal.toFixed(2).padStart(10)}`
+        );
+        if (li.room) {
+          itemLines.push(`  Location: ${li.room}`);
+        }
+      });
+    });
+
+    const lines = [
+      `${"-".repeat(70)}`,
+      `ELECTRICAL ESTIMATE`,
+      `${"-".repeat(70)}`,
+      ``,
+      `${tenant.name}`,
+      tenant.address ? `${tenant.address}` : "",
+      tenant.abn ? `ABN: ${tenant.abn}` : "",
+      tenant.contactPhone ? `Phone: ${tenant.contactPhone}` : "",
+      tenant.contactEmail ? `Email: ${tenant.contactEmail}` : "",
+      ``,
+      sep,
+      line("REFERENCE:", ref),
+      line("PROJECT:", project?.name ?? "—"),
+      line("CLIENT:", project?.clientName ?? "—"),
+      line("ADDRESS:", project?.address ?? "—"),
+      line("DATE:", date),
+      line("STATUS:", estimate.locked ? "LOCKED / FINALISED" : "DRAFT — Subject to change"),
+      sep,
+      ``,
+      `DESCRIPTION                               QTY         UNIT PRICE    LINE TOTAL`,
+      sep,
+      ...itemLines,
+      ``,
+      sep,
+      line("Subtotal (ex GST):", `$${totals.subtotal.toFixed(2)}`),
+      line(`Margin (${estimate.margin}%):`, `$${totals.marginAmount.toFixed(2)}`),
+      ...(totals.materialsCost > 0
+        ? [line("Materials (cable/conduit):", `$${totals.materialsCost.toFixed(2)}`)]
+        : []),
+      line("Subtotal with margin:", `$${totals.subtotalWithMargin.toFixed(2)}`),
+      line(`GST (${estimate.gstRate}%):`, `$${totals.gst.toFixed(2)}`),
+      sep,
+      line("TOTAL INC GST:", `$${totals.total.toFixed(2)}`),
+      sep,
+      ``,
+      `This estimate is valid for 30 days from the date issued.`,
+      `Prices are in Australian Dollars (AUD) and are exclusive of GST`,
+      `unless otherwise stated. All work subject to site inspection.`,
+    ].filter(l => l !== null && l !== undefined);
+
+    const content = lines.join("\n");
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${ref.replace(/[^a-zA-Z0-9-]/g, "-")}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div style={{ color: C.text }}>
+      {/* Toolbar */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          marginBottom: 16,
+          flexWrap: "wrap",
+        }}
+      >
+        <ToolbarBtn onClick={() => setShowMargin(true)} icon="%">
+          Margins
+        </ToolbarBtn>
+        <ToolbarBtn onClick={() => setShowCable(true)} icon="⚙️">
+          Cable / Conduit
+        </ToolbarBtn>
+        <ToolbarBtn onClick={() => setShowWholesaler(true)} icon="📨">
+          Send BOM
+        </ToolbarBtn>
+        <ToolbarBtn onClick={exportQuote} icon="📄">
+          Export Quote
+        </ToolbarBtn>
+        <div style={{ position: "relative" }}>
+          <ToolbarBtn onClick={() => setShowVersions(v => !v)} icon="🕒">
+            Versions ({estimate.versions.length})
+          </ToolbarBtn>
+          {showVersions && (
+            <div
+              style={{
+                position: "absolute",
+                top: "calc(100% + 6px)",
+                left: 0,
+                background: C.navy,
+                border: `1px solid ${C.border}`,
+                borderRadius: 10,
+                padding: 8,
+                minWidth: 280,
+                zIndex: 20,
+                boxShadow: "0 20px 40px rgba(0,0,0,0.35)",
+              }}
+            >
+              <button
+                onClick={() => {
+                  saveVersion();
+                  setShowVersions(false);
+                }}
+                disabled={readOnly}
+                style={{
+                  width: "100%",
+                  background: readOnly ? C.card : C.blue,
+                  color: readOnly ? C.muted : "#fff",
+                  border: "none",
+                  padding: "8px 10px",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  borderRadius: 8,
+                  cursor: readOnly ? "not-allowed" : "pointer",
+                  marginBottom: 8,
+                }}
+              >
+                ＋ Save current as version
+              </button>
+              {estimate.versions.length === 0 ? (
+                <div style={{ fontSize: 12, color: C.muted, padding: "6px 2px" }}>
+                  No saved versions yet.
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  {[...estimate.versions]
+                    .sort((a, b) => (a.savedAt < b.savedAt ? 1 : -1))
+                    .map(v => (
+                      <div
+                        key={v.id}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          padding: "6px 8px",
+                          borderRadius: 8,
+                          background: C.card,
+                        }}
+                      >
+                        <div style={{ fontSize: 12 }}>
+                          <div style={{ fontWeight: 600 }}>{v.label}</div>
+                          <div style={{ color: C.muted, fontSize: 11 }}>
+                            {fmtDateTime(v.savedAt)}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => restoreVersion(v.id)}
+                          disabled={readOnly}
+                          style={{
+                            background: "transparent",
+                            color: readOnly ? C.muted : C.blue,
+                            border: `1px solid ${readOnly ? C.border : C.blue}`,
+                            padding: "4px 10px",
+                            borderRadius: 6,
+                            fontSize: 11,
+                            fontWeight: 700,
+                            cursor: readOnly ? "not-allowed" : "pointer",
+                          }}
+                        >
+                          Restore
+                        </button>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        <div style={{ flex: 1 }} />
+        <button
+          onClick={toggleLock}
+          style={{
+            background: estimate.locked ? `${C.amber}22` : C.card,
+            color: estimate.locked ? C.amber : C.muted,
+            border: `1px solid ${estimate.locked ? C.amber : C.border}`,
+            padding: "8px 12px",
+            borderRadius: 10,
+            fontSize: 12,
+            fontWeight: 700,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+          }}
+        >
+          {estimate.locked ? "🔒 Locked" : "🔓 Lock Estimate"}
+        </button>
+      </div>
+
+      {readOnly && (
+        <div
+          style={{
+            background: `${C.amber}15`,
+            border: `1px solid ${C.amber}55`,
+            color: C.amber,
+            padding: "10px 14px",
+            borderRadius: 10,
+            fontSize: 12,
+            marginBottom: 14,
+          }}
+        >
+          🔒 Estimate is locked — all cells are read-only. Unlock to make edits.
+        </div>
+      )}
+
+      {/* Line items table */}
+      <div
+        style={{
+          background: C.card,
+          border: `1px solid ${C.border}`,
+          borderRadius: 14,
+          overflow: "hidden",
+          marginBottom: 16,
+        }}
+      >
+        <div
+          style={{
+            padding: "12px 14px",
+            borderBottom: `1px solid ${C.border}`,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.muted, letterSpacing: 0.6 }}>
+            LINE ITEMS ({estimate.lineItems.length})
+          </div>
+          {!readOnly && (
+            <button
+              onClick={addLine}
+              style={{
+                background: `${C.blue}22`,
+                color: C.blue,
+                border: `1px solid ${C.blue}`,
+                padding: "4px 12px",
+                borderRadius: 8,
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              ＋ Add line
+            </button>
+          )}
+        </div>
+
+        {estimate.lineItems.length === 0 ? (
+          <div style={{ padding: 24, textAlign: "center", color: C.muted, fontSize: 13 }}>
+            No line items yet. Use <strong style={{ color: C.text }}>＋ Add line</strong> or upload
+            a drawing to auto-detect components.
+          </div>
+        ) : (
+          <>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "2.4fr 1.2fr 0.6fr 0.8fr 0.9fr auto",
+                fontSize: 11,
+                fontWeight: 700,
+                color: C.muted,
+                letterSpacing: 0.6,
+                padding: "8px 14px",
+                borderBottom: `1px solid ${C.border}`,
+              }}
+            >
+              <div>DESCRIPTION</div>
+              <div>CATEGORY</div>
+              <div>QTY</div>
+              <div>UNIT PRICE</div>
+              <div style={{ textAlign: "right" }}>LINE TOTAL</div>
+              <div />
+            </div>
+            {estimate.lineItems.map((li, i) => (
+              <div
+                key={li.id}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "2.4fr 1.2fr 0.6fr 0.8fr 0.9fr auto",
+                  padding: "8px 14px",
+                  alignItems: "center",
+                  borderBottom: i < estimate.lineItems.length - 1 ? `1px solid ${C.border}` : "none",
+                  fontSize: 13,
+                  gap: 6,
+                }}
+              >
+                <input
+                  value={li.description}
+                  disabled={readOnly}
+                  onChange={e => updateLine(li.id, { description: e.target.value })}
+                  style={cellInput(readOnly)}
+                />
+                <select
+                  value={li.category}
+                  disabled={readOnly}
+                  onChange={e => updateLine(li.id, { category: e.target.value })}
+                  style={cellInput(readOnly)}
+                >
+                  {categories.map(c => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="number"
+                  value={li.qty}
+                  disabled={readOnly}
+                  onChange={e => updateLine(li.id, { qty: Number(e.target.value) || 0 })}
+                  style={cellInput(readOnly)}
+                />
+                <input
+                  type="number"
+                  value={li.unitPrice}
+                  disabled={readOnly}
+                  onChange={e => updateLine(li.id, { unitPrice: Number(e.target.value) || 0 })}
+                  style={cellInput(readOnly)}
+                />
+                <div style={{ textAlign: "right", fontWeight: 700 }}>
+                  {fmtMoney(li.qty * li.unitPrice)}
+                </div>
+                <div>
+                  {!readOnly && (
+                    <button
+                      onClick={() => removeLine(li.id)}
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        color: C.red,
+                        cursor: "pointer",
+                        fontSize: 18,
+                        padding: "2px 6px",
+                      }}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
+
+      {/* Totals */}
+      <div
+        style={{
+          background: C.card,
+          border: `1px solid ${C.border}`,
+          borderRadius: 14,
+          padding: 16,
+        }}
+      >
+        <SummaryRow label="Subtotal (ex GST)" value={fmtMoney(totals.subtotal)} />
+        <SummaryRow
+          label={`Margin${Object.keys(estimate.categoryMargins).length > 0 ? " (mixed)" : ` (${estimate.margin}%)`}`}
+          value={`+ ${fmtMoney(totals.marginAmount)}`}
+          color={C.amber}
+        />
+        {totals.materialsCost > 0 && (
+          <SummaryRow
+            label={`Materials (TLE cable @ ${estimate.margin}%)`}
+            value={`+ ${fmtMoney(totals.materialsCost)}`}
+            color={C.blue}
+          />
+        )}
+        <SummaryRow label="Subtotal with margin" value={fmtMoney(totals.subtotalWithMargin)} />
+        <SummaryRow label={`GST (${estimate.gstRate}%)`} value={fmtMoney(totals.gst)} muted />
+        <div style={{ height: 1, background: C.border, margin: "10px 0" }} />
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontSize: 15, fontWeight: 800 }}>Total inc GST</span>
+          <span style={{ fontSize: 22, fontWeight: 800, color: C.green }}>
+            {fmtMoney(totals.total)}
+          </span>
+        </div>
+      </div>
+
+      {/* Margin Editor drawer */}
+      {showMargin && (
+        <Drawer title="Margin Editor" onClose={() => setShowMargin(false)}>
+          <MarginEditor
+            estimate={estimate}
+            categories={categories}
+            readOnly={readOnly}
+            onChange={patch => update(patch)}
+          />
+        </Drawer>
+      )}
+
+      {/* Cable Calculator drawer */}
+      {showCable && (
+        <Drawer title="Cable / Conduit Calculator" onClose={() => setShowCable(false)}>
+          <CableCalculator
+            runs={estimate.cableRuns}
+            readOnly={readOnly}
+            margin={estimate.margin}
+            bomStatus={estimate.bomStatus}
+            onChange={runs => update({ cableRuns: runs })}
+            onRequestQuote={() => { setShowCable(false); setShowWholesaler(true); }}
+            onBomStatusChange={status => update({ bomStatus: status })}
+            onApplyPrices={(runs, status) =>
+              update({ cableRuns: runs, bomStatus: status })
+            }
+          />
+        </Drawer>
+      )}
+
+      {/* Wholesaler quote modal */}
+      {showWholesaler && (
+        <WholesalerQuoteModal
+          estimate={estimate}
+          project={project}
+          onClose={() => setShowWholesaler(false)}
+        />
+      )}
+    </div>
+  );
+};
+
+const cellInput = (readOnly: boolean): React.CSSProperties => ({
+  background: readOnly ? "transparent" : C.bg,
+  color: C.text,
+  border: `1px solid ${readOnly ? "transparent" : C.border}`,
+  borderRadius: 6,
+  padding: "6px 8px",
+  fontSize: 13,
+  outline: "none",
+  width: "100%",
+  cursor: readOnly ? "default" : "text",
+});
+
+const SummaryRow: React.FC<{
+  label: string;
+  value: string;
+  color?: string;
+  muted?: boolean;
+}> = ({ label, value, color, muted }) => (
+  <div
+    style={{
+      display: "flex",
+      justifyContent: "space-between",
+      marginBottom: 8,
+      fontSize: 13,
+      color: muted ? C.muted : C.text,
+    }}
+  >
+    <span>{label}</span>
+    <span style={{ fontWeight: 700, color: color ?? undefined }}>{value}</span>
+  </div>
+);
+
+const ToolbarBtn: React.FC<{
+  icon: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}> = ({ icon, onClick, children }) => (
+  <button
+    onClick={onClick}
+    style={{
+      background: C.card,
+      border: `1px solid ${C.border}`,
+      color: C.text,
+      padding: "8px 12px",
+      borderRadius: 10,
+      fontSize: 12,
+      fontWeight: 600,
+      cursor: "pointer",
+      display: "flex",
+      alignItems: "center",
+      gap: 6,
+    }}
+  >
+    <span>{icon}</span>
+    {children}
+  </button>
+);
+
+const Drawer: React.FC<{
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}> = ({ title, onClose, children }) => (
+  <div
+    role="dialog"
+    aria-modal="true"
+    style={{
+      position: "fixed",
+      inset: 0,
+      background: "rgba(4,8,20,0.7)",
+      display: "flex",
+      justifyContent: "flex-end",
+      zIndex: 60,
+    }}
+    onClick={onClose}
+  >
+    <div
+      onClick={e => e.stopPropagation()}
+      style={{
+        width: "100%",
+        maxWidth: 420,
+        background: C.navy,
+        borderLeft: `1px solid ${C.border}`,
+        padding: 20,
+        overflowY: "auto",
+        color: C.text,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: 14,
+        }}
+      >
+        <div style={{ fontSize: 16, fontWeight: 700 }}>{title}</div>
+        <button
+          onClick={onClose}
+          style={{
+            background: "transparent",
+            border: "none",
+            color: C.muted,
+            fontSize: 22,
+            cursor: "pointer",
+          }}
+        >
+          ×
+        </button>
+      </div>
+      {children}
+    </div>
+  </div>
+);
+
+// ─── Margin Editor ──────────────────────────────────────────
+const MarginEditor: React.FC<{
+  estimate: ProjectEstimate;
+  categories: string[];
+  readOnly: boolean;
+  onChange: (patch: Partial<ProjectEstimate>) => void;
+}> = ({ estimate, categories, readOnly, onChange }) => {
+  const setGlobal = (v: number) =>
+    onChange({ margin: Math.max(0, Math.min(100, Math.round(v))) });
+
+  const setCategory = (cat: string, v: number | null) => {
+    const next = { ...estimate.categoryMargins };
+    if (v === null) delete next[cat];
+    else next[cat] = Math.max(0, Math.min(100, Math.round(v)));
+    onChange({ categoryMargins: next });
+  };
+
+  return (
+    <div>
+      <div style={{ fontSize: 12, color: C.muted, marginBottom: 12 }}>
+        Set a global margin that applies to every line item. Override per category
+        below — overrides take precedence over the global rate. Totals recalculate live.
+      </div>
+
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 14, marginBottom: 14 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, letterSpacing: 0.6, marginBottom: 8 }}>
+          GLOBAL MARGIN
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <input
+            type="number"
+            value={estimate.margin}
+            disabled={readOnly}
+            onChange={e => setGlobal(Number(e.target.value))}
+            style={{
+              flex: 1,
+              background: C.bg,
+              color: C.text,
+              border: `1px solid ${C.border}`,
+              borderRadius: 8,
+              padding: "8px 10px",
+              fontSize: 14,
+            }}
+          />
+          <span style={{ color: C.muted }}>%</span>
+        </div>
+        <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+          {[10, 15, 20, 25, 30].map(p => (
+            <button
+              key={p}
+              onClick={() => setGlobal(p)}
+              disabled={readOnly}
+              style={{
+                flex: 1,
+                background: estimate.margin === p ? `${C.blue}22` : "transparent",
+                border: `1px solid ${estimate.margin === p ? C.blue : C.border}`,
+                color: estimate.margin === p ? C.blue : C.muted,
+                padding: "6px 0",
+                borderRadius: 8,
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: readOnly ? "not-allowed" : "pointer",
+              }}
+            >
+              {p}%
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, letterSpacing: 0.6, marginBottom: 8 }}>
+        PER CATEGORY OVERRIDES
+      </div>
+      {categories.map(cat => {
+        const override = estimate.categoryMargins[cat];
+        const enabled = typeof override === "number";
+        return (
+          <div
+            key={cat}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "8px 10px",
+              background: C.card,
+              border: `1px solid ${C.border}`,
+              borderRadius: 10,
+              marginBottom: 6,
+            }}
+          >
+            <div style={{ flex: 1, fontSize: 13 }}>{cat}</div>
+            <input
+              type="number"
+              placeholder={`${estimate.margin}`}
+              value={enabled ? override : ""}
+              disabled={readOnly}
+              onChange={e => {
+                const v = e.target.value;
+                if (v === "") setCategory(cat, null);
+                else setCategory(cat, Number(v));
+              }}
+              style={{
+                width: 64,
+                background: C.bg,
+                color: C.text,
+                border: `1px solid ${C.border}`,
+                borderRadius: 6,
+                padding: "4px 8px",
+                fontSize: 13,
+                textAlign: "right",
+              }}
+            />
+            <span style={{ color: C.muted, fontSize: 12 }}>%</span>
+            {enabled && !readOnly && (
+              <button
+                onClick={() => setCategory(cat, null)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: C.muted,
+                  cursor: "pointer",
+                  fontSize: 16,
+                }}
+                title="Reset to global"
+              >
+                ×
+              </button>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// ─── Cable Calculator ───────────────────────────────────────
+const CableCalculator: React.FC<{
+  runs: CableRun[];
+  readOnly: boolean;
+  margin: number;
+  bomStatus?: BomStatus;
+  onChange: (runs: CableRun[]) => void;
+  onRequestQuote?: () => void;
+  onBomStatusChange: (status: BomStatus) => void;
+  onApplyPrices: (runs: CableRun[], status: BomStatus) => void;
+}> = ({ runs, readOnly, margin, bomStatus, onChange, onRequestQuote, onBomStatusChange, onApplyPrices }) => {
+  const [lengthInput, setLengthInput] = useState("");
+  const [cableType, setCableType] = useState(CABLE_TYPES[0].label);
+  const [waste, setWaste] = useState(10);
+  const [priceDraft, setPriceDraft] = useState<Record<string, string>>({});
+  const [rateInput, setRateInput] = useState(CABLE_TYPES[0].unitRate);
+
+  const handleCableTypeChange = (label: string) => {
+    setCableType(label);
+    const defaultRate = CABLE_TYPES.find(c => c.label === label)?.unitRate ?? 0;
+    setRateInput(defaultRate);
+  };
+
+  const add = () => {
+    const l = Number(lengthInput);
+    if (!l || l <= 0) return;
+    const total = +(l * (1 + waste / 100)).toFixed(2);
+    const run: CableRun = {
+      id: makeId(),
+      cableType,
+      lengthMeters: l,
+      wasteFactorPct: waste,
+      totalLength: total,
+      unitRate: rateInput,
+    };
+    onChange([...runs, run]);
+    setLengthInput("");
+  };
+
+  const remove = (id: string) => onChange(runs.filter(r => r.id !== id));
+
+  const updateRate = (id: string, rate: number) =>
+    onChange(runs.map(r => r.id === id ? { ...r, unitRate: rate } : r));
+
+  const grandTotalDollars = runs.reduce((sum, r) => sum + r.totalLength * r.unitRate, 0);
+
+  const status: BomStatus = bomStatus ?? "draft";
+  const uniqueTypes = useMemo(
+    () => Array.from(new Set(runs.map(r => r.cableType))),
+    [runs],
+  );
+
+  const sendBom = () => onBomStatusChange("sent");
+  const markQuoteReceived = () => {
+    const seed: Record<string, string> = {};
+    uniqueTypes.forEach(t => {
+      const existing = runs.find(r => r.cableType === t && typeof r.approvedUnitPrice === "number");
+      if (existing && typeof existing.approvedUnitPrice === "number") {
+        seed[t] = String(existing.approvedUnitPrice);
+      }
+    });
+    setPriceDraft(seed);
+    onBomStatusChange("quote_received");
+  };
+  const cancelApply = () => {
+    setPriceDraft({});
+    onBomStatusChange("sent");
+  };
+  const confirmPrices = () => {
+    const next = runs.map(r => {
+      const raw = priceDraft[r.cableType];
+      const v = raw === undefined || raw === "" ? NaN : Number(raw);
+      if (Number.isFinite(v) && v > 0) return { ...r, approvedUnitPrice: v };
+      return r;
+    });
+    onApplyPrices(next, "ordered");
+    setPriceDraft({});
+  };
+
+  const allPricesEntered =
+    uniqueTypes.length > 0 &&
+    uniqueTypes.every(t => {
+      const v = Number(priceDraft[t]);
+      return Number.isFinite(v) && v > 0;
+    });
+
+  return (
+    <div>
+      <div style={{ fontSize: 12, color: C.muted, marginBottom: 12 }}>
+        Enter a cable/conduit run length. The calculator applies a waste factor
+        (10% default) and outputs the quantity to order.
+      </div>
+
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 14, marginBottom: 14 }}>
+        <Field label="CABLE / CONDUIT TYPE">
+          <select
+            value={cableType}
+            onChange={e => handleCableTypeChange(e.target.value)}
+            disabled={readOnly}
+            style={drawerInput}
+          >
+            {CABLE_TYPES.map(c => (
+              <option key={c.label} value={c.label}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <div style={{ display: "flex", gap: 10 }}>
+          <Field label="RUN LENGTH (m)">
+            <input
+              type="number"
+              value={lengthInput}
+              onChange={e => setLengthInput(e.target.value)}
+              placeholder="0"
+              disabled={readOnly}
+              style={drawerInput}
+            />
+          </Field>
+          <Field label="WASTE %">
+            <input
+              type="number"
+              value={waste}
+              onChange={e => setWaste(Number(e.target.value) || 0)}
+              disabled={readOnly}
+              style={drawerInput}
+            />
+          </Field>
+          <Field label="$/m">
+            <input
+              type="number"
+              value={rateInput}
+              onChange={e => setRateInput(Number(e.target.value) || 0)}
+              disabled={readOnly}
+              style={drawerInput}
+            />
+          </Field>
+        </div>
+        <button
+          onClick={add}
+          disabled={readOnly || !lengthInput}
+          style={{
+            marginTop: 10,
+            width: "100%",
+            background: !lengthInput || readOnly ? C.card : C.blue,
+            color: !lengthInput || readOnly ? C.muted : "#fff",
+            border: "none",
+            padding: "10px 14px",
+            borderRadius: 10,
+            fontSize: 13,
+            fontWeight: 700,
+            cursor: !lengthInput || readOnly ? "not-allowed" : "pointer",
+          }}
+        >
+          Calculate & Add to BOM
+        </button>
+      </div>
+
+      <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, letterSpacing: 0.6, marginBottom: 8 }}>
+        CABLE RUNS ({runs.length})
+      </div>
+      {runs.length === 0 ? (
+        <div style={{ fontSize: 12, color: C.muted, padding: 10 }}>
+          No runs added yet.
+        </div>
+      ) : (
+        runs.map(r => (
+          <div
+            key={r.id}
+            style={{
+              background: C.card,
+              border: `1px solid ${C.border}`,
+              borderRadius: 10,
+              padding: 10,
+              marginBottom: 6,
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+            }}
+          >
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>{r.cableType}</div>
+              <div style={{ fontSize: 11, color: C.muted, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                {r.lengthMeters}m + {r.wasteFactorPct}% waste →{" "}
+                <strong style={{ color: C.text }}>{r.totalLength}m</strong> ·{" "}
+                {!readOnly ? (
+                  <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                    $<input
+                      type="number"
+                      value={r.unitRate}
+                      onChange={e => updateRate(r.id, Number(e.target.value) || 0)}
+                      style={{ width: 54, background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: 5, padding: "1px 4px", fontSize: 11 }}
+                    />/m
+                  </span>
+                ) : (
+                  <span>${r.unitRate.toFixed(2)}/m</span>
+                )}
+                {" · "}
+                <strong style={{ color: C.green }}>{fmtMoney(r.totalLength * r.unitRate)}</strong>
+              </div>
+            </div>
+            {!readOnly && (
+              <button
+                onClick={() => remove(r.id)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: C.red,
+                  fontSize: 18,
+                  cursor: "pointer",
+                }}
+              >
+                ×
+              </button>
+            )}
+          </div>
+        ))
+      )}
+
+      {runs.length > 0 && (
+        <>
+          <div
+            style={{
+              marginTop: 10,
+              padding: "10px 12px",
+              background: `${C.green}15`,
+              border: `1px solid ${C.green}55`,
+              borderRadius: 10,
+              fontSize: 13,
+              color: C.green,
+              fontWeight: 700,
+              display: "flex",
+              justifyContent: "space-between",
+            }}
+          >
+            <span>Total to order</span>
+            <span>{fmtMoney(grandTotalDollars)}</span>
+          </div>
+          {onRequestQuote && (
+            <button
+              onClick={onRequestQuote}
+              style={{
+                marginTop: 10,
+                width: "100%",
+                background: C.amber,
+                color: "#0A1628",
+                border: "none",
+                padding: "10px 14px",
+                borderRadius: 10,
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: "pointer",
+                letterSpacing: 0.3,
+              }}
+            >
+              📧 Request Quote from Wholesaler
+            </button>
+          )}
+        </>
+      )}
+
+      {runs.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: C.muted,
+              letterSpacing: 0.6,
+              marginBottom: 8,
+            }}
+          >
+            BOM STATUS
+          </div>
+          <BomStatusBadge status={status} />
+
+          {!readOnly && status === "draft" && (
+            <button
+              onClick={sendBom}
+              style={{
+                marginTop: 10,
+                width: "100%",
+                background: C.blue,
+                color: "#fff",
+                border: "none",
+                padding: "10px 14px",
+                borderRadius: 10,
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              📧 Send BOM to TLE
+            </button>
+          )}
+
+          {!readOnly && status === "sent" && (
+            <button
+              onClick={markQuoteReceived}
+              style={{
+                marginTop: 10,
+                width: "100%",
+                background: `${C.amber}22`,
+                color: C.amber,
+                border: `1px solid ${C.amber}`,
+                padding: "10px 14px",
+                borderRadius: 10,
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              📨 Mark Quote Received
+            </button>
+          )}
+
+          {status === "quote_received" && (
+            <div
+              style={{
+                marginTop: 10,
+                background: C.card,
+                border: `1px solid ${C.amber}55`,
+                borderRadius: 12,
+                padding: 14,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: C.text,
+                  marginBottom: 4,
+                }}
+              >
+                Apply TLE Prices
+              </div>
+              <div style={{ fontSize: 11, color: C.muted, marginBottom: 12 }}>
+                Enter the actual $/m TLE quoted for each cable type. Confirming
+                applies the price to every run of that type and feeds it into
+                the estimate total.
+              </div>
+              {uniqueTypes.map(t => (
+                <div
+                  key={t}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    marginBottom: 8,
+                  }}
+                >
+                  <div style={{ flex: 1, fontSize: 13 }}>{t}</div>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={priceDraft[t] ?? ""}
+                    onChange={e =>
+                      setPriceDraft(prev => ({ ...prev, [t]: e.target.value }))
+                    }
+                    disabled={readOnly}
+                    placeholder={rateOf(t).toFixed(2)}
+                    style={{
+                      width: 96,
+                      background: C.bg,
+                      color: C.text,
+                      border: `1px solid ${C.border}`,
+                      borderRadius: 6,
+                      padding: "6px 8px",
+                      fontSize: 13,
+                      textAlign: "right",
+                    }}
+                  />
+                  <span style={{ color: C.muted, fontSize: 12 }}>$/m</span>
+                </div>
+              ))}
+              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                <button
+                  onClick={cancelApply}
+                  disabled={readOnly}
+                  style={{
+                    flex: 1,
+                    background: "transparent",
+                    color: C.muted,
+                    border: `1px solid ${C.border}`,
+                    padding: "8px 12px",
+                    borderRadius: 8,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: readOnly ? "not-allowed" : "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmPrices}
+                  disabled={readOnly || !allPricesEntered}
+                  style={{
+                    flex: 2,
+                    background:
+                      readOnly || !allPricesEntered ? C.card : C.green,
+                    color:
+                      readOnly || !allPricesEntered ? C.muted : "#04130C",
+                    border: "none",
+                    padding: "8px 12px",
+                    borderRadius: 8,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor:
+                      readOnly || !allPricesEntered ? "not-allowed" : "pointer",
+                  }}
+                >
+                  Confirm Prices
+                </button>
+              </div>
+            </div>
+          )}
+
+          {status === "ordered" && (
+            <div
+              style={{
+                marginTop: 10,
+                padding: "10px 12px",
+                background: `${C.green}10`,
+                border: `1px solid ${C.green}55`,
+                borderRadius: 10,
+                fontSize: 12,
+                color: C.green,
+                fontWeight: 600,
+              }}
+            >
+              TLE prices applied — materials are now included in the estimate
+              total at {margin}% margin.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const BomStatusBadge: React.FC<{ status: BomStatus }> = ({ status }) => {
+  const map: Record<BomStatus, { bg: string; fg: string; label: string }> = {
+    draft: { bg: C.card, fg: C.muted, label: "BOM: Draft" },
+    sent: { bg: `${C.blue}22`, fg: C.blue, label: "📧 Sent to TLE" },
+    quote_received: { bg: `${C.amber}22`, fg: C.amber, label: "📨 Quote Received" },
+    ordered: { bg: `${C.green}22`, fg: C.green, label: "📦 Ordered" },
+  };
+  const s = map[status];
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        background: s.bg,
+        color: s.fg,
+        border: `1px solid ${s.fg}55`,
+        padding: "6px 10px",
+        borderRadius: 8,
+        fontSize: 12,
+        fontWeight: 700,
+      }}
+    >
+      {s.label}
+    </div>
+  );
+};
+
+const drawerInput: React.CSSProperties = {
+  width: "100%",
+  background: C.bg,
+  color: C.text,
+  border: `1px solid ${C.border}`,
+  borderRadius: 8,
+  padding: "8px 10px",
+  fontSize: 14,
+};
+
+const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
+  <div style={{ marginBottom: 10, flex: 1 }}>
+    <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: 0.6, marginBottom: 4 }}>
+      {label}
+    </div>
+    {children}
+  </div>
+);
+
+
+export default ProjectEstimateEditor;

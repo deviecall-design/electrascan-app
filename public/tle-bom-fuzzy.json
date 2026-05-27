@@ -1,0 +1,625 @@
+{
+  "supplier": "TLE Brookvale",
+  "generated": "2026-05-10T00:05:45.284Z",
+  "catalogue_size": 23775,
+  "items": [
+    {
+      "id": "down_lights",
+      "description": "Recessed pair of Down Lights",
+      "qty": 18,
+      "unit_price": 200,
+      "line_total": 3600,
+      "status": "MATCHED",
+      "confidence": 29,
+      "note": "High confidence match",
+      "tle_matches": [
+        {
+          "name": "1715 Recessed Profile Wht 3M - Including End Caps",
+          "sku": "MBL1715R-3M-WHT",
+          "brand": "MB LIGHTS",
+          "category": "Downlights & Spotlights",
+          "url": "https://tle.mmem.com.au/mbl1715r-3m-wht",
+          "match_score": 29
+        },
+        {
+          "name": "1715 Recessed Profile Blk 3M - Including End Caps",
+          "sku": "MBL1715R-3M-BLK",
+          "brand": "MB LIGHTS",
+          "category": "Downlights & Spotlights",
+          "url": "https://tle.mmem.com.au/mbl1715r-3m-blk",
+          "match_score": 29
+        },
+        {
+          "name": "1715 Recessed Profile Alu 3M - Including End Caps",
+          "sku": "MBL1715R-3M-ALU",
+          "brand": "MB LIGHTS",
+          "category": "Downlights & Spotlights",
+          "url": "https://tle.mmem.com.au/mbl1715r-3m-alu",
+          "match_score": 29
+        }
+      ]
+    },
+    {
+      "id": "art_light",
+      "description": "Art Light",
+      "qty": 3,
+      "unit_price": 250,
+      "line_total": 750,
+      "status": "MATCHED",
+      "confidence": 40,
+      "note": "High confidence match",
+      "tle_matches": [
+        {
+          "name": "Light Mech",
+          "sku": "GTSTESLIGHTM",
+          "brand": "Tesla",
+          "category": "Power Cables > Circulars",
+          "url": "https://tle.mmem.com.au/gtsteslightm",
+          "match_score": 40
+        },
+        {
+          "name": "D/Light Trim",
+          "sku": "MELML-D90-316T",
+          "brand": "M-Elec",
+          "category": "Downlights & Spotlights",
+          "url": "https://tle.mmem.com.au/melml-d90-316t",
+          "match_score": 40
+        },
+        {
+          "name": "D/Light 90mm C/O Wht",
+          "sku": "L&CPAK90TRIMWR",
+          "brand": "L&C",
+          "category": "Downlights & Spotlights",
+          "url": "https://tle.mmem.com.au/l-26-cpak90trimwr",
+          "match_score": 40
+        }
+      ]
+    },
+    {
+      "id": "wall_light",
+      "description": "Wall Light",
+      "qty": 6,
+      "unit_price": 250,
+      "line_total": 1500,
+      "status": "MATCHED",
+      "confidence": 50,
+      "note": "High confidence match",
+      "tle_matches": [
+        {
+          "name": "BOBO WALL LIGHT BLACK SMOKE",
+          "sku": "TBXBOBOWB1BKSM",
+          "brand": "TELBIX",
+          "category": "Downlights & Spotlights",
+          "url": "https://tle.mmem.com.au/tbxbobowb1bksm",
+          "match_score": 50
+        },
+        {
+          "name": "BOBO WALL LIGHT ANTI GOLD OPAL",
+          "sku": "TBXBOBOWB1AGOM",
+          "brand": "TELBIX",
+          "category": "Downlights & Spotlights",
+          "url": "https://tle.mmem.com.au/tbxbobowb1agom",
+          "match_score": 44
+        },
+        {
+          "name": "Light Mech",
+          "sku": "GTSTESLIGHTM",
+          "brand": "Tesla",
+          "category": "Power Cables > Circulars",
+          "url": "https://tle.mmem.com.au/gtsteslightm",
+          "match_score": 40
+        }
+      ]
+    },
+    {
+      "id": "led_strip",
+      "description": "LED Strip Light",
+      "qty": 23,
+      "unit_price": 400,
+      "line_total": 9200,
+      "status": "MATCHED",
+      "confidence": 44,
+      "note": "High confidence match",
+      "tle_matches": [
+        {
+          "name": "LED Emergency D/Light LED 2.5W Blk",
+          "sku": "LEDRDA25NMEST-04",
+          "brand": "Robus",
+          "category": "Downlights & Spotlights",
+          "url": "https://tle.mmem.com.au/ledrda25nmest-04",
+          "match_score": 44
+        },
+        {
+          "name": "LED D/Light 150mm C/O LED 10W 3/4/5K",
+          "sku": "HPMDLI150TRIWE",
+          "brand": "HPM",
+          "category": "Downlights & Spotlights",
+          "url": "https://tle.mmem.com.au/hpmdli150triwe",
+          "match_score": 44
+        },
+        {
+          "name": "LED D/Light 90mm C/O LED 7W 4K",
+          "sku": "HPMDLI12504",
+          "brand": "HPM",
+          "category": "Downlights & Spotlights",
+          "url": "https://tle.mmem.com.au/hpmdli12504",
+          "match_score": 44
+        }
+      ]
+    },
+    {
+      "id": "light_switch_1",
+      "description": "ZETR 13 series light switch",
+      "qty": 6,
+      "unit_price": 120,
+      "line_total": 720,
+      "status": "SOURCE_ELSEWHERE",
+      "confidence": 0,
+      "note": "Brand not stocked at TLE — source from specialist supplier",
+      "tle_matches": []
+    },
+    {
+      "id": "ceiling_fan",
+      "description": "Ceiling Fan",
+      "qty": 4,
+      "unit_price": 450,
+      "line_total": 1800,
+      "status": "MATCHED",
+      "confidence": 40,
+      "note": "High confidence match",
+      "tle_matches": [
+        {
+          "name": "Fan Mech",
+          "sku": "GTSTESFANM",
+          "brand": "Tesla",
+          "category": "Power Cables > Circulars",
+          "url": "https://tle.mmem.com.au/gtstesfanm",
+          "match_score": 40
+        },
+        {
+          "name": "Key Cover FAN",
+          "sku": "BTIL4915BC",
+          "brand": "Bticino",
+          "category": "Switches",
+          "url": "https://tle.mmem.com.au/btil4915bc",
+          "match_score": 33
+        },
+        {
+          "name": "Connected Fan Controller Zigbee",
+          "sku": "CLI41ECSFWMZVW",
+          "brand": "Clipsal",
+          "category": "Switches",
+          "url": "https://tle.mmem.com.au/cli41ecsfwmzvw",
+          "match_score": 29
+        }
+      ]
+    },
+    {
+      "id": "light_switch_2",
+      "description": "ZETR 12 series Light Switch",
+      "qty": 7,
+      "unit_price": 120,
+      "line_total": 840,
+      "status": "SOURCE_ELSEWHERE",
+      "confidence": 0,
+      "note": "Brand not stocked at TLE — source from specialist supplier",
+      "tle_matches": []
+    },
+    {
+      "id": "light_sensor",
+      "description": "Light Sensor",
+      "qty": 4,
+      "unit_price": 380,
+      "line_total": 1520,
+      "status": "MATCHED",
+      "confidence": 44,
+      "note": "High confidence match",
+      "tle_matches": [
+        {
+          "name": "LED Skirting Light with PIR Sensor White",
+          "sku": "LEGEC511WE",
+          "brand": "Legrand",
+          "category": "Switches",
+          "url": "https://tle.mmem.com.au/legec511we",
+          "match_score": 44
+        },
+        {
+          "name": "Sunset Switch Photoelectric Light Sensor 12V Black",
+          "sku": "HPMDGLS150",
+          "brand": "HPM",
+          "category": "Switches",
+          "url": "https://tle.mmem.com.au/hpmdgls150",
+          "match_score": 40
+        },
+        {
+          "name": "Light Mech",
+          "sku": "GTSTESLIGHTM",
+          "brand": "Tesla",
+          "category": "Power Cables > Circulars",
+          "url": "https://tle.mmem.com.au/gtsteslightm",
+          "match_score": 40
+        }
+      ]
+    },
+    {
+      "id": "pendant",
+      "description": "Pendant TBC",
+      "qty": 3,
+      "unit_price": 600,
+      "line_total": 1800,
+      "status": "REVIEW",
+      "confidence": 22,
+      "note": "Low confidence — confirm with TLE before ordering",
+      "tle_matches": [
+        {
+          "name": "Conduit Pendant Plate 32mm SS",
+          "sku": "WMISSPP32",
+          "brand": "Williams Mining",
+          "category": "Conduit & Fittings",
+          "url": "https://tle.mmem.com.au/wmisspp32",
+          "match_score": 22
+        },
+        {
+          "name": "Conduit Pendant Plate 25mm SS",
+          "sku": "WMISSPP25",
+          "brand": "Williams Mining",
+          "category": "Conduit & Fittings",
+          "url": "https://tle.mmem.com.au/wmisspp25",
+          "match_score": 22
+        },
+        {
+          "name": "Conduit Pendant Plate 20mm SS",
+          "sku": "WMISSPP20",
+          "brand": "Williams Mining",
+          "category": "Conduit & Fittings",
+          "url": "https://tle.mmem.com.au/wmisspp20",
+          "match_score": 22
+        }
+      ]
+    },
+    {
+      "id": "surface_can",
+      "description": "Surface can light",
+      "qty": 4,
+      "unit_price": 200,
+      "line_total": 800,
+      "status": "MATCHED",
+      "confidence": 44,
+      "note": "High confidence match",
+      "tle_matches": [
+        {
+          "name": "D/Light Surface Mount 35W Blk",
+          "sku": "DOM20692",
+          "brand": "Domus",
+          "category": "Downlights & Spotlights",
+          "url": "https://tle.mmem.com.au/dom20692",
+          "match_score": 44
+        },
+        {
+          "name": "D/Light Surface Mount 25W Blk",
+          "sku": "DOM20686",
+          "brand": "Domus",
+          "category": "Downlights & Spotlights",
+          "url": "https://tle.mmem.com.au/dom20686",
+          "match_score": 44
+        },
+        {
+          "name": "10 Watt Surface Mount Can White Cob 4000K",
+          "sku": "MBL-SC10WCOB-4K-WHT",
+          "brand": "MB LIGHTS",
+          "category": "Downlights & Spotlights",
+          "url": "https://tle.mmem.com.au/mbl-sc10wcob-4k-wht",
+          "match_score": 42
+        }
+      ]
+    },
+    {
+      "id": "motorised_blind",
+      "description": "Motorised Blind",
+      "qty": 14,
+      "unit_price": 380,
+      "line_total": 5320,
+      "status": "REVIEW",
+      "confidence": 22,
+      "note": "Low confidence — confirm with TLE before ordering",
+      "tle_matches": [
+        {
+          "name": "Blind and Light Controller 230V White",
+          "sku": "GSMSNASBLC",
+          "brand": "GSME Trader",
+          "category": "Switches",
+          "url": "https://tle.mmem.com.au/gsmsnasblc",
+          "match_score": 22
+        },
+        {
+          "name": "Dual Blind Controller 2.5A 230V Black",
+          "sku": "GSMPMBC4BK",
+          "brand": "GSME Trader",
+          "category": "Switches",
+          "url": "https://tle.mmem.com.au/gsmpmbc4bk",
+          "match_score": 20
+        },
+        {
+          "name": "Dual Blind Controller 2.5A 230V White",
+          "sku": "GSMPMBC4",
+          "brand": "GSME Trader",
+          "category": "Switches",
+          "url": "https://tle.mmem.com.au/gsmpmbc4",
+          "match_score": 20
+        }
+      ]
+    },
+    {
+      "id": "hager_dpp",
+      "description": "Hager silhouette Double Power Point",
+      "qty": 34,
+      "unit_price": 260,
+      "line_total": 8840,
+      "status": "MATCHED",
+      "confidence": 60,
+      "note": "High confidence match",
+      "tle_matches": [
+        {
+          "name": "Double Power Point Double Pole",
+          "sku": "GTSTESWGPO2D",
+          "brand": "Tesla",
+          "category": "Switches",
+          "url": "https://tle.mmem.com.au/gtsteswgpo2d",
+          "match_score": 60
+        },
+        {
+          "name": "SMART DOUBLE POWER POINT",
+          "sku": "MERSPP02G",
+          "brand": "Mercator",
+          "category": "Socket Outlets",
+          "url": "https://tle.mmem.com.au/merspp02g",
+          "match_score": 60
+        },
+        {
+          "name": "DOUBLE POWER POINT-GPO",
+          "sku": "GTSTESGPO2.",
+          "brand": "Tesla",
+          "category": "Socket Outlets",
+          "url": "https://tle.mmem.com.au/gtstesgpo2-2e",
+          "match_score": 60
+        }
+      ]
+    },
+    {
+      "id": "tv_data",
+      "description": "Dual TV/DATA Outlet",
+      "qty": 3,
+      "unit_price": 550,
+      "line_total": 1650,
+      "status": "MATCHED",
+      "confidence": 44,
+      "note": "High confidence match",
+      "tle_matches": [
+        {
+          "name": "TV Outlet",
+          "sku": "GTSTESNTVA",
+          "brand": "General Trade Supplies",
+          "category": "Power Cables > Circulars",
+          "url": "https://tle.mmem.com.au/gtstesntva",
+          "match_score": 44
+        },
+        {
+          "name": "Data Outlet",
+          "sku": "GTSTESNRJ45A",
+          "brand": "General Trade Supplies",
+          "category": "Power Cables > Circulars",
+          "url": "https://tle.mmem.com.au/gtstesnrj45a",
+          "match_score": 44
+        },
+        {
+          "name": "Pay TV Outlet",
+          "sku": "GTSTESNTVFA",
+          "brand": "General Trade Supplies",
+          "category": "Power Cables > Circulars",
+          "url": "https://tle.mmem.com.au/gtstesntvfa",
+          "match_score": 40
+        }
+      ]
+    },
+    {
+      "id": "towel_rail",
+      "description": "Vertical Heated Towel Rail",
+      "qty": 3,
+      "unit_price": 450,
+      "line_total": 1350,
+      "status": "MATCHED",
+      "confidence": 43,
+      "note": "High confidence match",
+      "tle_matches": [
+        {
+          "name": "Timer Switch Towel Rail 1G 1.3A 230V Vertical White",
+          "sku": "CAAHNS710RT-KIT",
+          "brand": "Cabac",
+          "category": "Switches",
+          "url": "https://tle.mmem.com.au/caahns710rt-kit",
+          "match_score": 43
+        },
+        {
+          "name": "Timer Switch Towel Rail Standard 3G 10A 240V 12Hr Vert Whit",
+          "sku": "HPMXLP770TRTWE",
+          "brand": "HPM",
+          "category": "Switches",
+          "url": "https://tle.mmem.com.au/hpmxlp770trtwe",
+          "match_score": 31
+        },
+        {
+          "name": "Heat Dissipation Insert DIN Rail",
+          "sku": "HAGLZ060",
+          "brand": "Hager",
+          "category": "Circuit Breakers & RCDs",
+          "url": "https://tle.mmem.com.au/haglz060",
+          "match_score": 30
+        }
+      ]
+    },
+    {
+      "id": "underfloor",
+      "description": "Underfloor heating",
+      "qty": 2,
+      "unit_price": 450,
+      "line_total": 900,
+      "status": "REVIEW",
+      "confidence": 20,
+      "note": "Low confidence — confirm with TLE before ordering",
+      "tle_matches": [
+        {
+          "name": "Heat Mech",
+          "sku": "GTSTESHEATM",
+          "brand": "Tesla",
+          "category": "Power Cables > Circulars",
+          "url": "https://tle.mmem.com.au/gtstesheatm",
+          "match_score": 20
+        },
+        {
+          "name": "Under Voltage Release Pole Screw",
+          "sku": "SHNLV429408",
+          "brand": "Schneider",
+          "category": "Circuit Breakers & RCDs",
+          "url": "https://tle.mmem.com.au/shnlv429408",
+          "match_score": 12
+        },
+        {
+          "name": "Under Voltage Trip 240V/DC",
+          "sku": "NHPDTAUVT240V",
+          "brand": "NHP DIN-T",
+          "category": "Circuit Breakers & RCDs",
+          "url": "https://tle.mmem.com.au/nhpdtauvt240v",
+          "match_score": 12
+        }
+      ]
+    },
+    {
+      "id": "exhaust_fan",
+      "description": "Exhaust Fan",
+      "qty": 3,
+      "unit_price": 215,
+      "line_total": 645,
+      "status": "MATCHED",
+      "confidence": 40,
+      "note": "High confidence match",
+      "tle_matches": [
+        {
+          "name": "Fan Mech",
+          "sku": "GTSTESFANM",
+          "brand": "Tesla",
+          "category": "Power Cables > Circulars",
+          "url": "https://tle.mmem.com.au/gtstesfanm",
+          "match_score": 40
+        },
+        {
+          "name": "Key Cover FAN",
+          "sku": "BTIL4915BC",
+          "brand": "Bticino",
+          "category": "Switches",
+          "url": "https://tle.mmem.com.au/btil4915bc",
+          "match_score": 33
+        },
+        {
+          "name": "Connected Fan Controller Zigbee",
+          "sku": "CLI41ECSFWMZVW",
+          "brand": "Clipsal",
+          "category": "Switches",
+          "url": "https://tle.mmem.com.au/cli41ecsfwmzvw",
+          "match_score": 29
+        }
+      ]
+    },
+    {
+      "id": "doorbell",
+      "description": "Door Bell",
+      "qty": 1,
+      "unit_price": 250,
+      "line_total": 250,
+      "status": "REVIEW",
+      "confidence": 25,
+      "note": "Low confidence — confirm with TLE before ordering",
+      "tle_matches": [
+        {
+          "name": "Bell Mouth Plain 25mm Orng",
+          "sku": "CNXCONXBM25HD",
+          "brand": "CON-X",
+          "category": "Conduit & Fittings",
+          "url": "https://tle.mmem.com.au/cnxconxbm25hd",
+          "match_score": 25
+        },
+        {
+          "name": "Rotary Handle W/Door Coupling Padlock",
+          "sku": "EAT1818037",
+          "brand": "Eaton",
+          "category": "Circuit Breakers & RCDs",
+          "url": "https://tle.mmem.com.au/eat1818037",
+          "match_score": 25
+        },
+        {
+          "name": "Coupling Handle IP66 Door",
+          "sku": "ALB140M-C-DN66",
+          "brand": "Allen-Bradley",
+          "category": "Circuit Breakers & RCDs",
+          "url": "https://tle.mmem.com.au/alb140m-c-dn66",
+          "match_score": 25
+        }
+      ]
+    },
+    {
+      "id": "dbl_powerpoint",
+      "description": "ZETR 13 series double powerpoint",
+      "qty": 6,
+      "unit_price": 525,
+      "line_total": 3150,
+      "status": "SOURCE_ELSEWHERE",
+      "confidence": 0,
+      "note": "Brand not stocked at TLE — source from specialist supplier",
+      "tle_matches": []
+    },
+    {
+      "id": "automation_touch",
+      "description": "Automation Touchscreen",
+      "qty": 1,
+      "unit_price": 1200,
+      "line_total": 1200,
+      "status": "REVIEW",
+      "confidence": 14,
+      "note": "Low confidence — confirm with TLE before ordering",
+      "tle_matches": [
+        {
+          "name": "Trailing Edge Touch Dimmer",
+          "sku": "GTSTESDM400T",
+          "brand": "Tesla",
+          "category": "Power Cables > Circulars",
+          "url": "https://tle.mmem.com.au/gtstesdm400t",
+          "match_score": 14
+        },
+        {
+          "name": "4 x auto switched GPO = 5 x data Wht",
+          "sku": "CMSAC0405WT",
+          "brand": "CMS",
+          "category": "Socket Outlets",
+          "url": "https://tle.mmem.com.au/cmsac0405wt",
+          "match_score": 12
+        },
+        {
+          "name": "2 x auto switched GPO w. 3 x data Blk",
+          "sku": "CMSAC0203BL",
+          "brand": "CMS",
+          "category": "Socket Outlets",
+          "url": "https://tle.mmem.com.au/cmsac0203bl",
+          "match_score": 12
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "total_items": 19,
+    "estimate_total": 45835,
+    "matched": 11,
+    "review_required": 5,
+    "source_elsewhere": 3,
+    "not_in_catalogue": 0,
+    "tle_bom_items": 16
+  }
+}

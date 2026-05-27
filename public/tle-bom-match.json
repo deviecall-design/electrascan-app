@@ -1,0 +1,658 @@
+{
+  "supplier": "TLE Brookvale",
+  "generated": "2026-05-10T00:04:03.433Z",
+  "items": {
+    "down_lights": {
+      "estimate_description": "Recessed pair of Down Lights",
+      "qty": 18,
+      "estimate_unit_price": 200,
+      "estimate_line_total": 3600,
+      "tle_match_count": 425,
+      "status": "MATCHED",
+      "tle_products": [
+        {
+          "name": "SAL LED Downlight 160mm Cutout SMD LED 15/20W Recessed 3/4/5.7K White",
+          "sku": "SALS9074TCWHDP",
+          "brand": "SAL",
+          "range": "",
+          "url": "https://tle.mmem.com.au/sals9074tcwhdp",
+          "available": false
+        },
+        {
+          "name": "SAL Downlight Round Fixed Int Driver 92mm Cutout SMD LED 9W 3/4/5.7K White",
+          "sku": "SALS9065TCWH",
+          "brand": "SAL",
+          "range": "Wave",
+          "url": "https://tle.mmem.com.au/sals9065tcwh",
+          "available": false
+        },
+        {
+          "name": "SAL Tradegem II LED Downlight Dimmable 9W 3000/4000/5700K 900/1050/1000lm 110deg 92mm Cut Out White IP44 Flex & Plug",
+          "sku": "SALS9141TC2WH",
+          "brand": "SAL",
+          "range": "Tradegem II",
+          "url": "https://tle.mmem.com.au/sals9141tc2wh",
+          "available": false
+        }
+      ]
+    },
+    "art_light": {
+      "estimate_description": "Art Light",
+      "qty": 3,
+      "estimate_unit_price": 250,
+      "estimate_line_total": 750,
+      "tle_match_count": 28831,
+      "status": "MATCHED",
+      "tle_products": [
+        {
+          "name": "Artcraft Superlux Wall Light CFL 11W 230-240V G23 PL Opal Glass White",
+          "sku": "ARTWL1166",
+          "brand": "Artcraft Superlux",
+          "range": "",
+          "url": "https://tle.mmem.com.au/artwl1166",
+          "available": false
+        },
+        {
+          "name": "Artcraft Superlux Deflector Wall Light Bi-Pin Halogen 35W 230-240V G5.3 Square Silver",
+          "sku": "ARTSDV76-SI",
+          "brand": "Artcraft Superlux",
+          "range": "",
+          "url": "https://tle.mmem.com.au/artsdv76-si",
+          "available": false
+        },
+        {
+          "name": "Artcraft Superlux Wall Light Halogen 35W 230 to 240V GU10 Silver/Grey",
+          "sku": "ARTLG203-SS",
+          "brand": "Artcraft Superlux",
+          "range": "",
+          "url": "https://tle.mmem.com.au/artlg203-ss",
+          "available": false
+        }
+      ]
+    },
+    "wall_light": {
+      "estimate_description": "Wall Light",
+      "qty": 6,
+      "estimate_unit_price": 250,
+      "estimate_line_total": 1500,
+      "tle_match_count": 235,
+      "status": "MATCHED",
+      "tle_products": [
+        {
+          "name": "Clipsal Exterior Wall Light 9W 230-240V Cylindrical 4000K Aluminum Silver IP54 LED 50Hz 260-410lm 15000hrs 60deg 80CRI ",
+          "sku": "CLITPWL",
+          "brand": "Clipsal",
+          "range": "",
+          "url": "https://tle.mmem.com.au/clitpwl",
+          "available": false
+        },
+        {
+          "name": "Mercator Cayman LED Exterior Wall Light 12W 3000K 700lm 80CRI Black IP54",
+          "sku": "MERMXD6512BLK",
+          "brand": "Mercator",
+          "range": "Cayman",
+          "url": "https://tle.mmem.com.au/mermxd6512blk",
+          "available": false
+        },
+        {
+          "name": "Eglo Wall Light Exterior 1x40W 220-240V Black IP44 50/60Hz Wall Aluminum/Steel 120mm 250mm ",
+          "sku": "EGL900288N",
+          "brand": "Eglo",
+          "range": "",
+          "url": "https://tle.mmem.com.au/egl900288n",
+          "available": false
+        }
+      ]
+    },
+    "led_strip": {
+      "estimate_description": "LED Strip Light",
+      "qty": 23,
+      "estimate_unit_price": 400,
+      "estimate_line_total": 9200,
+      "tle_match_count": 777,
+      "status": "MATCHED",
+      "tle_products": [
+        {
+          "name": "SAL COB LED Strip Kit 240V 6W/m 320/m LEDs White 3000K IP20 5000mm W/Driver 50Hz 530lm/m 90CRI Non-Dimmable 140deg 0.9 ",
+          "sku": "SALFLBP24V5M/WW",
+          "brand": "SAL",
+          "range": "",
+          "url": "https://tle.mmem.com.au/salflbp24v5m-2f-ww",
+          "available": false
+        },
+        {
+          "name": "SAL LED Strip Channel Extruded Aluminium IP20 Anodized Silver F/LED Strip Light",
+          "sku": "SALSLT4060/2M",
+          "brand": "SAL",
+          "range": "",
+          "url": "https://tle.mmem.com.au/salslt4060-2f-2m",
+          "available": false
+        },
+        {
+          "name": "SAL LED COB Strip 240/24V 15W 560/m LEDs Warm White/Cool White/Daylight 2700/4000/6000K IP44 2000mm 500/560/610lm 90CRI ",
+          "sku": "SALFLBP24V2M/TC",
+          "brand": "SAL",
+          "range": "",
+          "url": "https://tle.mmem.com.au/salflbp24v2m-2f-tc",
+          "available": false
+        }
+      ]
+    },
+    "light_switch_1": {
+      "estimate_description": "ZETR 13 series light switch",
+      "qty": 6,
+      "estimate_unit_price": 120,
+      "estimate_line_total": 720,
+      "tle_match_count": 10661,
+      "status": "MATCHED",
+      "tle_products": [
+        {
+          "name": "Clipsal Iconic Switch Flush Mount Rocker Standard 1 Gang 10A/AX 250V 1 Pole 1/2 Way Vertical Vivid White ",
+          "sku": "CLI3041VAVW",
+          "brand": "Clipsal",
+          "range": "Iconic",
+          "url": "https://tle.mmem.com.au/cli3041vavw",
+          "available": false
+        },
+        {
+          "name": "Clipsal Switch Flush Mount Rocker Standard 1 Gang 10A/AX 250V 1 Pole 1/2 Way Vertical White ",
+          "sku": "CLIC2031VAWE",
+          "brand": "Clipsal",
+          "range": "Classic C2000 Series",
+          "url": "https://tle.mmem.com.au/clic2031vawe",
+          "available": false
+        },
+        {
+          "name": "Clipsal Switch Flush Mount Rocker Standard 1 Gang 10A 250V 1 Pole 1/2 Way Vertical White ",
+          "sku": "CLI2031VAWE",
+          "brand": "Clipsal",
+          "range": "2000 Series",
+          "url": "https://tle.mmem.com.au/cli2031vawe",
+          "available": false
+        }
+      ]
+    },
+    "ceiling_fan": {
+      "estimate_description": "Ceiling Fan",
+      "qty": 4,
+      "estimate_unit_price": 450,
+      "estimate_line_total": 1800,
+      "tle_match_count": 1135,
+      "status": "MATCHED",
+      "tle_products": [
+        {
+          "name": "Brilliant Lighting AC Fan 52 in 220-240 VAC 60 Watt 13400 cu-m/hr ABS Pure White",
+          "sku": "BRI21548/05",
+          "brand": "Brilliant",
+          "range": "Vector",
+          "url": "https://tle.mmem.com.au/bri21548-2f-05",
+          "available": false
+        },
+        {
+          "name": "Brilliant Lighting Vector II AC Ceiling Fan with LED Light 52in ABS White",
+          "sku": "BRI22293/05",
+          "brand": "Brilliant",
+          "range": "Vector II",
+          "url": "https://tle.mmem.com.au/bri22293-2f-05",
+          "available": false
+        },
+        {
+          "name": "Airflow Ceiling Sweep Fan 1400 mm 3 Blade 60 Watt 258 rpm 3 Speed Wall Control Aluminium White",
+          "sku": "AIRP3HS1400ALWE",
+          "brand": "Airflow",
+          "range": "",
+          "url": "https://tle.mmem.com.au/airp3hs1400alwe",
+          "available": false
+        }
+      ]
+    },
+    "light_switch_2": {
+      "estimate_description": "ZETR 12 series Light Switch",
+      "qty": 7,
+      "estimate_unit_price": 120,
+      "estimate_line_total": 840,
+      "tle_match_count": 10661,
+      "status": "MATCHED",
+      "tle_products": [
+        {
+          "name": "Legrand Switch Flush Mount Rocker Standard 2 Gang 16AX 230/240V 1 Pole 2 Way Horizontal White",
+          "sku": "LEGED770/2HWE",
+          "brand": "Legrand",
+          "range": "Excel Life",
+          "url": "https://tle.mmem.com.au/leged770-2f-2hwe",
+          "available": false
+        },
+        {
+          "name": "Legrand Switch Flush Mount Rocker Standard 3 Gang 16AX 230/240V 1 Pole 2 Way Horizontal White",
+          "sku": "LEGED770/3HWE",
+          "brand": "Legrand",
+          "range": "Excel Life",
+          "url": "https://tle.mmem.com.au/leged770-2f-3hwe",
+          "available": false
+        },
+        {
+          "name": "Legrand Switch Flush Mount Rocker Standard 1 Gang 16AX 230/240V 1 Pole 2 Way Horizontal White",
+          "sku": "LEGED770/1HWE",
+          "brand": "Legrand",
+          "range": "Excel Life",
+          "url": "https://tle.mmem.com.au/leged770-2f-1hwe",
+          "available": false
+        }
+      ]
+    },
+    "light_sensor": {
+      "estimate_description": "Light Sensor",
+      "qty": 4,
+      "estimate_unit_price": 380,
+      "estimate_line_total": 1520,
+      "tle_match_count": 4380,
+      "status": "MATCHED",
+      "tle_products": [
+        {
+          "name": "SAL Twin Flood w/Sensor SMD LED 20W 240V 1600lm Opal Polycarbonate Daylight Integral LED Driver Polycarbonate Black240mm",
+          "sku": "SALSES7060NDL/BK",
+          "brand": "SAL",
+          "range": "StarGem II",
+          "url": "https://tle.mmem.com.au/salses7060ndl-2f-bk",
+          "available": false
+        },
+        {
+          "name": "Atom Lighting LED Twin Security Spotlight With Sensor 24W 230VAC 50Hz 3000/4000/5000K 2200/2450/2400lm 50000hrs Black",
+          "sku": "ATO13965",
+          "brand": "Atom Lighting",
+          "range": "",
+          "url": "https://tle.mmem.com.au/ato13965",
+          "available": false
+        },
+        {
+          "name": "Atom Lighting Security Floodlight Twin 15W 230V 5000K 40deg Polycarbonate Black IP54 LED 50Hz Daylight 3000lm PIR Sensor ",
+          "sku": "ATOAT9140/2LT/S",
+          "brand": "Atom Lighting",
+          "range": "",
+          "url": "https://tle.mmem.com.au/atoat9140-2f-2lt-2f-s",
+          "available": false
+        }
+      ]
+    },
+    "pendant": {
+      "estimate_description": "Pendant TBC",
+      "qty": 3,
+      "estimate_unit_price": 600,
+      "estimate_line_total": 1800,
+      "tle_match_count": 14,
+      "status": "MATCHED",
+      "tle_products": [
+        {
+          "name": "Eglo Pendant Light LED 1x60W 220-240V E27 Black/Copper Suspension IP20 2m Steel 205mm 2000mm ",
+          "sku": "EGL49997N",
+          "brand": "Eglo",
+          "range": "",
+          "url": "https://tle.mmem.com.au/egl49997n",
+          "available": false
+        },
+        {
+          "name": "Eglo Pendant Light LED 1x60W 220-240V E27 Black/Copper Suspension IP20 2m Steel 805mm 205mm 2000mm ",
+          "sku": "EGL49991N",
+          "brand": "Eglo",
+          "range": "",
+          "url": "https://tle.mmem.com.au/egl49991n",
+          "available": false
+        },
+        {
+          "name": "Eglo Pendant Light LED 1x60W 220-240V E27 White/Honey Gold Suspension IP20 2m Steel 310mm 2000mm ",
+          "sku": "EGL49932N",
+          "brand": "Eglo",
+          "range": "",
+          "url": "https://tle.mmem.com.au/egl49932n",
+          "available": false
+        }
+      ]
+    },
+    "surface_can": {
+      "estimate_description": "Surface can light",
+      "qty": 4,
+      "estimate_unit_price": 200,
+      "estimate_line_total": 800,
+      "tle_match_count": 784,
+      "status": "MATCHED",
+      "tle_products": [
+        {
+          "name": "SAL LED Downlight 10W 240V 3000/4200/5700K IP44 F and P LED 50Hz 850/1000/900lm 36000hrs 90deg 80CRI Dimmable Surface ",
+          "sku": "SALS9041TC2WH",
+          "brand": "SAL",
+          "range": "EcoGem II",
+          "url": "https://tle.mmem.com.au/sals9041tc2wh",
+          "available": false
+        },
+        {
+          "name": "Domus NEO-PRO LED Downlight Round Surface Mount 13W 1000/1200/1100lm Trio Colour Temperature White IP65",
+          "sku": "DOM20891",
+          "brand": "Domus",
+          "range": "",
+          "url": "https://tle.mmem.com.au/dom20891",
+          "available": false
+        },
+        {
+          "name": "Domus NEO-PRO LED Downlight Round Surface Mount 13W 1000/1200/1100lm Trio Colour Temperature Black IP65",
+          "sku": "DOM20890",
+          "brand": "Domus",
+          "range": "",
+          "url": "https://tle.mmem.com.au/dom20890",
+          "available": false
+        }
+      ]
+    },
+    "motorised_blind": {
+      "estimate_description": "Motorised Blind",
+      "qty": 14,
+      "estimate_unit_price": 380,
+      "estimate_line_total": 5320,
+      "tle_match_count": 9516,
+      "status": "MATCHED",
+      "tle_products": [
+        {
+          "name": "Legrand Roller Blind Control Switch Flush Mount 1 Gang 6A 230/240V 2 Way Vertical White",
+          "sku": "LEGEC920WE",
+          "brand": "Legrand",
+          "range": "",
+          "url": "https://tle.mmem.com.au/legec920we",
+          "available": false
+        },
+        {
+          "name": "Clipsal Wiser Iconic Micro Module Blind Controller 220-240V 4A Grey",
+          "sku": "CLICLP5015WBZ",
+          "brand": "Clipsal",
+          "range": "Wiser",
+          "url": "https://tle.mmem.com.au/cliclp5015wbz",
+          "available": false
+        },
+        {
+          "name": "Legrand Roller Blind Control Switch Flush Mount 1 Gang 6A 230/240V Vertical White",
+          "sku": "LEGEC919WE",
+          "brand": "Legrand",
+          "range": "",
+          "url": "https://tle.mmem.com.au/legec919we",
+          "available": false
+        }
+      ]
+    },
+    "hager_dpp": {
+      "estimate_description": "Hager silhouette Double Power Point",
+      "qty": 34,
+      "estimate_unit_price": 260,
+      "estimate_line_total": 8840,
+      "tle_match_count": 18,
+      "status": "MATCHED",
+      "tle_products": [
+        {
+          "name": "Hager GPO Cover Plate 2 Gang Horizontal For Silhouette Double Socket w/Extra Switch Matt Black",
+          "sku": "HAGWBSCP2X-MB",
+          "brand": "Hager",
+          "range": "Silhouette",
+          "url": "https://tle.mmem.com.au/hagwbscp2x-mb",
+          "available": false
+        },
+        {
+          "name": "Hager GPO Cover Plate 2 Gang Horizontal For Silhouette Double Socket w/Extra Switch Aluminium",
+          "sku": "HAGWBSCP2X-AL",
+          "brand": "Hager",
+          "range": "Silhouette",
+          "url": "https://tle.mmem.com.au/hagwbscp2x-al",
+          "available": false
+        },
+        {
+          "name": "Hager GPO Cover Plate 2 Gang Horizontal For Silhouette Double Socket Matt Black",
+          "sku": "HAGWBSCP2-MB",
+          "brand": "Hager",
+          "range": "Silhouette",
+          "url": "https://tle.mmem.com.au/hagwbscp2-mb",
+          "available": false
+        }
+      ]
+    },
+    "tv_data": {
+      "estimate_description": "Dual TV/DATA Outlet",
+      "qty": 3,
+      "estimate_unit_price": 550,
+      "estimate_line_total": 1650,
+      "tle_match_count": 3373,
+      "status": "MATCHED",
+      "tle_products": [
+        {
+          "name": "Clipsal Double Power Point Flush Mount 10A 250V 2P+E 1 Extra Switch and Safety Shutter Horizontal Vivid White",
+          "sku": "CLI3025XAVW",
+          "brand": "Clipsal",
+          "range": "Iconic",
+          "url": "https://tle.mmem.com.au/cli3025xavw",
+          "available": false
+        },
+        {
+          "name": "Legrand TV Outlet Socket Mechanism PAL to F Connector White",
+          "sku": "LEGEMPFWE",
+          "brand": "Legrand",
+          "range": "Excel Life",
+          "url": "https://tle.mmem.com.au/legempfwe",
+          "available": false
+        },
+        {
+          "name": "Clipsal TV Antenna Outlet Socket Mechanism Socket F to PAL Female Straight White 75Ohm",
+          "sku": "CLI30FFPFMSWE",
+          "brand": "Clipsal",
+          "range": "",
+          "url": "https://tle.mmem.com.au/cli30ffpfmswe",
+          "available": false
+        }
+      ]
+    },
+    "towel_rail": {
+      "estimate_description": "Vertical Heated Towel Rail",
+      "qty": 3,
+      "estimate_unit_price": 450,
+      "estimate_line_total": 1350,
+      "tle_match_count": 31,
+      "status": "MATCHED",
+      "tle_products": [
+        {
+          "name": "Thermogroup Heated Towel Rail 240V 217W Wall Mount 800x1160x217mm ",
+          "sku": "THGSS88MB",
+          "brand": "Thermogroup",
+          "range": "Thermorail",
+          "url": "https://tle.mmem.com.au/thgss88mb",
+          "available": false
+        },
+        {
+          "name": "Thermorail Straight/Square 600x800x120mm 83Watts 7 Bars - Brushed ",
+          "sku": "THGSSB44M",
+          "brand": "Thermogroup",
+          "range": "Thermorail",
+          "url": "https://tle.mmem.com.au/thgssb44m",
+          "available": false
+        },
+        {
+          "name": "Thermorail Straight/Square 800x1160x120mm 153Watts 10 Bars ",
+          "sku": "THGSS88M",
+          "brand": "Thermogroup",
+          "range": "Thermorail",
+          "url": "https://tle.mmem.com.au/thgss88m",
+          "available": false
+        }
+      ]
+    },
+    "underfloor": {
+      "estimate_description": "Underfloor heating",
+      "qty": 2,
+      "estimate_unit_price": 450,
+      "estimate_line_total": 900,
+      "tle_match_count": 159,
+      "status": "MATCHED",
+      "tle_products": [
+        {
+          "name": "Thermoscreed In Screed 18W/lm Heating Cable - 14.5-18.3m\u00b2 183.0lm 3300Watts Floor Heating Kit Including 5245 Dual Thermostat ",
+          "sku": "THG3063TD",
+          "brand": "Thermogroup",
+          "range": "Thermoscreed",
+          "url": "https://tle.mmem.com.au/thg3063td",
+          "available": false
+        },
+        {
+          "name": "Thermoscreed In Screed 18W/lm Heating Cable - 14.5-18.3m\u00b2 183.0lm 3300Watts Floor Heating Kit Including 5220A Thermostat ",
+          "sku": "THG3063T",
+          "brand": "Thermogroup",
+          "range": "Thermoscreed",
+          "url": "https://tle.mmem.com.au/thg3063t",
+          "available": false
+        },
+        {
+          "name": "Thermoscreed In Screed 18W/lm Heating Cable - 11.8-14.4m\u00b2 144.0lm 2600Watts Floor Heating Kit Including 5245 Dual Thermostat ",
+          "sku": "THG3062TD",
+          "brand": "Thermogroup",
+          "range": "Thermoscreed",
+          "url": "https://tle.mmem.com.au/thg3062td",
+          "available": false
+        }
+      ]
+    },
+    "exhaust_fan": {
+      "estimate_description": "Exhaust Fan",
+      "qty": 3,
+      "estimate_unit_price": 215,
+      "estimate_line_total": 645,
+      "tle_match_count": 131,
+      "status": "MATCHED",
+      "tle_products": [
+        {
+          "name": "Brilliant Lighting Bathroom Mate 2 x 275 W Infrared Lamp Heat 1 x R63 LED 9 W 4200K Light 240 cu-m/hr 4200K White",
+          "sku": "BRI20351/05",
+          "brand": "Brilliant",
+          "range": "Newton",
+          "url": "https://tle.mmem.com.au/bri20351-2f-05",
+          "available": false
+        },
+        {
+          "name": "Brilliant Lighting Bathroom Mate 4 x 275 W Infrared Lamp Heat 1 x R63 LED 9 W 4200K Light 240 cu-m/hr 4200K White",
+          "sku": "BRI20352/05",
+          "brand": "Brilliant",
+          "range": "Newton",
+          "url": "https://tle.mmem.com.au/bri20352-2f-05",
+          "available": false
+        },
+        {
+          "name": "IXL Combination Exhaust Fan Light and Heater 4 x 275 W Infrared Lamps Light Source 385 cu-m/hr",
+          "sku": "IXL11475",
+          "brand": "IXL",
+          "range": "Classic Tastic",
+          "url": "https://tle.mmem.com.au/ixl11475",
+          "available": false
+        }
+      ]
+    },
+    "doorbell": {
+      "estimate_description": "Door Bell",
+      "qty": 1,
+      "estimate_unit_price": 250,
+      "estimate_line_total": 250,
+      "tle_match_count": 25,
+      "status": "MATCHED",
+      "tle_products": [
+        {
+          "name": "Swann Door Chime Wireless Compact 12 Volt Battery Operated ",
+          "sku": "REESWHOM-DC810B",
+          "brand": "Swann",
+          "range": "",
+          "url": "https://tle.mmem.com.au/reeswhom-dc810b",
+          "available": false
+        },
+        {
+          "name": "Swann Door Chime Wireless Compact 12 Volt Battery Operated ",
+          "sku": "REESWHOM-DC805B",
+          "brand": "Swann",
+          "range": "",
+          "url": "https://tle.mmem.com.au/reeswhom-dc805b",
+          "available": false
+        },
+        {
+          "name": "HPM Door Chime Wireless Classic 3 Volt Battery Operated White ",
+          "sku": "HPMD642/L2",
+          "brand": "HPM",
+          "range": "",
+          "url": "https://tle.mmem.com.au/hpmd642-2f-l2",
+          "available": false
+        }
+      ]
+    },
+    "dbl_powerpoint": {
+      "estimate_description": "ZETR 13 series double powerpoint",
+      "qty": 6,
+      "estimate_unit_price": 525,
+      "estimate_line_total": 3150,
+      "tle_match_count": 2748,
+      "status": "MATCHED",
+      "tle_products": [
+        {
+          "name": "Clipsal Double Power Point Flush Mount 10A 250V 2P+E Horizontal Safety Shutter Vivid White",
+          "sku": "CLI3025VW",
+          "brand": "Clipsal",
+          "range": "Iconic",
+          "url": "https://tle.mmem.com.au/cli3025vw",
+          "available": false
+        },
+        {
+          "name": "Clipsal Double Power Point Flush Mount Standard 10A 250V Horizontal White ",
+          "sku": "CLIC2025WE",
+          "brand": "Clipsal",
+          "range": "Classic C2000 Series",
+          "url": "https://tle.mmem.com.au/clic2025we",
+          "available": false
+        },
+        {
+          "name": "Clipsal Double Power Point Flush Mount Standard 10A 250V Horizontal White ",
+          "sku": "CLI2025WE",
+          "brand": "Clipsal",
+          "range": "2000 Series",
+          "url": "https://tle.mmem.com.au/cli2025we",
+          "available": false
+        }
+      ]
+    },
+    "automation_touch": {
+      "estimate_description": "Automation Touchscreen",
+      "qty": 1,
+      "estimate_unit_price": 1200,
+      "estimate_line_total": 1200,
+      "tle_match_count": 6233,
+      "status": "MATCHED",
+      "tle_products": [
+        {
+          "name": "S-Tech Solar Floodlight 40W 6000K 4600lm IP65 Aluminum/Black LED Remote Control 120deg 80CRI 2.6Ah 3.7V 8hrs 168mm 104mm ",
+          "sku": "SHDSFL-40WA",
+          "brand": "S-Tech",
+          "range": "",
+          "url": "https://tle.mmem.com.au/shdsfl-40wa",
+          "available": false
+        },
+        {
+          "name": "Schneider Touch Panel Screen Colour QVGA TFT 24VDC 30A PC/PBT/PAA 163x 129.15x56.5mm ",
+          "sku": "SHNHMISTU855",
+          "brand": "Schneider",
+          "range": "",
+          "url": "https://tle.mmem.com.au/shnhmistu855",
+          "available": false
+        },
+        {
+          "name": "Matchmaster Telephone Distribution Module 35mm For Use With Security Systems",
+          "sku": "MAT30MM-TM48S",
+          "brand": "Matchmaster",
+          "range": "",
+          "url": "https://tle.mmem.com.au/mat30mm-tm48s",
+          "available": false
+        }
+      ]
+    }
+  },
+  "summary": {
+    "total_items": 19,
+    "matched_at_tle": 19,
+    "not_at_tle": 0,
+    "estimate_total": 45835
+  }
+}

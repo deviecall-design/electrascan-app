@@ -1,5 +1,10 @@
 import { useMemo, useState } from "react";
-import { submitTimesheet, submitMilestoneClaim } from "../services/reportsService";
+import { useProjects, type Project } from "../contexts/ProjectContext";
+import { submitTimesheet, submitMilestoneClaim, calculateLabourSpent, calculateMaterialsSpent, calculateOverrunAmount } from "../services/reportsService";
+import { labourTotals } from "../services/hoursService";
+import { paymentSummary } from "../services/milestonesService";
+import { calculateVariance } from "../services/overrunsService";
+import TimesheetForm from "./TimesheetForm";
 
 // ─── Design tokens (mirror App.tsx) ──────────────
 const C = {
@@ -12,6 +17,7 @@ const C = {
 
 // ─── Props ────────────────────────────────────────
 export interface ReportsScreenProps {
+  projectId?: string; // NEW: real project ID from context
   projectName?: string;
   onBack: () => void;
 }
@@ -35,12 +41,23 @@ const HOURS: HoursRow[] = [
   { week: "Week 4 · 31 Mar", planned: 40, actual: 30, labour: 2560, materials: 640  },
 ];
 
-interface MilestoneRow { label: string; pct: number; amount: number; status: "claimed"|"warning"|"pending"; claimDate: string|null; warning: boolean }
+// Milestone status per Section 9.1 — Pending | Ready to Claim | Invoiced (Draft) | Invoiced | Received
+interface MilestoneRow {
+  label: string;
+  pct: number;
+  amount: number;
+  status: "pending"|"ready"|"invoiced-draft"|"invoiced"|"received";
+  claimDate: string|null;
+  invoiceRef?: string;
+  warning: boolean;
+  retention?: boolean;
+}
 const MILESTONES_SEED: MilestoneRow[] = [
-  { label: "Rough-in Complete",    pct: 25,  amount: 9120, status: "claimed", claimDate: "17 Mar 2026", warning: false },
-  { label: "First Fix Complete",   pct: 50,  amount: 9120, status: "warning", claimDate: null,          warning: true  },
-  { label: "Second Fix Complete",  pct: 75,  amount: 9120, status: "pending", claimDate: null,          warning: false },
-  { label: "Practical Completion", pct: 100, amount: 9120, status: "pending", claimDate: null,          warning: false },
+  { label: "Rough-in Complete",    pct: 25,  amount: 9120, status: "invoiced", claimDate: "17 Mar 2026", invoiceRef: "INV-2026-012", warning: false },
+  { label: "First Fix Complete",   pct: 50,  amount: 9120, status: "ready",    claimDate: null,          warning: true  },
+  { label: "Second Fix Complete",  pct: 75,  amount: 9120, status: "pending",  claimDate: null,          warning: false },
+  { label: "Practical Completion", pct: 100, amount: 9120, status: "pending",  claimDate: null,          warning: false },
+  { label: "Retention Holdback",   pct: 100, amount: 1824, status: "pending",  claimDate: null,          warning: false, retention: true },
 ];
 
 interface OverrunRow { item: string; cat: string; amount: number; severity: "high"|"medium"|"low"; note: string }
@@ -50,12 +67,32 @@ const OVERRUNS: OverrunRow[] = [
   { item: "Insurance premium rise", cat: "Admin",     amount: 250, severity: "low",    note: "Annual policy renewal — 6.4% increase"   },
 ];
 
-const DEPOSIT_ROWS = [
-  { label: "Deposit on Signing",       pct: 10, amount: 3648, status: "paid"     as const, date: "10 Mar 2026", note: "Paid on commencement",       icon: "✅" },
-  { label: "Rough-in Milestone (25%)", pct: 25, amount: 9120, status: "invoiced" as const, date: "17 Mar 2026", note: "Invoice #INV-2026-012",       icon: "📄" },
-  { label: "First Fix Milestone (50%)",pct: 25, amount: 9120, status: "pending"  as const, date: null,          note: "Pending milestone sign-off",  icon: "⏳" },
-  { label: "Second Fix (75%)",         pct: 25, amount: 9120, status: "pending"  as const, date: null,          note: "",                             icon: "⏳" },
-  { label: "Retention Release",        pct: 5,  amount: 1824, status: "pending"  as const, date: null,          note: "Held until defect period ends",icon: "⏳" },
+// Deposit/Splits rows — status values aligned with Section 9.1 terminology
+type DepositStatus = "received" | "invoiced" | "pending";
+interface DepositRow {
+  label: string;
+  pct: number;
+  amount: number;
+  status: DepositStatus;
+  date: string | null;
+  note: string;
+  icon: string;
+  retention?: boolean;
+  tooltip?: string;
+}
+const DEPOSIT_ROWS: DepositRow[] = [
+  { label: "Deposit on Signing",       pct: 10, amount: 3648, status: "received", date: "10 Mar 2026", note: "Paid on commencement",                    icon: "✅" },
+  { label: "Rough-in Milestone (25%)", pct: 25, amount: 9120, status: "invoiced", date: "17 Mar 2026", note: "Invoice #INV-2026-012",                    icon: "📄" },
+  { label: "First Fix Milestone (50%)",pct: 25, amount: 9120, status: "pending",  date: null,          note: "Pending milestone sign-off",               icon: "⏳" },
+  { label: "Second Fix (75%)",         pct: 25, amount: 9120, status: "pending",  date: null,          note: "",                                         icon: "⏳" },
+  {
+    label: "Retention Release",
+    pct: 5, amount: 1824, status: "pending", date: null,
+    note: "Held until defect period ends",
+    icon: "⏳",
+    retention: true,
+    tooltip: "Held until defect liability period ends. Typically 3–6 months post Practical Completion.",
+  },
 ];
 
 const RISK_FACTORS = [
@@ -95,28 +132,105 @@ const TABS: [TabId, string][] = [
 const fmt = (n: number) => `$${Math.round(n).toLocaleString("en-AU")}`;
 const sevColor: Record<string, string> = { high: C.red, medium: C.amber, low: C.muted };
 
+// Section 9.1 — standardised status labels + colours (used for milestones & deposits)
+const STATUS_COLOR: Record<string, string> = {
+  "pending":        C.muted,
+  "ready":          C.amber,
+  "invoiced-draft": C.blue,
+  "invoiced":       C.blue,
+  "received":       C.green,
+};
+const STATUS_LABEL: Record<string, string> = {
+  "pending":        "Pending",
+  "ready":          "Ready to Claim",
+  "invoiced-draft": "Invoiced (Draft)",
+  "invoiced":       "Invoiced",
+  "received":       "Received",
+};
+
 // ─── Component ────────────────────────────────────
 export default function ReportsScreen({
+  projectId,
   projectName = "Riverside Apartments",
   onBack,
 }: ReportsScreenProps) {
+  const { getProject, addTimesheet } = useProjects();
+  const project = projectId ? getProject(projectId) : undefined;
+  const [showTimesheetForm, setShowTimesheetForm] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // Use real data if project loaded, otherwise use mock data
+  const isRealData = !!project;
+  const actualProjectName = project?.name ?? projectName;
   const [tab, setTab] = useState<TabId>("overview");
   const [payTab, setPayTab] = useState<"schedule"|"claims"|"deposit">("schedule");
-  const [milestones, setMilestones] = useState<MilestoneRow[]>(MILESTONES_SEED);
+
+  // Derive real data from project if loaded
+  const realBudget = project?.budgetTotal ?? B.total;
+  const realLabourRate = project?.labourRatePerHour ?? 85;
+  const realTimesheets = project?.timesheets ?? [];
+  const realMilestones = project?.milestones ?? [];
+  const realOverruns = project?.overruns ?? [];
+  const realLabourSpent = calculateLabourSpent(realTimesheets);
+  const realMaterialsSpent = calculateMaterialsSpent(realTimesheets);
+  const realOverrunAmount = calculateOverrunAmount(project);
+  const realVariance = calculateVariance(realTimesheets, realOverruns, realMaterialsSpent, realBudget, project?.varianceThreshold);
+
+  // Use real or mock milestones for state
+  const initialMilestones = isRealData
+    ? realMilestones.map(m => ({
+        label: m.label,
+        pct: m.percentage,
+        amount: m.amount,
+        status: m.status,
+        claimDate: m.claimedAt ?? null,
+        invoiceRef: m.invoiceRef,
+        warning: m.status === "ready",
+        retention: m.retention,
+      }))
+    : MILESTONES_SEED;
+
+  const [milestones, setMilestones] = useState<MilestoneRow[]>(initialMilestones);
   const [syncState, setSyncState] = useState<Record<string, "idle"|"connecting"|"connected">>({ myob: "connected", xero: "idle", quickbooks: "idle" });
   const [syncing, setSyncing] = useState<string | null>(null);
   const [syncMsg, setSyncMsg] = useState<"idle"|"ok"|"local">("idle");
 
-  const totalSpent   = B.spentLabour + B.spentMaterials;
-  const remaining    = B.total - totalSpent;
-  const pctBurnt     = (totalSpent / B.total * 100).toFixed(1);
-  const labourPct    = Math.round(B.spentLabour / B.labour * 100);
-  const matPct       = Math.round(B.spentMaterials / B.materials * 100);
-  const totalOverrun = OVERRUNS.reduce((s, o) => s + o.amount, 0);
-  const contingLeft  = B.contingency - totalOverrun;
-  const totalPlanned = HOURS.reduce((s, h) => s + h.planned, 0);
-  const totalActual  = HOURS.reduce((s, h) => s + h.actual, 0);
-  const claimed      = milestones.filter(m => m.status === "claimed").reduce((s, m) => s + m.amount, 0);
+  // Use real or mock data
+  const B_ACTUAL = isRealData ? {
+    total: realBudget,
+    labour: realBudget * 0.58, // estimate: ~58% is labour
+    materials: realBudget * 0.42,
+    spentLabour: realLabourSpent,
+    spentMaterials: realMaterialsSpent,
+    contingency: realBudget * 0.1,
+  } : B;
+
+  const totalSpent   = B_ACTUAL.spentLabour + B_ACTUAL.spentMaterials;
+  const remaining    = B_ACTUAL.total - totalSpent;
+  const pctBurnt     = (totalSpent / B_ACTUAL.total * 100).toFixed(1);
+  const labourPct    = Math.round(B_ACTUAL.spentLabour / B_ACTUAL.labour * 100);
+  const matPct       = Math.round(B_ACTUAL.spentMaterials / B_ACTUAL.materials * 100);
+  const totalOverrun = realOverrunAmount;
+  const contingLeft  = B_ACTUAL.contingency - totalOverrun;
+  // Real or mock hours
+  const hoursDisplay = isRealData ? realTimesheets.map(t => ({
+    week: t.week,
+    planned: t.plannedHours,
+    actual: t.actualHours,
+    labour: t.labourCost,
+    materials: t.materialsUsed,
+  })) : HOURS;
+
+  const totalPlanned = hoursDisplay.reduce((s, h) => s + h.planned, 0);
+  const totalActual  = hoursDisplay.reduce((s, h) => s + h.actual, 0);
+  const claimed                 = milestones.filter(m => m.status === "invoiced" || m.status === "invoiced-draft" || m.status === "received").reduce((s, m) => s + m.amount, 0);
+  const progressClaimsInvoiced  = milestones.filter(m => (m.status === "invoiced" || m.status === "invoiced-draft") && !m.retention).reduce((s, m) => s + m.amount, 0);
+  const progressClaimsReceived  = milestones.filter(m => m.status === "received" && !m.retention).reduce((s, m) => s + m.amount, 0);
+  const depositRow              = DEPOSIT_ROWS[0];
+  const depositReceived         = depositRow.status === "received" ? depositRow.amount : 0;
+  const depositInvoiceRef       = milestones.find(m => m.status === "invoiced" && !m.retention)?.invoiceRef ?? "";
+  const totalReceivedToDate     = depositReceived + progressClaimsReceived;
+  const outstanding             = B.total - totalReceivedToDate;
 
   // SVG burndown
   const CW = 420, CH = 120, steps = WEEKS.length - 1;
@@ -134,7 +248,8 @@ export default function ReportsScreen({
 
   const claimMilestone = async (idx: number) => {
     const m = milestones[idx];
-    setMilestones(prev => prev.map((x, i) => i === idx ? { ...x, status: "claimed" as const, claimDate: new Date().toLocaleDateString("en-AU"), warning: false } : x));
+    // Per Section 9.2: Submit Claim transitions Ready → Invoiced (Draft), pending finance approval in MYOB.
+    setMilestones(prev => prev.map((x, i) => i === idx ? { ...x, status: "invoiced-draft" as const, claimDate: new Date().toLocaleDateString("en-AU"), warning: false } : x));
     const res = await submitMilestoneClaim({ projectName, milestone: m.label, amount: m.amount });
     setSyncMsg(res.ok ? "ok" : "local");
     window.setTimeout(() => setSyncMsg("idle"), 1800);
@@ -158,7 +273,7 @@ export default function ReportsScreen({
           </div>
         </div>
         <div style={{ fontSize: 18, fontWeight: 800, color: C.text }}>Project Reports</div>
-        <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{projectName}</div>
+        <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{actualProjectName}</div>
       </div>
 
       {/* Content */}
@@ -168,7 +283,7 @@ export default function ReportsScreen({
         <AlertBanner color={C.red} icon="🔺" title="Overrun Alert" body={`${fmt(totalOverrun)} in unplanned costs detected (copper, fuel, insurance). ${fmt(contingLeft)} contingency remaining.`} />
 
         {/* Tab bar */}
-        <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 14, paddingBottom: 4 }}>
+        <div className="filter-tabs" style={{ marginBottom: 14 }}>
           {TABS.map(([id, lbl]) => {
             const active = tab === id;
             return (
@@ -191,19 +306,19 @@ export default function ReportsScreen({
         {tab === "overview" && (
           <>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
-              <StatCard label="Total Budget" value={fmt(B.total)} sub="EST-2026-004 approved" accent={C.blue} />
+              <StatCard label="Total Budget" value={fmt(B_ACTUAL.total)} sub={isRealData ? "Project estimate" : "EST-2026-004 approved"} accent={C.blue} />
               <StatCard label="Spent to Date" value={fmt(totalSpent)} sub={`${pctBurnt}% of budget`} accent={C.amber} />
               <StatCard label="Remaining" value={fmt(remaining)} sub={`${(100 - Number(pctBurnt)).toFixed(1)}% left`} accent={C.green} />
-              <StatCard label="Claimed" value={fmt(claimed)} sub={`${milestones.filter(m=>m.status==="claimed").length} of ${milestones.length} milestones`} accent={C.purple} />
+              <StatCard label="Claimed" value={fmt(claimed)} sub={`${milestones.filter(m => m.status === "invoiced" || m.status === "invoiced-draft" || m.status === "received").length} of ${milestones.filter(m => !m.retention).length} milestones`} accent={C.purple} />
             </div>
 
             <SectionLabel>Budget Breakdown</SectionLabel>
             <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "14px 16px", marginBottom: 14 }}>
-              <BarRow label="Labour" spent={B.spentLabour} budget={B.labour} pct={labourPct} color={C.blue} />
-              <BarRow label="Materials" spent={B.spentMaterials} budget={B.materials} pct={matPct} color={C.purple} />
+              <BarRow label="Labour" spent={B_ACTUAL.spentLabour} budget={B_ACTUAL.labour} pct={labourPct} color={C.blue} />
+              <BarRow label="Materials" spent={B_ACTUAL.spentMaterials} budget={B_ACTUAL.materials} pct={matPct} color={C.purple} />
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: C.muted, marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}` }}>
-                <span>Contingency: {fmt(B.contingency)}</span>
-                <span style={{ color: contingLeft < 500 ? C.red : C.green, fontWeight: 700 }}>Remaining: {fmt(contingLeft)}</span>
+                <span>Contingency: {fmt(B_ACTUAL.contingency)}</span>
+                <span style={{ color: contingLeft < B_ACTUAL.contingency * 0.2 ? C.red : C.green, fontWeight: 700 }}>Remaining: {fmt(contingLeft)}</span>
               </div>
             </div>
 
@@ -287,18 +402,34 @@ export default function ReportsScreen({
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
               <SectionLabel>Weekly Timesheet</SectionLabel>
-              <button onClick={handleSubmitTimesheet} style={{
+              <button onClick={() => setShowTimesheetForm(true)} style={{
                 background: C.blue, border: "none", color: "#fff", fontSize: 11, fontWeight: 700,
                 padding: "7px 12px", borderRadius: 8, cursor: "pointer",
               }}>+ Submit Timesheet</button>
             </div>
+            {showTimesheetForm && projectId && (
+              <TimesheetForm
+                projectName={actualProjectName}
+                estimatedHours={project?.estimatedLabourHours ?? 40}
+                labourRate={project?.labourRatePerHour ?? 85}
+                weeks={realTimesheets.map(t => t.week.split(" · ")[0]).concat(["W5"])}
+                onSubmit={(timesheet) => {
+                  if (project && projectId) {
+                    addTimesheet(projectId, { ...timesheet, labourCost: timesheet.actualHours * (project.labourRatePerHour ?? 85) });
+                    setShowTimesheetForm(false);
+                    setRefreshKey(k => k + 1);
+                  }
+                }}
+                onCancel={() => setShowTimesheetForm(false)}
+              />
+            )}
             <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden" }}>
-              {HOURS.map((h, i) => {
+              {hoursDisplay.map((h, i) => {
                 const v = h.actual - h.planned;
                 return (
                   <div key={i} style={{
                     display: "grid", gridTemplateColumns: "1fr 50px 50px 70px 70px 50px", gap: 4, padding: "10px 12px",
-                    borderBottom: i < HOURS.length - 1 ? `1px solid ${C.border}` : "none",
+                    borderBottom: i < hoursDisplay.length - 1 ? `1px solid ${C.border}` : "none",
                     background: i % 2 === 0 ? C.card : C.navy,
                     fontSize: 11, alignItems: "center",
                   }}>
@@ -318,8 +449,8 @@ export default function ReportsScreen({
                 <div style={{ color: C.text }}>TOTALS</div>
                 <div style={{ textAlign: "center", color: C.text }}>{totalPlanned}h</div>
                 <div style={{ textAlign: "center", color: totalActual > totalPlanned ? C.red : C.green }}>{totalActual}h</div>
-                <div style={{ textAlign: "right", color: C.text }}>{fmt(HOURS.reduce((s, h) => s + h.labour, 0))}</div>
-                <div style={{ textAlign: "right", color: C.text }}>{fmt(HOURS.reduce((s, h) => s + h.materials, 0))}</div>
+                <div style={{ textAlign: "right", color: C.text }}>{fmt(hoursDisplay.reduce((s, h) => s + h.labour, 0))}</div>
+                <div style={{ textAlign: "right", color: C.text }}>{fmt(hoursDisplay.reduce((s, h) => s + h.materials, 0))}</div>
                 <div style={{ textAlign: "right", color: C.red }}>+{totalActual - totalPlanned}h</div>
               </div>
             </div>
@@ -329,7 +460,7 @@ export default function ReportsScreen({
         {/* ── MILESTONES ── */}
         {tab === "milestones" && (
           <>
-            <div style={{ display: "flex", gap: 6, marginBottom: 14, overflowX: "auto" }}>
+            <div className="filter-tabs" style={{ marginBottom: 14 }}>
               {([["schedule","Payment Schedule"],["claims","Claim Status"],["deposit","Deposit + Splits"]] as const).map(([id, lbl]) => {
                 const active = payTab === id;
                 return (
@@ -346,10 +477,12 @@ export default function ReportsScreen({
             {payTab === "schedule" && (
               <>
                 {milestones.map((m, idx) => {
-                  const color = m.status === "claimed" ? C.green : m.status === "warning" ? C.amber : C.muted;
+                  // Retention row uses amber framing (amber / pending per Section 9.5)
+                  const color = m.retention ? C.amber : STATUS_COLOR[m.status];
+                  const statusLabel = STATUS_LABEL[m.status];
                   return (
-                    <div key={idx} style={{
-                      background: C.card, border: `1px solid ${m.warning ? `${C.amber}55` : C.border}`,
+                    <div key={idx} title={m.retention ? "Held until defect liability period ends. Typically 3–6 months post Practical Completion." : undefined} style={{
+                      background: C.card, border: `1px solid ${m.warning ? `${C.amber}55` : m.retention ? `${C.amber}55` : C.border}`,
                       borderLeft: `4px solid ${color}`, borderRadius: 14,
                       padding: "14px 16px", marginBottom: 10,
                       display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap",
@@ -358,30 +491,39 @@ export default function ReportsScreen({
                         width: 48, height: 48, borderRadius: 24, border: `3px solid ${color}`,
                         display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
                       }}>
-                        <div style={{ fontSize: 13, fontWeight: 800, color }}>{m.pct}%</div>
+                        <div style={{ fontSize: m.retention ? 16 : 13, fontWeight: 800, color }}>{m.retention ? "🔒" : `${m.pct}%`}</div>
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 3 }}>
-                          <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{m.label}</span>
-                          {m.warning && <Pill text="⚠️ WARNING" color={C.amber} />}
-                          {m.status === "claimed" && <Pill text="✓ CLAIMED" color={C.green} />}
+                          <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>
+                            {m.retention ? "Retention Holdback — pending defect period" : m.label}
+                          </span>
+                          {m.retention && <Pill text="⏳ RETENTION HOLDBACK" color={C.amber} />}
+                          {!m.retention && m.status === "ready"          && <Pill text="⚠️ READY TO CLAIM"  color={C.amber} />}
+                          {!m.retention && m.status === "invoiced-draft" && <Pill text="📝 INVOICED (DRAFT)" color={C.blue}  />}
+                          {!m.retention && m.status === "invoiced"       && <Pill text="📄 INVOICED"         color={C.blue}  />}
+                          {!m.retention && m.status === "received"       && <Pill text="✓ RECEIVED"          color={C.green} />}
                         </div>
                         <div style={{ fontSize: 11, color: C.muted }}>
-                          Claim: <strong style={{ color: C.text }}>{fmt(m.amount)}</strong>
-                          {m.claimDate && <span style={{ color: C.green, marginLeft: 8 }}>Claimed {m.claimDate}</span>}
+                          {m.retention ? "Holdback:" : "Claim:"} <strong style={{ color: C.text }}>{fmt(m.amount)}</strong>
+                          {m.invoiceRef && <span style={{ color: C.blueLt, marginLeft: 8 }}>{m.invoiceRef}</span>}
+                          {m.claimDate && <span style={{ color: C.dim, marginLeft: 8 }}>Submitted {m.claimDate}</span>}
                           {m.warning && <span style={{ color: C.amber, marginLeft: 8 }}>Finance notified</span>}
                         </div>
                       </div>
-                      <div style={{ flexShrink: 0 }}>
-                        {m.status === "claimed"
-                          ? <span style={{ fontSize: 13, fontWeight: 700, color: C.green }}>✓ {fmt(m.amount)}</span>
-                          : m.status === "warning"
-                            ? <button onClick={() => claimMilestone(idx)} style={{
-                                padding: "7px 14px", background: C.amber, color: "#fff",
-                                border: "none", borderRadius: 8, fontWeight: 700, fontSize: 11, cursor: "pointer",
-                              }}>Submit Claim</button>
-                            : <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>Pending</span>
-                        }
+                      <div style={{ flexShrink: 0, textAlign: "right" }}>
+                        {m.retention ? (
+                          <span style={{ fontSize: 11, color: C.amber, fontWeight: 700 }}>{statusLabel}</span>
+                        ) : m.status === "ready" ? (
+                          <button onClick={() => claimMilestone(idx)} style={{
+                            padding: "7px 14px", background: C.amber, color: "#fff",
+                            border: "none", borderRadius: 8, fontWeight: 700, fontSize: 11, cursor: "pointer",
+                          }}>Submit Claim</button>
+                        ) : (
+                          <span style={{ fontSize: 13, fontWeight: 700, color: STATUS_COLOR[m.status] }}>
+                            {m.status === "received" ? `✓ ${fmt(m.amount)}` : statusLabel}
+                          </span>
+                        )}
                       </div>
                     </div>
                   );
@@ -390,28 +532,49 @@ export default function ReportsScreen({
               </>
             )}
 
-            {payTab === "claims" && (
-              <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "14px 16px" }}>
-                {[
-                  { label: "Total Contract Value", val: fmt(B.total), color: C.blue },
-                  { label: "Claimed to Date",      val: fmt(claimed),  color: C.green },
-                  { label: "Unclaimed Remaining",  val: fmt(B.total - claimed), color: C.amber },
-                ].map((r, i) => (
-                  <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: i < 2 ? `1px solid ${C.border}` : "none" }}>
-                    <span style={{ fontSize: 12, color: C.muted }}>{r.label}</span>
-                    <span style={{ fontSize: 15, fontWeight: 800, color: r.color }}>{r.val}</span>
+            {payTab === "claims" && (() => {
+              // Section 9.3 — deposit shown as a separate line above progress claims
+              const rows: Array<{ label: string; val: string; hint?: string; color: string; divider?: boolean }> = [
+                { label: "Total Contract Value",     val: fmt(B.total),                 color: C.blue                                                 },
+                { label: "Deposit Received",         val: fmt(depositReceived),         color: C.green,  hint: depositRow.date ? `paid ${depositRow.date}` : undefined },
+                { label: "Progress Claims Invoiced", val: fmt(progressClaimsInvoiced),  color: C.blue,   hint: depositInvoiceRef || undefined                           },
+                { label: "Progress Claims Received", val: fmt(progressClaimsReceived),  color: C.muted,  hint: "awaiting payment",              divider: true          },
+                { label: "Total Received to Date",   val: fmt(totalReceivedToDate),     color: C.green                                                },
+                { label: "Outstanding",              val: fmt(outstanding),             color: C.amber                                                },
+              ];
+              return (
+                <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: 10, fontWeight: 800, color: C.muted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 8 }}>
+                    Claim Summary
                   </div>
-                ))}
-              </div>
-            )}
+                  {rows.map((r, i) => (
+                    <div key={i} style={{
+                      display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10,
+                      padding: "10px 0",
+                      borderTop: r.divider ? `2px solid ${C.border}` : "none",
+                      borderBottom: i < rows.length - 1 && !rows[i + 1]?.divider ? `1px solid ${C.border}` : "none",
+                    }}>
+                      <span style={{ fontSize: 12, color: C.muted }}>{r.label}</span>
+                      <span style={{ textAlign: "right" }}>
+                        <span style={{ fontSize: 15, fontWeight: 800, color: r.color }}>{r.val}</span>
+                        {r.hint && <span style={{ fontSize: 10, color: C.dim, display: "block", marginTop: 2 }}>({r.hint})</span>}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
 
             {payTab === "deposit" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {DEPOSIT_ROWS.map((p, i) => {
-                  const statusColor = p.status === "paid" ? C.green : p.status === "invoiced" ? C.blue : C.muted;
+                  // Retention row = amber Retention Holdback badge (Section 9.4)
+                  const statusColor = p.retention ? C.amber : STATUS_COLOR[p.status];
+                  const statusLabel = p.retention ? "Retention Holdback" : STATUS_LABEL[p.status];
                   return (
-                    <div key={i} style={{
-                      background: C.card, border: `1px solid ${C.border}`, borderRadius: 12,
+                    <div key={i} title={p.tooltip} style={{
+                      background: C.card, border: `1px solid ${p.retention ? `${C.amber}55` : C.border}`,
+                      borderLeft: `4px solid ${statusColor}`, borderRadius: 12,
                       padding: "12px 16px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
                     }}>
                       <div style={{
@@ -425,11 +588,18 @@ export default function ReportsScreen({
                       </div>
                       <div style={{ textAlign: "right" }}>
                         <div style={{ fontSize: 14, fontWeight: 800, color: statusColor }}>{fmt(p.amount)}</div>
-                        <div style={{ fontSize: 10, fontWeight: 800, color: statusColor, letterSpacing: "0.5px", textTransform: "uppercase" }}>{p.status}</div>
+                        <div style={{ fontSize: 10, fontWeight: 800, color: statusColor, letterSpacing: "0.5px", textTransform: "uppercase" }}>{statusLabel}</div>
                       </div>
                     </div>
                   );
                 })}
+                {/* Section 9.4 reconciliation note */}
+                <div style={{
+                  background: `${C.blue}10`, border: `1px solid ${C.blue}33`, borderRadius: 10,
+                  padding: "10px 14px", fontSize: 11, color: C.blueLt, lineHeight: 1.55, marginTop: 4,
+                }}>
+                  💡 Deposit ({fmt(depositReceived)}) credited against contract total. Retention ({fmt(DEPOSIT_ROWS[DEPOSIT_ROWS.length - 1].amount)}) held from final milestone payment.
+                </div>
               </div>
             )}
           </>
@@ -450,8 +620,9 @@ export default function ReportsScreen({
             </div>
 
             <SectionLabel>Flagged Cost Overruns</SectionLabel>
-            {OVERRUNS.map((o, i) => {
-              const sc = sevColor[o.severity] ?? C.muted;
+            {(isRealData ? realOverruns : OVERRUNS).map((o, i) => {
+              const severity = "severity" in o ? o.severity : o.severity ?? "low";
+              const sc = sevColor[severity] ?? C.muted;
               return (
                 <div key={i} style={{
                   background: C.card, border: `1px solid ${C.border}`, borderLeft: `4px solid ${sc}`,
@@ -461,7 +632,7 @@ export default function ReportsScreen({
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{o.item}</div>
                     <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{o.note}</div>
-                    <Pill text={`${o.cat} · ${o.severity.toUpperCase()}`} color={sc} />
+                    <Pill text={`${"category" in o ? o.category : o.cat ?? "Other"} · ${severity.toUpperCase()}`} color={sc} />
                   </div>
                   <div style={{ fontSize: 16, fontWeight: 800, color: sc }}>{fmt(o.amount)}</div>
                 </div>

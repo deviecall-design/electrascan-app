@@ -7,13 +7,14 @@ import {
   type ApprovalAuditEntry,
   type ApprovalRole,
 } from "../services/approvalService";
+import { sendEnvelope } from "../services/docusignService";
 
 // ─── Design tokens (mirror App.tsx) ──────────────
 const C = {
-  bg:     "#0A1628", navy:   "#0F1E35", card:   "#132240",
-  blue:   "#1D6EFD", blueLt: "#4B8FFF", green:  "#00C48C",
+  bg:     "#0f172a", navy:   "#0F1E35", card:   "#1e293b",
+  blue:   "#3b82f6", blueLt: "#60a5fa", green:  "#00C48C",
   amber:  "#FFB020", red:    "#FF4D4D", text:   "#EDF2FF",
-  muted:  "#5C7A9E", border: "#1A3358", dim:    "#8BA4C4",
+  muted:  "#5C7A9E", border: "#1e3a5f", dim:    "#8BA4C4",
   purple: "#7C3AED", teal:   "#0EA5E9",
 };
 
@@ -46,6 +47,12 @@ export interface ApprovalsScreenProps {
   /** Actor name used to sign new approval actions. Defaults to the builder. */
   actor?: { name: string; role: ApprovalRole };
   onBack: () => void;
+  /** When true, omit the screen's own header + bottom nav so it can be embedded in a tab. */
+  embedded?: boolean;
+  /** When set, persist audit entries to localStorage under this key instead of (or in addition to) Supabase. */
+  localStorageKey?: string;
+  /** Fires whenever approval status transitions (used to sync to ProjectContext). */
+  onStatusChange?: (status: "pending" | "approved" | "rejected") => void;
 }
 
 // ─── Mock defaults ────────────────────────────────
@@ -133,6 +140,9 @@ export default function ApprovalsScreen({
   initialStatus = "pending",
   actor = { name: "Tom Allen", role: "Builder" },
   onBack,
+  embedded = false,
+  localStorageKey,
+  onStatusChange,
 }: ApprovalsScreenProps) {
   const roster = parties ?? DEFAULT_PARTIES;
   const [status, setStatus] = useState<"pending" | "approved">(initialStatus);
@@ -148,9 +158,28 @@ export default function ApprovalsScreen({
   const [approvedBy, setApprovedBy] = useState<{ name: string; role: ApprovalRole; ts: string; signature: string } | null>(null);
 
   // Fetch remote audit; seed if empty/unreachable.
+  // When `localStorageKey` is provided, prefer localStorage over Supabase so
+  // the audit trail is durable across reloads without a cloud round-trip.
   useEffect(() => {
     let alive = true;
     (async () => {
+      if (localStorageKey && typeof window !== "undefined") {
+        try {
+          const raw = window.localStorage.getItem(localStorageKey);
+          if (raw) {
+            const parsed = JSON.parse(raw) as ApprovalAuditEntry[];
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              if (alive) {
+                setAudit(parsed);
+                setLoaded(true);
+              }
+              return;
+            }
+          }
+        } catch {
+          // fall through to supabase / seed
+        }
+      }
       const res = await fetchApprovalAudit(currentEstimate.id);
       if (!alive) return;
       if (res.ok && res.entries.length > 0) {
@@ -161,7 +190,17 @@ export default function ApprovalsScreen({
       setLoaded(true);
     })();
     return () => { alive = false; };
-  }, [currentEstimate.id]);
+  }, [currentEstimate.id, localStorageKey]);
+
+  // Mirror audit into localStorage whenever it changes (when a key is set).
+  useEffect(() => {
+    if (!localStorageKey || typeof window === "undefined" || !loaded) return;
+    try {
+      window.localStorage.setItem(localStorageKey, JSON.stringify(audit));
+    } catch {
+      // storage full / unavailable
+    }
+  }, [audit, localStorageKey, loaded]);
 
   const submittedDelta = priorEstimate ? currentEstimate.total - priorEstimate.total : undefined;
 
@@ -205,6 +244,7 @@ export default function ApprovalsScreen({
     setApprovedBy({ name: actor.name, role: actor.role, ts: now.toISOString(), signature });
     setShowApprove(false);
     setApprovalComment("");
+    onStatusChange?.("approved");
   };
 
   const confirmReturn = async () => {
@@ -218,16 +258,58 @@ export default function ApprovalsScreen({
     setShowReturn(false);
     setReturnReason("");
     setReturnReasonError(false);
+    onStatusChange?.("rejected");
   };
 
+  const [docusignError, setDocusignError] = useState<{ kind: "not_configured" | "error"; message: string } | null>(null);
+  const [sending, setSending] = useState(false);
+  const [envelope, setEnvelope] = useState<{ id: string; signingUrl: string | null } | null>(null);
+
   const handleSendForApproval = async () => {
-    // Drops a fresh `submitted` entry and advances the stepper.
-    await appendEntry({
-      actor: "Damien Callaghan", role: "Electrician", action: "submitted",
-      label: `${currentEstimate.number} submitted for approval`,
-      note: `Submitted to ${actor.name} · total ${fmt(currentEstimate.total)} inc GST.`,
-      doc: currentEstimate.number, signature: null,
-    }, "submitted");
+    // Step 1: dispatch to DocuSign. If env vars are missing we surface a
+    // clear inline error and bail without writing an audit entry — the
+    // approval state hasn't actually changed yet.
+    setSending(true);
+    setDocusignError(null);
+
+    // Pick signers from the parties roster — Builder + Architect are
+    // the typical recipients. Fall back to the active actor when the
+    // roster is incomplete (avoids 400 from /api/approvals/send-envelope).
+    const signers = roster
+      .filter(p => p.role === "Builder" || p.role === "Architect")
+      .map(p => ({ name: p.name, email: p.email }));
+    if (signers.length === 0) {
+      signers.push({ name: actor.name, email: `${actor.name.replace(/\s+/g, ".").toLowerCase()}@example.com` });
+    }
+
+    const res = await sendEnvelope({
+      estimate_id: currentEstimate.id,
+      estimate_number: currentEstimate.number,
+      project_name: projectName,
+      total: currentEstimate.total,
+      signers,
+    });
+
+    setSending(false);
+
+    if (res.ok === true) {
+      setEnvelope({ id: res.data.envelopeId, signingUrl: res.data.signingUrl });
+      // Step 2: persist audit with envelopeId baked into the note so it
+      // survives in the immutable audit trail (no schema change needed).
+      await appendEntry({
+        actor: "Damien Callaghan", role: "Electrician", action: "submitted",
+        label: `${currentEstimate.number} submitted for approval`,
+        note: `Submitted via DocuSign envelope ${res.data.envelopeId} to ${signers.map(s => s.name).join(", ")} · total ${fmt(currentEstimate.total)} inc GST.`,
+        doc: currentEstimate.number, signature: null,
+      }, "submitted");
+    } else if (res.reason === "not_configured") {
+      setDocusignError({
+        kind: "not_configured",
+        message: `DocuSign not configured — add ${res.missing.join(", ")} to .env.local and redeploy.`,
+      });
+    } else {
+      setDocusignError({ kind: "error", message: res.error });
+    }
   };
 
   const exportAuditLog = () => {
@@ -250,28 +332,61 @@ export default function ApprovalsScreen({
 
   const stepStates = useMemo(() => computeStepStates(audit, status), [audit, status]);
 
+  // KPI strip metrics
+  const pendingCount = audit.filter(e => e.action === "pending" || e.action === "submitted").length;
+  const approvedCount = audit.filter(e => e.action === "approved").length;
+  const totalValue = currentEstimate.total;
+
   return (
-    <div style={{ height: "100vh", background: C.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      {/* Header */}
-      <div style={{ background: C.navy, borderBottom: `1px solid ${C.border}`, padding: "14px 18px", flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-          <button onClick={onBack}
-            style={{ background: "none", border: "none", color: C.muted, fontSize: 13, cursor: "pointer", padding: 0 }}>
-            ← Back
-          </button>
+    <div style={{
+      height: embedded ? "auto" : "100vh",
+      minHeight: embedded ? 400 : undefined,
+      background: C.bg,
+      display: "flex",
+      flexDirection: "column",
+      overflow: embedded ? "visible" : "hidden",
+    }}>
+      {/* Header — hidden in embedded mode so ProjectDetail's tabs own the chrome */}
+      {!embedded && (
+        <div style={{ background: C.navy, borderBottom: `1px solid ${C.border}`, padding: "14px 18px", flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+            <button onClick={onBack}
+              style={{ background: "none", border: "none", color: C.muted, fontSize: 13, cursor: "pointer", padding: 0 }}>
+              ← Back
+            </button>
+            <button onClick={exportAuditLog}
+              style={{ background: "none", border: `1px solid ${C.border}`, color: C.muted, fontSize: 11, padding: "5px 10px", borderRadius: 8, cursor: "pointer" }}>
+              Export Audit Log
+            </button>
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: C.text, letterSpacing: "-0.02em" }}>Approval Workflow</div>
+          <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+            {projectSummary ?? projectName} · {priorEstimate ? `${priorEstimate.number} → ` : ""}{currentEstimate.number}
+          </div>
+        </div>
+      )}
+
+      {embedded && (
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
           <button onClick={exportAuditLog}
             style={{ background: "none", border: `1px solid ${C.border}`, color: C.muted, fontSize: 11, padding: "5px 10px", borderRadius: 8, cursor: "pointer" }}>
             Export Audit Log
           </button>
         </div>
-        <div style={{ fontSize: 18, fontWeight: 800, color: C.text, letterSpacing: "-0.02em" }}>Approval Workflow</div>
-        <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
-          {projectSummary ?? projectName} · {priorEstimate ? `${priorEstimate.number} → ` : ""}{currentEstimate.number}
-        </div>
-      </div>
+      )}
 
       {/* Content */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "14px 16px 96px" }}>
+      <div style={{ flex: 1, overflowY: embedded ? "visible" : "auto", padding: embedded ? 0 : "14px 16px 96px" }}>
+
+        {/* ─── KPI Strip (MiroFish-style) ─── */}
+        <div style={{
+          display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 14,
+        }}>
+          <KpiMetric label="Pending" value={String(pendingCount)} sub="awaiting action" color={C.amber} />
+          <KpiMetric label="Approved" value={String(approvedCount)} sub={approvedCount > 0 ? "signed off" : "none yet"} color={C.green} />
+          <KpiMetric label="Total Value" value={fmt(totalValue)} sub="inc GST" color={C.blue} />
+        </div>
+
         {/* Status banner */}
         {status === "pending" ? (
           <div style={{
@@ -343,7 +458,7 @@ export default function ApprovalsScreen({
         )}
 
         {/* Tabs */}
-        <div style={{ display: "flex", gap: 8, marginBottom: 14, overflowX: "auto" }}>
+        <div className="filter-tabs" style={{ gap: 8, marginBottom: 14, paddingBottom: 0 }}>
           {([
             { id: "audit" as const,     label: "📋 Audit Trail", count: audit.length },
             { id: "estimates" as const, label: "💰 Estimates",   count: priorEstimate ? 2 : 1 },
@@ -377,13 +492,58 @@ export default function ApprovalsScreen({
             ) : (
               <AuditTimeline entries={audit} />
             )}
-            <button onClick={handleSendForApproval}
+            <button
+              onClick={handleSendForApproval}
+              disabled={sending}
               style={{
-                width: "100%", marginTop: 10, background: C.card, border: `1px dashed ${C.border}`,
-                color: C.dim, fontSize: 13, fontWeight: 600, padding: "12px", borderRadius: 12, cursor: "pointer",
-              }}>
-              + Submit New Event (Send for Approval)
+                width: "100%", marginTop: 10,
+                background: docusignError?.kind === "not_configured" ? `${C.amber}18` : C.card,
+                border: `1px dashed ${docusignError ? C.amber : C.border}`,
+                color: docusignError ? C.amber : C.dim,
+                fontSize: 13, fontWeight: 600, padding: "12px", borderRadius: 12,
+                cursor: sending ? "wait" : "pointer",
+                opacity: sending ? 0.7 : 1,
+              }}
+            >
+              {sending ? "Sending to DocuSign…" : "+ Submit New Event (Send for Approval)"}
             </button>
+
+            {docusignError && (
+              <div
+                style={{
+                  marginTop: 10,
+                  background: docusignError.kind === "not_configured" ? `${C.amber}18` : `${C.red}18`,
+                  border: `1px solid ${docusignError.kind === "not_configured" ? C.amber : C.red}`,
+                  color: docusignError.kind === "not_configured" ? C.amber : C.red,
+                  padding: "10px 12px", borderRadius: 10, fontSize: 12, lineHeight: 1.5,
+                }}
+              >
+                <strong style={{ display: "block", marginBottom: 4 }}>
+                  {docusignError.kind === "not_configured" ? "DocuSign not configured" : "DocuSign send failed"}
+                </strong>
+                {docusignError.message}
+              </div>
+            )}
+
+            {envelope && (
+              <div
+                style={{
+                  marginTop: 10, background: `${C.green}18`, border: `1px solid ${C.green}`,
+                  color: C.green, padding: "10px 12px", borderRadius: 10, fontSize: 12, lineHeight: 1.5,
+                }}
+              >
+                <strong style={{ display: "block", marginBottom: 4 }}>Envelope sent</strong>
+                <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>{envelope.id}</span>
+                {envelope.signingUrl && (
+                  <>
+                    {" · "}
+                    <a href={envelope.signingUrl} target="_blank" rel="noreferrer" style={{ color: C.green, textDecoration: "underline" }}>
+                      Open signing URL
+                    </a>
+                  </>
+                )}
+              </div>
+            )}
           </>
         )}
 
@@ -480,27 +640,29 @@ export default function ApprovalsScreen({
         </div>
       )}
 
-      {/* Bottom nav */}
-      <div style={{
-        position: "fixed" as const, bottom: 0, left: 0, right: 0, background: C.navy, borderTop: `1px solid ${C.border}`,
-        display: "flex", padding: "8px 12px", paddingBottom: "calc(8px + env(safe-area-inset-bottom, 0px))",
-      }}>
-        <button onClick={onBack}
-          style={{ flex: 1, background: "none", border: "none", padding: "8px 0", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-          <div style={{ fontSize: 20 }}>🏠</div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: C.muted }}>Back</div>
-        </button>
-        <button onClick={exportAuditLog}
-          style={{ flex: 1, background: "none", border: "none", padding: "4px 0", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-          <div style={{ width: 44, height: 44, borderRadius: "50%", background: C.blue, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, marginTop: -10, boxShadow: `0 4px 20px ${C.blue}66` }}>📤</div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: C.blue }}>Export</div>
-        </button>
-        <button style={{ flex: 1, background: "none", border: "none", padding: "8px 0", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-          <div style={{ fontSize: 20, opacity: 0.9 }}>✅</div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: C.blue }}>Approvals</div>
-          <div style={{ width: 20, height: 2, background: C.blue, borderRadius: 1 }} />
-        </button>
-      </div>
+      {/* Bottom nav — hidden in embedded mode */}
+      {!embedded && (
+        <div style={{
+          position: "fixed" as const, bottom: 0, left: 0, right: 0, background: C.navy, borderTop: `1px solid ${C.border}`,
+          display: "flex", padding: "8px 12px", paddingBottom: "calc(8px + env(safe-area-inset-bottom, 0px))",
+        }}>
+          <button onClick={onBack}
+            style={{ flex: 1, background: "none", border: "none", padding: "8px 0", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+            <div style={{ fontSize: 20 }}>🏠</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: C.muted }}>Back</div>
+          </button>
+          <button onClick={exportAuditLog}
+            style={{ flex: 1, background: "none", border: "none", padding: "4px 0", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+            <div style={{ width: 44, height: 44, borderRadius: "50%", background: C.blue, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, marginTop: -10, boxShadow: `0 4px 20px ${C.blue}66` }}>📤</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: C.blue }}>Export</div>
+          </button>
+          <button style={{ flex: 1, background: "none", border: "none", padding: "8px 0", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+            <div style={{ fontSize: 20, opacity: 0.9 }}>✅</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: C.blue }}>Approvals</div>
+            <div style={{ width: 20, height: 2, background: C.blue, borderRadius: 1 }} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -548,57 +710,64 @@ function ReactFragmentSafe({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+// ─── KpiMetric — MiroFish top-strip card ─────────
+function KpiMetric({ label, value, sub, color }: { label: string; value: string; sub: string; color: string }) {
+  return (
+    <div style={{
+      background: C.card, border: `1px solid ${C.border}`, borderRadius: 14,
+      padding: "14px 16px", display: "flex", flexDirection: "column" as const, gap: 2,
+    }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: "0.08em", textTransform: "uppercase" as const }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 800, color, lineHeight: 1.1 }}>{value}</div>
+      <div style={{ fontSize: 10, color: C.dim }}>{sub}</div>
+    </div>
+  );
+}
+
+// ─── AuditTimeline — MiroFish signals-feed style ──
 function AuditTimeline({ entries }: { entries: ApprovalAuditEntry[] }) {
   return (
-    <div style={{ position: "relative" as const }}>
+    <div style={{ display: "flex", flexDirection: "column" as const, gap: 8 }}>
       {entries.map((e, i) => {
         const color = ACTION_COLOR[e.action] ?? C.muted;
         const roleColor = ROLE_COLOR[e.role];
         const isLast = i === entries.length - 1;
         return (
-          <div key={e.id} style={{ display: "flex", gap: 12, position: "relative" as const, paddingBottom: isLast ? 0 : 14 }}>
-            {/* Timeline line */}
-            {!isLast && (
-              <div style={{ position: "absolute" as const, left: 10, top: 22, bottom: 0, width: 2, background: C.border }} />
-            )}
-            {/* Dot */}
-            <div style={{
-              width: 22, height: 22, borderRadius: 11, background: color, color: "#fff",
-              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800,
-              flexShrink: 0, marginTop: 1, zIndex: 1,
-            }}>
-              {e.action === "approved" ? "✓" : e.action === "rejected" ? "✗" : ""}
+          <div key={e.id} style={{
+            background: C.card, border: `1px solid ${C.border}`,
+            borderRadius: 12, padding: "12px 14px",
+            borderLeft: `3px solid ${color}`,
+            opacity: isLast ? 1 : 0.92,
+          }}>
+            {/* Signals-feed meta line: label · dot · timestamp · status badge */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, flexWrap: "wrap" as const }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{e.label}</span>
+              <span style={{ color: C.border, fontSize: 12 }}>·</span>
+              <span style={{
+                fontSize: 9, fontWeight: 800, padding: "2px 7px", borderRadius: 20,
+                background: `${color}22`, color, textTransform: "uppercase" as const, letterSpacing: "0.6px",
+              }}>
+                {ACTION_LABEL[e.action]}
+              </span>
+              <span style={{
+                fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: 20,
+                background: `${roleColor}18`, color: roleColor, letterSpacing: "0.3px",
+              }}>{e.role}</span>
+              <span style={{ fontSize: 10, fontFamily: "monospace", color: C.dim, marginLeft: "auto" }}>{fmtDate(e.ts)}</span>
             </div>
-            {/* Card */}
-            <div style={{
-              flex: 1, minWidth: 0, background: C.card, border: `1px solid ${C.border}`,
-              borderRadius: 12, padding: "12px 14px",
-            }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" as const }}>
-                <div style={{
-                  fontSize: 10, fontWeight: 800, padding: "2px 7px", borderRadius: 4,
-                  background: `${color}22`, color, textTransform: "uppercase" as const, letterSpacing: "0.5px",
-                }}>
-                  {ACTION_LABEL[e.action]}
-                </div>
-                <div style={{ fontSize: 10, fontFamily: "monospace", color: C.dim }}>{fmtDate(e.ts)}</div>
-              </div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 4 }}>{e.label}</div>
-              <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.5, marginBottom: 8 }}>{e.note}</div>
-              <div style={{ display: "flex", flexWrap: "wrap" as const, alignItems: "center", gap: 8 }}>
-                <span style={{
-                  fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 20,
-                  background: `${roleColor}22`, color: roleColor, letterSpacing: "0.3px",
-                }}>{e.actor} · {e.role}</span>
-                {e.doc && (
-                  <span style={{ fontSize: 10, color: C.dim, fontFamily: "monospace" }}>📎 {e.doc}</span>
-                )}
-                {e.signature ? (
-                  <span style={{ fontSize: 10, fontFamily: "monospace", color: C.green }}>🔐 {e.signature} <span style={{ color: C.dim }}>· Verified</span></span>
-                ) : (
-                  <span style={{ fontSize: 10, color: C.amber, fontStyle: "italic" }}>Awaiting signature</span>
-                )}
-              </div>
+            {/* Description line */}
+            <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.55, marginBottom: 8 }}>{e.note}</div>
+            {/* Footer meta */}
+            <div style={{ display: "flex", flexWrap: "wrap" as const, alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 10, fontWeight: 600, color: C.dim }}>{e.actor}</span>
+              {e.doc && (
+                <span style={{ fontSize: 10, color: C.dim, fontFamily: "monospace" }}>📎 {e.doc}</span>
+              )}
+              {e.signature ? (
+                <span style={{ fontSize: 10, fontFamily: "monospace", color: C.green }}>🔐 {e.signature} <span style={{ color: C.dim }}>· Verified</span></span>
+              ) : (
+                <span style={{ fontSize: 10, color: C.amber, fontStyle: "italic" }}>Awaiting signature</span>
+              )}
             </div>
           </div>
         );

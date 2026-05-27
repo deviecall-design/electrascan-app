@@ -7,6 +7,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
@@ -17,6 +18,7 @@
   --blue-lt: #60A5FA;
   --amber: #F59E0B;
   --green: #10B981;
+  --green-dk: #059669;
   --red: #EF4444;
   --purple: #8B5CF6;
   --teal: #0EA5E9;
@@ -126,12 +128,13 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg-ligh
   display: inline-flex; align-items: center; gap: 4px;
   padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600;
 }
-.badge-blue   { background: rgba(29,110,253,0.1); color: var(--blue); }
-.badge-green  { background: rgba(16,185,129,0.1); color: var(--green); }
-.badge-amber  { background: rgba(245,158,11,0.1);  color: var(--amber); }
-.badge-red    { background: rgba(239,68,68,0.1);   color: var(--red); }
-.badge-gray   { background: rgba(100,116,139,0.1); color: var(--gray-md); }
-.badge-purple { background: rgba(139,92,246,0.1);  color: var(--purple); }
+.badge-blue    { background: rgba(29,110,253,0.1); color: var(--blue); }
+.badge-green   { background: rgba(16,185,129,0.1); color: var(--green); }
+.badge-green-dk{ background: rgba(5,150,105,0.12); color: var(--green-dk); }
+.badge-amber   { background: rgba(245,158,11,0.1); color: var(--amber); }
+.badge-red     { background: rgba(239,68,68,0.1);  color: var(--red); }
+.badge-gray    { background: rgba(100,116,139,0.1);color: var(--gray-md); }
+.badge-purple  { background: rgba(139,92,246,0.1); color: var(--purple); }
 
 /* ── Section headings ── */
 .section-title { font-size: 18px; font-weight: 700; color: var(--dark-text); margin-bottom: 4px; }
@@ -172,12 +175,20 @@ tr.row-changed td { background: rgba(245,158,11,0.05); }
 .progress-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
 
 /* ── Tabs ── */
-.tabs { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 20px; }
+.tabs {
+  display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 20px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
 .tab-btn {
   padding: 10px 18px; font-size: 13px; font-weight: 600;
   color: var(--gray-md); cursor: pointer; border: none; background: none;
   border-bottom: 2px solid transparent; margin-bottom: -2px;
   transition: all 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .tab-btn:hover { color: var(--dark-text); }
 .tab-btn.active { color: var(--blue); border-bottom-color: var(--blue); }
@@ -251,11 +262,19 @@ input[type="text"], input[type="number"], select {
 input:focus, select:focus { border-color: var(--blue); box-shadow: 0 0 0 2px rgba(29,110,253,0.1); }
 
 /* ── Pill nav (mobile project tabs) ── */
-.pill-nav { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+.pill-nav {
+  display: flex; gap: 6px; margin-bottom: 16px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.pill-nav::-webkit-scrollbar { display: none; }
 .pill {
   padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600;
   cursor: pointer; border: 1.5px solid var(--border); background: white; color: var(--gray-md);
   transition: all 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .pill.active { background: var(--blue); border-color: var(--blue); color: white; }
 
@@ -300,6 +319,18 @@ input:focus, select:focus { border-color: var(--blue); box-shadow: 0 0 0 2px rgb
   }
   .bottom-nav-item.active { color: var(--blue); }
   .bottom-nav-icon { font-size: 20px; }
+  .bottom-nav-scan {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    cursor: pointer; color: white; font-size: 10px; font-weight: 700;
+    transform: translateY(-14px);
+  }
+  .bottom-nav-scan-btn {
+    width: 52px; height: 52px; border-radius: 26px;
+    background: linear-gradient(135deg, var(--blue), var(--teal));
+    color: white; font-size: 22px;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 6px 20px rgba(29,110,253,0.5);
+  }
   .page-content { padding: 16px; padding-bottom: calc(var(--bottomnav-h) + 16px); }
   .grid-4 { grid-template-columns: repeat(2, 1fr); }
   .grid-3 { grid-template-columns: repeat(1, 1fr); }
@@ -340,37 +371,137 @@ input:focus, select:focus { border-color: var(--blue); box-shadow: 0 0 0 2px rgb
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useEffect, useRef } = React;
+const { useState, useEffect, useRef, useMemo, createContext, useContext } = React;
+
+// ══════════════════════════════════════════════════════════════════════════
+// TENANT WHITE-LABEL SYSTEM
+// Every exported PDF / builder email / supplier BOM / milestone notification
+// uses tenant branding. ElectraScan branding NEVER appears on external outputs.
+// Internal app UI (sidebar, topbar) may still show ElectraScan branding.
+// ══════════════════════════════════════════════════════════════════════════
+// Default categories (§4.5) — tenants can customise.
+// Each category carries its own extension attribute schema for the JSONB meta field.
+const DEFAULT_CATEGORIES = [
+  { id:'power',       label:'Power (GPO, switches)',           meta:['phase','amperage','ipRating'] },
+  { id:'lighting',    label:'Lighting (downlights, strips)',   meta:['wattage','colourTemp','dimmable','driverIncluded'] },
+  { id:'automation',  label:'Automation (blinds, curtains)',   meta:['brand','model','zones','programmingHours','commissioning'] },
+  { id:'av-data',     label:'AV / Data',                       meta:['cableType','patchPanel','rackSpace'] },
+  { id:'security',    label:'Security (CCTV, access)',         meta:['cameraType','storage','nvrRequired'] },
+  { id:'solar',       label:'Solar / Battery',                 meta:['kw','panels','inverterBrand','cecApproved'] },
+  { id:'ev',          label:'EV Charging',                     meta:['amperage','smartCharging','loadBalancing'] },
+  { id:'switchboard', label:'Switchboard',                     meta:['phases','ways','mainSwitchRating'] },
+];
+
+// Line-item types (§4.2)
+const LINE_ITEM_TYPES = [
+  { id:'unit',         label:'Unit rate',    units:['EA','LM','M²'],   canAttachQuote:false },
+  { id:'lump-sum',     label:'Lump sum',     units:['LS'],              canAttachQuote:true  },
+  { id:'day-rate',     label:'Day rate',     units:['DAY'],             canAttachQuote:true  },
+  { id:'labour',       label:'Labour rate',  units:['HR','DAY'],        canAttachQuote:false },
+  { id:'sub-contract', label:'Sub-contract', units:['LS'],              canAttachQuote:true  },
+  { id:'allowance',    label:'Allowance',    units:['LS'],              canAttachQuote:false },
+];
+const LINE_ITEM_TYPE_MAP = Object.fromEntries(LINE_ITEM_TYPES.map(t => [t.id, t]));
+
+const DEFAULT_TENANT = {
+  tradingName: 'Vesh Electrical Services',
+  logoDataUrl: '', // PNG/SVG data URL; empty → initials monogram
+  abn: '47 612 389 204',
+  address: '24 Union Rd, Ascot Vale VIC 3032',
+  contactEmail: 'damien@veshelectrical.com.au',
+  contactPhone: '+61 3 9376 8844',
+  emailReplyTo: 'damien@veshelectrical.com.au',
+  accentColor: '#1D6EFD',
+  categories: DEFAULT_CATEGORIES,
+};
+
+const TENANT_STORAGE_KEY = 'electrascan.tenant.v1';
+
+const loadTenant = () => {
+  try {
+    const raw = localStorage.getItem(TENANT_STORAGE_KEY);
+    if (!raw) return DEFAULT_TENANT;
+    const parsed = JSON.parse(raw);
+    // Backfill categories for older saved tenants.
+    const categories = Array.isArray(parsed.categories) && parsed.categories.length ? parsed.categories : DEFAULT_CATEGORIES;
+    return { ...DEFAULT_TENANT, ...parsed, categories };
+  } catch { return DEFAULT_TENANT; }
+};
+const saveTenant = (t) => {
+  try { localStorage.setItem(TENANT_STORAGE_KEY, JSON.stringify(t)); } catch {}
+};
+
+const TenantContext = createContext({ tenant: DEFAULT_TENANT, setTenant: () => {} });
+const useTenant = () => useContext(TenantContext);
+
+// Tenant letterhead — applied to ALL PDF exports and email previews.
+// Never contains ElectraScan branding.
+function CompanyLetterhead({ tenant, variant = 'pdf' }) {
+  const initials = tenant.tradingName.split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+  const logo = tenant.logoDataUrl
+    ? <img src={tenant.logoDataUrl} alt="" style={{ height: 52, width: 'auto', maxWidth: 140, objectFit: 'contain', borderRadius: 6 }} />
+    : <div style={{ height: 52, width: 52, borderRadius: 8, background: tenant.accentColor, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 800, letterSpacing: 0.5 }}>{initials || '—'}</div>;
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, padding: '16px 20px', borderBottom: `2px solid ${tenant.accentColor}`, background: 'white' }}>
+      {logo}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 16, fontWeight: 800, color: '#0D1B2A', lineHeight: 1.2 }}>{tenant.tradingName}</div>
+        <div style={{ fontSize: 11, color: '#475569', marginTop: 3 }}>ABN: {tenant.abn}</div>
+        <div style={{ fontSize: 11, color: '#475569', marginTop: 2 }}>
+          {tenant.address} · {tenant.contactPhone} · {tenant.contactEmail}
+        </div>
+      </div>
+      {variant === 'email' && (
+        <div style={{ fontSize: 10, color: '#94A3B8', textAlign: 'right', flexShrink: 0 }}>
+          Reply-to<br/><strong style={{ color: '#475569' }}>{tenant.emailReplyTo}</strong>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Tenant footer for PDF exports — no ElectraScan mention.
+function CompanyFooter({ tenant }) {
+  return (
+    <div style={{ borderTop: `1px solid #E2E8F0`, padding: '10px 20px', fontSize: 10, color: '#94A3B8', textAlign: 'center', background: '#F8FAFC' }}>
+      {tenant.tradingName} · ABN {tenant.abn} · {tenant.contactEmail} · {tenant.contactPhone}
+    </div>
+  );
+}
 
 // ── Mock Data ──────────────────────────────────────────────────────────────
 const MOCK_PROJECTS = [
   {
     id: 1, name: 'Riverside Apartments', address: '42 Riverside Dr, Richmond VIC',
     client: 'Meriton Group', builder: 'Lendlease Construction',
-    status: 'active', color: '#1D6EFD',
+    status: 'active', color: '#10B981',
     versions: 2, lastEstimate: 148500, lastUpdated: '18 Mar 2026',
     description: '12-storey residential apartment complex, 84 units',
+    daysActive: 8,
   },
   {
     id: 2, name: 'Harbour View Office', address: '11 Harbour St, Docklands VIC',
     client: 'Charter Hall', builder: 'Multiplex',
-    status: 'active', color: '#10B981',
+    status: 'submitted', color: '#1D6EFD',
     versions: 1, lastEstimate: 312000, lastUpdated: '15 Mar 2026',
     description: 'Commercial office fitout, Level 3–8',
+    daysActive: 16,
   },
   {
     id: 3, name: 'Brighton Residence', address: '7 Marine Pde, Brighton VIC',
     client: 'Private Client', builder: 'Metricon Homes',
-    status: 'pending', color: '#F59E0B',
+    status: 'estimating', color: '#F59E0B',
     versions: 1, lastEstimate: 28400, lastUpdated: '10 Mar 2026',
     description: 'Custom luxury residential build',
+    daysActive: 24,
   },
   {
     id: 4, name: 'Southbank Hotel', address: '88 Southbank Blvd, Southbank VIC',
     client: 'Marriott International', builder: 'Built Environs',
-    status: 'complete', color: '#8B5CF6',
+    status: 'complete', color: '#64748B',
     versions: 4, lastEstimate: 890000, lastUpdated: '2 Feb 2026',
     description: '5-star hotel, 22 floors, 340 rooms',
+    daysActive: 12,
   },
 ];
 
@@ -401,19 +532,71 @@ const MOCK_COMPONENTS = [
   { id:13,room:'Main Switchboard', type:'MSB — 3-Phase 63A',           qty:1, ref:'S-01', confidence:99 },
 ];
 
+// Line items use the JSONB-ready schema (§4.1). Core fixed columns + meta blob.
+// Fields: id, desc, unit, qty, rate, labour, mat, category, lineItemType,
+//   rateAtEstimateDate (rate snapshot when estimate was locked — §4.3),
+//   supplierId, componentGroupId (composite grouping — §4.4),
+//   quoteAttachmentUrl (optional, for custom items), meta (flexible JSONB)
+const ESTIMATE_LOCK_DATE = '2026-03-18';
 const MOCK_LINE_ITEMS = [
-  { id:1, desc:'Double Power Point (GPO) — Installed', unit:'EA', qty:23, rate:85,  labour:45, mat:40 },
-  { id:2, desc:'LED Downlight — Installed & Connected', unit:'EA', qty:21, rate:95,  labour:55, mat:40 },
-  { id:3, desc:'Rangehood Circuit — Dedicated Run',    unit:'EA', qty:1,  rate:320, labour:180,mat:140},
-  { id:4, desc:'Dishwasher — Dedicated Circuit',       unit:'EA', qty:1,  rate:280, labour:160,mat:120},
-  { id:5, desc:'Exhaust Fan — Supply & Install',       unit:'EA', qty:2,  rate:220, labour:120,mat:100},
-  { id:6, desc:'Shaver Point / LED Mirror Circuit',    unit:'EA', qty:2,  rate:190, labour:110,mat:80 },
-  { id:7, desc:'EV Charger Point 32A — Installed',     unit:'EA', qty:1,  rate:1850,labour:950,mat:900},
-  { id:8, desc:'Garage Door Opener Circuit',           unit:'EA', qty:1,  rate:180, labour:100,mat:80 },
-  { id:9, desc:'External GPO Weatherproof IP56',       unit:'EA', qty:4,  rate:160, labour:90, mat:70 },
-  { id:10,desc:'MSB 3-Phase 63A — Supply & Install',   unit:'EA', qty:1,  rate:4200,labour:2200,mat:2000},
-  { id:11,desc:'Cable Runs — Main Board to Circuits',  unit:'LM', qty:420,rate:8,   labour:5,  mat:3 },
-  { id:12,desc:'Conduit & Accessories',                unit:'LM', qty:180,rate:6,   labour:3,  mat:3 },
+  { id:1,  desc:'Double Power Point (GPO) — Installed', unit:'EA', qty:23, rate:85,  labour:45, mat:40,
+    category:'power',    lineItemType:'unit',    rateAtEstimateDate:85,  supplierId:'LH-AU',  componentGroupId:null,
+    meta:{ phase:1, amperage:10, ipRating:'IP20' } },
+  { id:2,  desc:'LED Downlight — Installed & Connected', unit:'EA', qty:21, rate:95, labour:55, mat:40,
+    category:'lighting', lineItemType:'unit',    rateAtEstimateDate:95,  supplierId:'LH-AU',  componentGroupId:null,
+    meta:{ wattage:10, colourTemp:'3000K', dimmable:true, driverIncluded:true } },
+  { id:3,  desc:'Rangehood Circuit — Dedicated Run',    unit:'EA', qty:1,  rate:320, labour:180,mat:140,
+    category:'power',    lineItemType:'unit',    rateAtEstimateDate:320, supplierId:'LH-AU',  componentGroupId:null, meta:{ phase:1, amperage:15 } },
+  { id:4,  desc:'Dishwasher — Dedicated Circuit',       unit:'EA', qty:1,  rate:280, labour:160,mat:120,
+    category:'power',    lineItemType:'unit',    rateAtEstimateDate:280, supplierId:'LH-AU',  componentGroupId:null, meta:{ phase:1, amperage:10 } },
+  { id:5,  desc:'Exhaust Fan — Supply & Install',       unit:'EA', qty:2,  rate:220, labour:120,mat:100,
+    category:'lighting', lineItemType:'unit',    rateAtEstimateDate:220, supplierId:'LH-AU',  componentGroupId:null, meta:{ wattage:25 } },
+  { id:6,  desc:'Shaver Point / LED Mirror Circuit',    unit:'EA', qty:2,  rate:190, labour:110,mat:80,
+    category:'lighting', lineItemType:'unit',    rateAtEstimateDate:190, supplierId:'LH-AU',  componentGroupId:null, meta:{ ipRating:'IP44' } },
+  { id:7,  desc:'EV Charger Point 32A — Installed',     unit:'EA', qty:1,  rate:1850,labour:950,mat:900,
+    category:'ev',       lineItemType:'unit',    rateAtEstimateDate:1850,supplierId:'TURKS',  componentGroupId:null,
+    meta:{ amperage:32, smartCharging:true, loadBalancing:false } },
+  { id:8,  desc:'Garage Door Opener Circuit',           unit:'EA', qty:1,  rate:180, labour:100,mat:80,
+    category:'power',    lineItemType:'unit',    rateAtEstimateDate:180, supplierId:'LH-AU',  componentGroupId:null, meta:{ phase:1, amperage:10 } },
+  { id:9,  desc:'External GPO Weatherproof IP56',       unit:'EA', qty:4,  rate:160, labour:90, mat:70,
+    category:'power',    lineItemType:'unit',    rateAtEstimateDate:160, supplierId:'LH-AU',  componentGroupId:null, meta:{ phase:1, amperage:10, ipRating:'IP56' } },
+  { id:10, desc:'MSB 3-Phase 63A — Supply & Install',   unit:'EA', qty:1,  rate:4200,labour:2200,mat:2000,
+    category:'switchboard', lineItemType:'unit', rateAtEstimateDate:4200,supplierId:'TURKS',  componentGroupId:null,
+    meta:{ phases:3, ways:24, mainSwitchRating:63 } },
+  { id:11, desc:'Cable Runs — Main Board to Circuits',  unit:'LM', qty:420,rate:8,   labour:5,  mat:3,
+    category:'power',    lineItemType:'unit',    rateAtEstimateDate:8,   supplierId:'LH-AU',  componentGroupId:null, meta:{} },
+  { id:12, desc:'Conduit & Accessories',                unit:'LM', qty:180,rate:6,   labour:3,  mat:3,
+    category:'power',    lineItemType:'unit',    rateAtEstimateDate:6,   supplierId:'LH-AU',  componentGroupId:null, meta:{} },
+
+  // Example: Composite group — Somfy blind motor system (§4.4). One parent, multiple SKUs.
+  { id:13, desc:'Blind Motor — Somfy Glydea Ultra 35',  unit:'EA', qty:3, rate:480, labour:120, mat:360,
+    category:'automation', lineItemType:'unit', rateAtEstimateDate:480, supplierId:'SOMFY',    componentGroupId:'grp-blinds-mstr',
+    meta:{ brand:'Somfy', model:'Glydea Ultra 35', zones:1, commissioning:true, warrantyYears:5 } },
+  { id:14, desc:'Blind Track — 2.4m Motorised Track',   unit:'EA', qty:3, rate:180, labour:40,  mat:140,
+    category:'automation', lineItemType:'unit', rateAtEstimateDate:180, supplierId:'SOMFY',    componentGroupId:'grp-blinds-mstr',
+    meta:{ brand:'Somfy', model:'Glydea-Track-2.4m' } },
+  { id:15, desc:'Blind Remote — 5-Channel',             unit:'EA', qty:3, rate:85,  labour:0,   mat:85,
+    category:'automation', lineItemType:'unit', rateAtEstimateDate:85,  supplierId:'SOMFY',    componentGroupId:'grp-blinds-mstr',
+    meta:{ brand:'Somfy', model:'Situo-5-RTS' } },
+  { id:16, desc:'Blind Programming & Commissioning',    unit:'HR', qty:4, rate:140, labour:140, mat:0,
+    category:'automation', lineItemType:'labour', rateAtEstimateDate:140,supplierId:null,      componentGroupId:'grp-blinds-mstr',
+    meta:{ programmingHours:4, commissioning:true } },
+
+  // Example: Sub-contract item with attached quote PDF (§4.2)
+  { id:17, desc:'Fire Alarm Sub-contract — ACME Fire',  unit:'LS', qty:1, rate:4850, labour:0, mat:0,
+    category:'security', lineItemType:'sub-contract', rateAtEstimateDate:4850, supplierId:'ACME-FIRE', componentGroupId:null,
+    meta:{ subcontractor:'ACME Fire Systems Pty Ltd', quoteRef:'QTE-4421' },
+    quoteAttachmentUrl:'ACME-Fire-QTE-4421.pdf' },
+
+  // Example: Provisional allowance — TBC at time of estimate
+  { id:18, desc:'Pool Equipment Allowance (TBC)',       unit:'LS', qty:1, rate:1800, labour:0, mat:0,
+    category:'power',    lineItemType:'allowance', rateAtEstimateDate:1800, supplierId:null, componentGroupId:null,
+    meta:{ provisional:true, confirmationRequired:true } },
+
+  // Example: Day-rate for equipment hire
+  { id:19, desc:'Scissor Lift EWP — Daily Hire',        unit:'DAY', qty:2, rate:380, labour:0, mat:380,
+    category:'power',    lineItemType:'day-rate', rateAtEstimateDate:380, supplierId:'KENNARDS', componentGroupId:null,
+    meta:{ equipment:'Scissor lift 6m', access:'Void lighting install' } },
 ];
 
 const MOCK_VARIATION = [
@@ -438,10 +621,100 @@ const MOCK_RISKS = [
 const fmt = (n) => '$' + Number(n).toLocaleString('en-AU', { minimumFractionDigits: 0 });
 const pct = (n) => (n >= 0 ? '+' : '') + n.toFixed(1) + '%';
 
-const statusBadge = (s) => {
-  const map = { active:'badge-blue', pending:'badge-amber', complete:'badge-green', superseded:'badge-gray' };
-  return <span className={`badge ${map[s] || 'badge-gray'}`}>{s.charAt(0).toUpperCase()+s.slice(1)}</span>;
+// Canonical status palette (§5). Desktop + mobile use the same badge class so colours never diverge.
+// Status → { className, label }
+const STATUS_MAP = {
+  estimating: { cls:'badge-amber',    label:'Estimating' },
+  active:     { cls:'badge-green',    label:'Active' },
+  submitted:  { cls:'badge-blue',     label:'Submitted' },
+  approved:   { cls:'badge-green-dk', label:'Approved' },
+  pending:    { cls:'badge-amber',    label:'Pending' },
+  complete:   { cls:'badge-gray',     label:'Complete' },
+  overdue:    { cls:'badge-red',      label:'Overdue' },
+  superseded: { cls:'badge-gray',     label:'Superseded' },
 };
+const statusBadge = (s) => {
+  const meta = STATUS_MAP[s] || { cls:'badge-gray', label:s.charAt(0).toUpperCase()+s.slice(1) };
+  return <span className={`badge ${meta.cls}`}>{meta.label}</span>;
+};
+
+// Days Active RAG (§5): 0-13 default, 14-21 amber, 22+ red
+const daysActiveColor = (d) => {
+  if (d >= 22) return '#EF4444';
+  if (d >= 14) return '#F59E0B';
+  return '#64748B';
+};
+const daysActiveBg = (d) => {
+  if (d >= 22) return '#FEF2F2';
+  if (d >= 14) return '#FFFBEB';
+  return '#F8FAFC';
+};
+// ── QR session handoff helpers ─────────────────────────────────────────────
+// Desktop detection — used to conditionally render "Continue on Mobile"
+// (§7: must be conditionally rendered, NOT just CSS-hidden)
+function useIsDesktop() {
+  const [isDesktop, setIsDesktop] = useState(
+    typeof window !== 'undefined' ? window.innerWidth > 768 : true
+  );
+  useEffect(() => {
+    const onResize = () => setIsDesktop(window.innerWidth > 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  return isDesktop;
+}
+
+// Render a real scannable QR code SVG from the given URL. Falls back to a
+// decorative finder-pattern if the qrcode-generator lib failed to load.
+function QrCodeSvg({ value, size = 180 }) {
+  const svg = useMemo(() => {
+    const QR = (typeof window !== 'undefined') ? window.qrcode : null;
+    if (!QR) return null;
+    try {
+      const q = QR(0, 'M');
+      q.addData(value);
+      q.make();
+      const cells = q.getModuleCount();
+      const cell = size / cells;
+      const rects = [];
+      for (let r = 0; r < cells; r++) {
+        for (let c = 0; c < cells; c++) {
+          if (q.isDark(r, c)) {
+            rects.push(<rect key={`${r}-${c}`} x={(c * cell).toFixed(2)} y={(r * cell).toFixed(2)} width={cell.toFixed(2)} height={cell.toFixed(2)} fill="#0D1B2A"/>);
+          }
+        }
+      }
+      return (
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} shapeRendering="crispEdges" style={{display:'block'}}>
+          <rect width={size} height={size} fill="white"/>
+          {rects}
+        </svg>
+      );
+    } catch (e) {
+      console.warn('QR generation failed', e);
+      return null;
+    }
+  }, [value, size]);
+
+  if (svg) return svg;
+  // Fallback placeholder
+  return (
+    <div style={{width:size,height:size,display:'flex',alignItems:'center',justifyContent:'center',background:'#F1F5F9',color:'#64748B',fontSize:10,textAlign:'center',padding:8}}>
+      QR renderer unavailable — token: {value}
+    </div>
+  );
+}
+
+const DaysActiveBadge = ({ days }) => (
+  <span style={{
+    display:'inline-flex', alignItems:'center', gap:4,
+    fontSize:11, fontWeight:700,
+    padding:'3px 9px', borderRadius:20,
+    background: daysActiveBg(days),
+    color: daysActiveColor(days),
+    border: days>=14 ? `1px solid ${daysActiveColor(days)}40` : '1px solid transparent',
+  }}>⏱ {days}d active</span>
+);
 
 const confidenceBar = (v) => (
   <div style={{display:'flex',alignItems:'center',gap:6}}>
@@ -462,9 +735,12 @@ const NAV = [
   { id:'reports',      icon:'📈', label:'Reports'     },
   { id:'pricing',      icon:'🏪', label:'Rate Library'},
   { id:'email-upload', icon:'📧', label:'Email Upload'},
+  { id:'settings',     icon:'⚙️', label:'Settings'    },
 ];
 
 // ── TLE Wholesaler mock data (trade rates) ──────────────────────────────────
+// All TLE products map to lineItemType='unit' and carry a meta JSONB blob.
+// The top-level `category` is the canonical tenant-configurable id from DEFAULT_CATEGORIES.
 const TLE_CATEGORIES = ['All','Power Points','Lighting','Switchboard','Cabling','Data & Communications'];
 const TLE_PRODUCTS = [
   // Power Points
@@ -599,7 +875,7 @@ function Projects({ onNavigate }) {
         <button className="btn btn-primary">+ New Project</button>
       </div>
       <div className="pill-nav">
-        {['all','active','pending','complete'].map(f => (
+        {['all','estimating','active','submitted','approved','complete','overdue'].map(f => (
           <div key={f} className={`pill ${filter===f?'active':''}`} onClick={() => setFilter(f)}>
             {f.charAt(0).toUpperCase()+f.slice(1)}
           </div>
@@ -617,6 +893,7 @@ function Projects({ onNavigate }) {
               <div className="project-meta">{p.address}</div>
               <div className="project-meta mt-4" style={{fontSize:10}}>{p.description}</div>
               <div className="project-meta mt-4">👷 {p.builder}  ·  🏢 {p.client}</div>
+              <div style={{marginTop:8}}><DaysActiveBadge days={p.daysActive ?? 0}/></div>
               <div className="project-stats">
                 <div className="project-stat">
                   <div className="project-stat-val" style={{color:p.color}}>{p.versions}</div>
@@ -672,8 +949,9 @@ function ProjectDetail({ project, onNavigate }) {
           <div>
             <div style={{fontSize:18,fontWeight:700}}>{project.name}</div>
             <div style={{fontSize:12,color:'#64748b',marginTop:2}}>{project.address}</div>
-            <div style={{display:'flex',gap:8,marginTop:8,flexWrap:'wrap'}}>
+            <div style={{display:'flex',gap:8,marginTop:8,flexWrap:'wrap',alignItems:'center'}}>
               {statusBadge(project.status)}
+              <DaysActiveBadge days={project.daysActive ?? 0}/>
               <span className="badge badge-gray">👷 {project.builder}</span>
               <span className="badge badge-gray">🏢 {project.client}</span>
             </div>
@@ -852,6 +1130,7 @@ function ProjectDetail({ project, onNavigate }) {
 
 // ── Estimate Editor ────────────────────────────────────────────────────────
 function EstimateEditor({ onNavigate }) {
+  const { tenant } = useTenant();
   const [items, setItems] = useState(MOCK_LINE_ITEMS.map(i => ({...i, note:''})));
   const [margin, setMargin] = useState(15);
   const [locked, setLocked] = useState(false);
@@ -861,6 +1140,7 @@ function EstimateEditor({ onNavigate }) {
   const [recordingId, setRecordingId] = useState(null);
   const [voiceInput, setVoiceInput]  = useState('');
   const [showVoice, setShowVoice]    = useState(false);
+  const [showPdfPreview, setShowPdfPreview] = useState(false);
 
   // Simulated voice transcript lines for demo
   const DEMO_TRANSCRIPTS = [
@@ -872,6 +1152,8 @@ function EstimateEditor({ onNavigate }) {
 
   const startRecording = (itemId) => {
     setRecording(true); setRecordingId(itemId); setVoiceInput('');
+    // Expose a global flag so the QR handoff flow can detect active recording (§7).
+    if (typeof window !== 'undefined') window.__voiceRecordingActive = true;
     let i=0; const words = DEMO_TRANSCRIPTS[itemId % DEMO_TRANSCRIPTS.length].split(' ');
     const iv = setInterval(()=>{
       i++;
@@ -882,6 +1164,7 @@ function EstimateEditor({ onNavigate }) {
 
   const stopRecording = (itemId, text) => {
     setRecording(false); setRecordingId(null);
+    if (typeof window !== 'undefined') window.__voiceRecordingActive = false;
     if(text) setItems(prev=>prev.map(it=>it.id===itemId?{...it,note:text}:it));
   };
 
@@ -895,8 +1178,41 @@ function EstimateEditor({ onNavigate }) {
   };
   const addItem = () => {
     const newId = Math.max(...items.map(i=>i.id)) + 1;
-    setItems(prev => [...prev, {id:newId, desc:'New Line Item', unit:'EA', qty:1, rate:0, labour:0, mat:0}]);
+    setItems(prev => [...prev, {
+      id:newId, desc:'New Line Item', unit:'EA', qty:1, rate:0, labour:0, mat:0,
+      category:'power', lineItemType:'unit',
+      rateAtEstimateDate:0, supplierId:null, componentGroupId:null,
+      meta:{},
+    }]);
     setEditId(newId);
+  };
+
+  // Custom line item modal state — supports optional quote PDF attachment (§4.2)
+  const [showCustomModal, setShowCustomModal] = useState(false);
+  const [customDraft, setCustomDraft] = useState({
+    desc:'', lineItemType:'lump-sum', unit:'LS', qty:1, rate:0,
+    category:'power', supplierId:'', quoteFileName:'',
+  });
+  const saveCustomItem = () => {
+    const newId = Math.max(...items.map(i=>i.id)) + 1;
+    setItems(prev => [...prev, {
+      id: newId,
+      desc: customDraft.desc || 'Custom Line Item',
+      unit: customDraft.unit,
+      qty: Number(customDraft.qty) || 1,
+      rate: Number(customDraft.rate) || 0,
+      labour: 0,
+      mat: Number(customDraft.rate) || 0,
+      category: customDraft.category,
+      lineItemType: customDraft.lineItemType,
+      rateAtEstimateDate: Number(customDraft.rate) || 0,
+      supplierId: customDraft.supplierId || null,
+      componentGroupId: null,
+      quoteAttachmentUrl: customDraft.quoteFileName || null,
+      meta: { custom:true, createdAt: new Date().toISOString() },
+    }]);
+    setShowCustomModal(false);
+    setCustomDraft({ desc:'', lineItemType:'lump-sum', unit:'LS', qty:1, rate:0, category:'power', supplierId:'', quoteFileName:'' });
   };
   const removeItem = (id) => setItems(prev => prev.filter(i => i.id !== id));
 
@@ -919,11 +1235,44 @@ function EstimateEditor({ onNavigate }) {
         ) : (
           <div className="flex-center gap-8">
             <span className="badge badge-green">✅ Locked — 18 Mar 2026</span>
-            <button className="btn btn-ghost btn-sm">Export PDF</button>
+            <button className="btn btn-ghost btn-sm" onClick={()=>setShowPdfPreview(true)}>Export PDF</button>
             <button className="btn btn-ghost btn-sm">Export CSV</button>
           </div>
         )}
       </div>
+
+      <PdfPreviewModal
+        open={showPdfPreview}
+        onClose={()=>setShowPdfPreview(false)}
+        title="Estimate PDF — Preview"
+        subtitle="EST-2026-001-002 · Riverside Apartments"
+      >
+        <div style={{fontSize:15,fontWeight:800,color:'#0D1B2A',marginBottom:6}}>Electrical Estimate</div>
+        <div style={{fontSize:11,color:'#64748B',marginBottom:14}}>EST-2026-001-002 · Riverside Apartments · Issued 18 Mar 2026</div>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:11,marginBottom:14}}>
+          <thead><tr style={{background:'#F8FAFC'}}>
+            <th style={{textAlign:'left',padding:'6px 10px'}}>Description</th>
+            <th style={{textAlign:'center',padding:'6px 10px'}}>Qty</th>
+            <th style={{textAlign:'right',padding:'6px 10px'}}>Rate</th>
+            <th style={{textAlign:'right',padding:'6px 10px'}}>Total</th>
+          </tr></thead>
+          <tbody>
+            {items.slice(0,6).map(it=>(
+              <tr key={it.id} style={{borderBottom:'1px solid #F1F5F9'}}>
+                <td style={{padding:'5px 10px'}}>{it.desc}</td>
+                <td style={{padding:'5px 10px',textAlign:'center'}}>{it.qty}</td>
+                <td style={{padding:'5px 10px',textAlign:'right'}}>{fmt(it.rate)}</td>
+                <td style={{padding:'5px 10px',textAlign:'right',fontWeight:600}}>{fmt(it.qty*it.rate)}</td>
+              </tr>
+            ))}
+            <tr><td colSpan="4" style={{padding:'5px 10px',fontSize:10,color:'#94A3B8',fontStyle:'italic'}}>…{items.length-6} further line items…</td></tr>
+          </tbody>
+        </table>
+        <div style={{borderTop:'2px solid #0D1B2A',paddingTop:10,display:'flex',justifyContent:'space-between',fontSize:13,fontWeight:800}}>
+          <span>Total (incl. GST)</span>
+          <span>{fmt(total)}</span>
+        </div>
+      </PdfPreviewModal>
 
       {locked && (
         <div style={{background:'#f0fdf4',border:'1px solid #86efac',borderRadius:8,padding:'10px 14px',marginBottom:16,fontSize:12,color:'#166534'}}>
@@ -938,7 +1287,8 @@ function EstimateEditor({ onNavigate }) {
             <table>
               <thead>
                 <tr>
-                  <th style={{width:'36%'}}>Description</th>
+                  <th style={{width:'30%'}}>Description</th>
+                  <th>Type</th>
                   <th>Unit</th>
                   <th style={{textAlign:'right'}}>Qty</th>
                   <th style={{textAlign:'right'}}>Rate</th>
@@ -947,7 +1297,11 @@ function EstimateEditor({ onNavigate }) {
                 </tr>
               </thead>
               <tbody>
-                {items.map(item => (
+                {items.map(item => {
+                  const typeMeta = LINE_ITEM_TYPE_MAP[item.lineItemType] || LINE_ITEM_TYPE_MAP.unit;
+                  const inGroup  = !!item.componentGroupId;
+                  const rateDrifted = item.rateAtEstimateDate != null && item.rate !== item.rateAtEstimateDate;
+                  return (
                   <React.Fragment key={item.id}>
                   <tr onClick={() => !locked && setEditId(editId===item.id?null:item.id)}
                     style={{cursor:locked?'default':'pointer'}}>
@@ -955,13 +1309,29 @@ function EstimateEditor({ onNavigate }) {
                       {editId === item.id && !locked ? (
                         <input type="text" value={item.desc} onChange={e => updateItem(item.id,'desc',e.target.value)} onClick={e=>e.stopPropagation()}/>
                       ) : (
-                        <span style={{fontSize:12}}>{item.desc}</span>
+                        <div>
+                          <div style={{fontSize:12,display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+                            {inGroup && <span title={`Composite group ${item.componentGroupId}`} style={{fontSize:10,padding:'1px 6px',borderRadius:10,background:'#EDE9FE',color:'#5B21B6',fontWeight:700,cursor:'help'}}>🔗 GROUP</span>}
+                            {item.quoteAttachmentUrl && <span title={`Quote attached: ${item.quoteAttachmentUrl}`} style={{fontSize:10,padding:'1px 6px',borderRadius:10,background:'#DBEAFE',color:'#1D4ED8',fontWeight:700,cursor:'help'}}>📎 QUOTE</span>}
+                            <span>{item.desc}</span>
+                          </div>
+                          {item.supplierId && <div style={{fontSize:10,color:'#94A3B8',marginTop:2}}>Supplier: {item.supplierId}</div>}
+                        </div>
                       )}
                     </td>
                     <td>
                       {editId === item.id && !locked ? (
-                        <select value={item.unit} onChange={e => updateItem(item.id,'unit',e.target.value)} onClick={e=>e.stopPropagation()} style={{width:60}}>
-                          <option>EA</option><option>LM</option><option>LS</option><option>HR</option>
+                        <select value={item.lineItemType} onChange={e => updateItem(item.id,'lineItemType',e.target.value)} onClick={e=>e.stopPropagation()} style={{width:130,fontSize:11}}>
+                          {LINE_ITEM_TYPES.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+                        </select>
+                      ) : (
+                        <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:10,background:'#F1F5F9',color:'#475569',whiteSpace:'nowrap'}}>{typeMeta.label}</span>
+                      )}
+                    </td>
+                    <td>
+                      {editId === item.id && !locked ? (
+                        <select value={item.unit} onChange={e => updateItem(item.id,'unit',e.target.value)} onClick={e=>e.stopPropagation()} style={{width:70}}>
+                          {typeMeta.units.map(u => <option key={u} value={u}>{u}</option>)}
                         </select>
                       ) : item.unit}
                     </td>
@@ -973,7 +1343,12 @@ function EstimateEditor({ onNavigate }) {
                     <td style={{textAlign:'right'}}>
                       {editId === item.id && !locked ? (
                         <input type="number" value={item.rate} onChange={e => updateItem(item.id,'rate',e.target.value)} onClick={e=>e.stopPropagation()} style={{width:72,textAlign:'right'}}/>
-                      ) : fmt(item.rate)}
+                      ) : (
+                        <div style={{display:'inline-flex',flexDirection:'column',alignItems:'flex-end',gap:2}}>
+                          <span>{fmt(item.rate)}</span>
+                          {rateDrifted && <span title={`Rate at estimate date: ${fmt(item.rateAtEstimateDate)}`} style={{fontSize:9,color:'#F59E0B',fontWeight:700,cursor:'help'}}>was {fmt(item.rateAtEstimateDate)}</span>}
+                        </div>
+                      )}
                     </td>
                     <td style={{textAlign:'right',fontWeight:600}}>{fmt(item.qty * item.rate)}</td>
                     {!locked && (
@@ -993,7 +1368,7 @@ function EstimateEditor({ onNavigate }) {
                   </tr>
                   {(item.note || recordingId===item.id) && (
                     <tr style={{background:'#F0F9FF'}}>
-                      <td colSpan={locked?5:6} style={{padding:'6px 10px'}}>
+                      <td colSpan={locked?6:7} style={{padding:'6px 10px'}}>
                         <div style={{display:'flex',alignItems:'center',gap:8}}>
                           <span style={{fontSize:12}}>🎤</span>
                           {recordingId===item.id ? (
@@ -1012,19 +1387,95 @@ function EstimateEditor({ onNavigate }) {
                     </tr>
                   )}
                   </React.Fragment>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
           {!locked && (
-            <div style={{display:'flex',gap:8,marginTop:8,alignItems:'center'}}>
+            <div style={{display:'flex',gap:8,marginTop:8,alignItems:'center',flexWrap:'wrap'}}>
               <button className="btn btn-ghost btn-sm" onClick={addItem}>+ Add Line Item</button>
+              <button className="btn btn-ghost btn-sm" onClick={()=>setShowCustomModal(true)}>+ Custom Line Item</button>
               <button
                 onClick={()=>{ if(!recording) startRecording(items[0].id); }}
                 style={{display:'flex',alignItems:'center',gap:6,padding:'6px 12px',background:recording?'#FEE2E2':'#F1F5F9',border:`1px solid ${recording?'#EF4444':'#E2E8F0'}`,borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer',color:recording?'#EF4444':'#64748B',transition:'all 0.2s'}}>
                 <span style={{fontSize:14}}>{recording?'⏹':'🎤'}</span>
                 {recording?'Stop Recording':'Voice Note'}
               </button>
+            </div>
+          )}
+
+          {/* Custom line item modal — supports optional quote PDF attachment (§4.2) */}
+          {showCustomModal && (
+            <div onClick={()=>setShowCustomModal(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:1500,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(4px)',padding:20}}>
+              <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:14,padding:24,maxWidth:520,width:'100%',maxHeight:'90vh',overflow:'auto',boxShadow:'0 24px 80px rgba(0,0,0,0.4)'}}>
+                <div style={{fontSize:16,fontWeight:800,marginBottom:4,color:'#0D1B2A'}}>Add Custom Line Item</div>
+                <div style={{fontSize:12,color:'#64748B',marginBottom:16}}>Non-catalogue items — direct-sourced, sub-contract, day rates, allowances.</div>
+
+                <div style={{marginBottom:12}}>
+                  <div style={{fontSize:11,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase',color:'#64748B',marginBottom:5}}>Description</div>
+                  <input type="text" value={customDraft.desc} onChange={e=>setCustomDraft(d=>({...d,desc:e.target.value}))} placeholder="e.g. Bespoke pendant fitting — custom order" style={{width:'100%',padding:'8px 12px',border:'1px solid #E2E8F0',borderRadius:8,fontSize:13,outline:'none'}}/>
+                </div>
+
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
+                  <div>
+                    <div style={{fontSize:11,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase',color:'#64748B',marginBottom:5}}>Line Item Type</div>
+                    <select value={customDraft.lineItemType} onChange={e=>{
+                      const t = LINE_ITEM_TYPE_MAP[e.target.value];
+                      setCustomDraft(d=>({...d,lineItemType:e.target.value, unit:t.units[0]}));
+                    }} style={{width:'100%',padding:'8px 12px',border:'1px solid #E2E8F0',borderRadius:8,fontSize:13,background:'white'}}>
+                      {LINE_ITEM_TYPES.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <div style={{fontSize:11,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase',color:'#64748B',marginBottom:5}}>Category</div>
+                    <select value={customDraft.category} onChange={e=>setCustomDraft(d=>({...d,category:e.target.value}))} style={{width:'100%',padding:'8px 12px',border:'1px solid #E2E8F0',borderRadius:8,fontSize:13,background:'white'}}>
+                      {tenant.categories.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:12}}>
+                  <div>
+                    <div style={{fontSize:11,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase',color:'#64748B',marginBottom:5}}>Unit</div>
+                    <select value={customDraft.unit} onChange={e=>setCustomDraft(d=>({...d,unit:e.target.value}))} style={{width:'100%',padding:'8px 12px',border:'1px solid #E2E8F0',borderRadius:8,fontSize:13,background:'white'}}>
+                      {(LINE_ITEM_TYPE_MAP[customDraft.lineItemType]?.units || ['EA']).map(u => <option key={u} value={u}>{u}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <div style={{fontSize:11,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase',color:'#64748B',marginBottom:5}}>Qty</div>
+                    <input type="number" value={customDraft.qty} onChange={e=>setCustomDraft(d=>({...d,qty:e.target.value}))} style={{width:'100%',padding:'8px 12px',border:'1px solid #E2E8F0',borderRadius:8,fontSize:13}}/>
+                  </div>
+                  <div>
+                    <div style={{fontSize:11,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase',color:'#64748B',marginBottom:5}}>Rate</div>
+                    <input type="number" value={customDraft.rate} onChange={e=>setCustomDraft(d=>({...d,rate:e.target.value}))} style={{width:'100%',padding:'8px 12px',border:'1px solid #E2E8F0',borderRadius:8,fontSize:13}}/>
+                  </div>
+                </div>
+
+                <div style={{marginBottom:12}}>
+                  <div style={{fontSize:11,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase',color:'#64748B',marginBottom:5}}>Supplier (optional)</div>
+                  <input type="text" value={customDraft.supplierId} onChange={e=>setCustomDraft(d=>({...d,supplierId:e.target.value}))} placeholder="e.g. ACME Fire Systems" style={{width:'100%',padding:'8px 12px',border:'1px solid #E2E8F0',borderRadius:8,fontSize:13,outline:'none'}}/>
+                </div>
+
+                {LINE_ITEM_TYPE_MAP[customDraft.lineItemType]?.canAttachQuote && (
+                  <div style={{marginBottom:16,padding:'12px 14px',background:'#F0F9FF',border:'1px solid #BAE6FD',borderRadius:8}}>
+                    <div style={{fontSize:11,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase',color:'#0369A1',marginBottom:6}}>Supplier Quote PDF (optional)</div>
+                    <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+                      <input type="file" accept="application/pdf" onChange={e=>{
+                        const f = e.target.files?.[0];
+                        if (f) setCustomDraft(d=>({...d,quoteFileName:f.name}));
+                      }} style={{fontSize:12}}/>
+                      {customDraft.quoteFileName && <span style={{fontSize:11,color:'#0369A1'}}>📎 {customDraft.quoteFileName}</span>}
+                    </div>
+                    <div style={{fontSize:10,color:'#64748B',marginTop:6}}>Attach the supplier's written quote so it's audit-traceable on the estimate.</div>
+                  </div>
+                )}
+
+                <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>setShowCustomModal(false)}>Cancel</button>
+                  <button className="btn btn-primary" onClick={saveCustomItem} disabled={!customDraft.desc.trim()}>Add to Estimate</button>
+                </div>
+              </div>
             </div>
           )}
 
@@ -1133,6 +1584,7 @@ function VariationReport() {
   const base = 136200;
   const revised = base + totalDelta;
   const pctChange = (totalDelta / base * 100);
+  const [showPdfPreview, setShowPdfPreview] = useState(false);
 
   return (
     <div>
@@ -1180,10 +1632,27 @@ function VariationReport() {
           <span style={{fontSize:12,color:'#f59e0b',fontWeight:700}}>+{fmt(changedDelta)}</span>
         </div>
         <div style={{marginLeft:'auto',display:'flex',gap:8}}>
-          <button className="btn btn-ghost btn-sm">Export PDF</button>
+          <button className="btn btn-ghost btn-sm" onClick={()=>setShowPdfPreview(true)}>Export PDF</button>
           <button className="btn btn-ghost btn-sm">Export CSV</button>
         </div>
       </div>
+
+      <PdfPreviewModal
+        open={showPdfPreview}
+        onClose={()=>setShowPdfPreview(false)}
+        title="Variation Report PDF — Preview"
+        subtitle="Internal document · Riverside Apartments"
+        internal
+      >
+        <div style={{fontSize:15,fontWeight:800,color:'#0D1B2A',marginBottom:6}}>Variation Report — Internal</div>
+        <div style={{fontSize:11,color:'#64748B',marginBottom:14}}>EST-2026-001-001 → EST-2026-001-002 · Not for distribution</div>
+        <div style={{display:'flex',gap:10,marginBottom:14}}>
+          <div style={{flex:1,background:'#F8FAFC',padding:'10px 12px',borderRadius:6}}><div style={{fontSize:10,color:'#94A3B8'}}>V001 Base</div><div style={{fontSize:15,fontWeight:800}}>{fmt(base)}</div></div>
+          <div style={{flex:1,background:'#F8FAFC',padding:'10px 12px',borderRadius:6}}><div style={{fontSize:10,color:'#94A3B8'}}>Net Variation</div><div style={{fontSize:15,fontWeight:800,color:totalDelta>=0?'#EF4444':'#10B981'}}>{totalDelta>=0?'+':''}{fmt(totalDelta)}</div></div>
+          <div style={{flex:1,background:'#F8FAFC',padding:'10px 12px',borderRadius:6}}><div style={{fontSize:10,color:'#94A3B8'}}>V002 Revised</div><div style={{fontSize:15,fontWeight:800}}>{fmt(revised)}</div></div>
+        </div>
+        <div style={{fontSize:11,color:'#64748B'}}>Line-by-line deltas and risk flags would print here for your internal review.</div>
+      </PdfPreviewModal>
 
       {/* Variation table */}
       <div className="table-wrap mb-16">
@@ -1236,8 +1705,8 @@ function VariationReport() {
         </div>
       ))}
 
-      <div style={{marginTop:16,padding:'10px 14px',background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:8,fontSize:12,color:'#1d4ed8'}}>
-        📋 This report is ready to send. <strong>Export as PDF</strong> to attach to your revised estimate submission to the builder.
+      <div style={{marginTop:16,padding:'10px 14px',background:'#fffbeb',border:'1px solid #fde68a',borderLeft:'4px solid #F59E0B',borderRadius:8,fontSize:12,color:'#78350F'}}>
+        🔒 <strong>Internal document — not for distribution.</strong> Use this to inform your revised estimate before issuing to the builder.
       </div>
     </div>
   );
@@ -1808,12 +2277,37 @@ const REPORT_HOURS  = [
   {week:'Week 3 · 24 Mar', planned:40,actual:38,labour:3200,materials:810},
   {week:'Week 4 · 17 Mar', planned:40,actual:30,labour:2560,materials:640},
 ];
+// Milestone statuses (§9.1 standardised):
+// pending | ready-to-claim | invoiced-draft | invoiced | received
 const REPORT_MILESTONES = [
-  {label:'Rough-in Complete',   pct:25, amount:9120, status:'claimed',  claimDate:'17 Mar 2026', warning:false},
-  {label:'First Fix Complete',  pct:50, amount:9120, status:'warning',  claimDate:null,           warning:true},
-  {label:'Second Fix Complete', pct:75, amount:9120, status:'pending',  claimDate:null,           warning:false},
-  {label:'Practical Completion',pct:100,amount:9120, status:'pending',  claimDate:null,           warning:false},
+  {label:'Rough-in Complete',   pct:25, amount:9120, status:'invoiced',       claimDate:'17 Mar 2026', invoiceNo:'INV-2026-012', warning:false},
+  {label:'First Fix Complete',  pct:50, amount:9120, status:'ready-to-claim', claimDate:null,          invoiceNo:null,           warning:true},
+  {label:'Second Fix Complete', pct:75, amount:9120, status:'pending',        claimDate:null,          invoiceNo:null,           warning:false},
+  {label:'Practical Completion',pct:100,amount:9120, status:'pending',        claimDate:null,          invoiceNo:null,           warning:false},
 ];
+
+// Milestone status meta (colour + label) — (§5 RAG mapping + §9.1 terminology)
+const MILESTONE_STATUS = {
+  'pending':         { label:'Pending',          color:'#64748B', bg:'#F8FAFC', solid:false },
+  'ready-to-claim':  { label:'Ready to Claim',   color:'#F59E0B', bg:'#FFFBEB', solid:false },
+  'invoiced-draft':  { label:'Invoiced (Draft)', color:'#1D6EFD', bg:'#EFF6FF', solid:false },
+  'invoiced':        { label:'Invoiced',         color:'#1D6EFD', bg:'#DBEAFE', solid:true  },
+  'received':        { label:'Received',         color:'#10B981', bg:'#D1FAE5', solid:true  },
+};
+const MilestoneBadge = ({ status }) => {
+  const m = MILESTONE_STATUS[status] || MILESTONE_STATUS.pending;
+  return <span style={{
+    fontSize:10, fontWeight:700, padding:'3px 9px', borderRadius:20,
+    background: m.solid ? m.color : m.bg,
+    color: m.solid ? 'white' : m.color,
+    border: m.solid ? 'none' : `1px solid ${m.color}40`,
+    letterSpacing:0.2, whiteSpace:'nowrap'
+  }}>{m.label.toUpperCase()}</span>;
+};
+
+// Retention (held from final milestone) — 5% of contract, released after defect period
+const RETENTION_AMOUNT = 1824;
+const DEPOSIT_AMOUNT = 3648;
 const REPORT_OVERRUNS = [
   {item:'Copper cable surcharge',  cat:'Materials',amount:420, severity:'high',  note:'Spot market +8.2% since estimate locked'},
   {item:'Fuel & transport',        cat:'Labour',   amount:180, severity:'medium',note:'4 additional site visits beyond scope'},
@@ -1837,7 +2331,8 @@ function ReportsScreen() {
   const contingLeft   = B.contingency - totalOverrun;
   const totalPlanned  = REPORT_HOURS.reduce((s,h)=>s+h.planned,0);
   const totalActual   = REPORT_HOURS.reduce((s,h)=>s+h.actual,0);
-  const claimed       = REPORT_MILESTONES.filter(m=>m.status==='claimed').reduce((s,m)=>s+m.amount,0);
+  // "Claimed" on Overview = invoiced OR received milestones (excludes deposit which is tracked separately)
+  const claimed       = REPORT_MILESTONES.filter(m=>m.status==='invoiced' || m.status==='received').reduce((s,m)=>s+m.amount,0);
 
   // SVG Burndown chart helpers
   const CW=480, CH=130, steps=REPORT_WEEKS.length-1;
@@ -2093,32 +2588,34 @@ function ReportsScreen() {
           {payTab==='schedule' && (
             <div>
               {REPORT_MILESTONES.map((m,i)=>{
-                const statusColor = m.status==='claimed'?'#10B981':m.status==='warning'?'#F59E0B':'#94A3B8';
-                const statusBg    = m.status==='claimed'?'#F0FDF4':m.status==='warning'?'#FFFBEB':'#F8FAFC';
+                const meta = MILESTONE_STATUS[m.status];
+                const statusColor = meta.color;
+                const statusBg    = meta.bg;
                 return (
                   <div key={i} style={{background:'white',borderRadius:12,border:`1px solid ${m.warning?'#FDE68A':'#E2E8F0'}`,borderLeft:`4px solid ${statusColor}`,padding:'16px 20px',marginBottom:10,display:'flex',alignItems:'center',gap:16,flexWrap:'wrap'}}>
-                    {/* Circle */}
                     <div style={{width:52,height:52,borderRadius:26,border:`3px solid ${statusColor}`,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,background:statusBg}}>
                       <div style={{textAlign:'center'}}>
                         <div style={{fontSize:13,fontWeight:800,color:statusColor}}>{m.pct}%</div>
                       </div>
                     </div>
                     <div style={{flex:1}}>
-                      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:3}}>
+                      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:3,flexWrap:'wrap'}}>
                         <span style={{fontSize:14,fontWeight:700,color:'#1E293B'}}>{m.label}</span>
-                        {m.warning && <span style={{fontSize:10,fontWeight:700,background:'#FEF3C7',color:'#92400E',padding:'2px 7px',borderRadius:20}}>⚠️ WARNING</span>}
-                        {m.status==='claimed' && <span style={{fontSize:10,fontWeight:700,background:'#D1FAE5',color:'#065F46',padding:'2px 7px',borderRadius:20}}>✓ CLAIMED</span>}
+                        <MilestoneBadge status={m.status}/>
                       </div>
                       <div style={{fontSize:12,color:'#64748B'}}>
                         Claim amount: <strong>{fmt(m.amount)}</strong>
-                        {m.claimDate && <span style={{marginLeft:8,color:'#10B981'}}>Claimed {m.claimDate}</span>}
+                        {m.invoiceNo && <span style={{marginLeft:8,color:'#1D6EFD'}}>· {m.invoiceNo}</span>}
+                        {m.claimDate && <span style={{marginLeft:8,color:'#10B981'}}>Invoiced {m.claimDate}</span>}
                         {m.warning && <span style={{marginLeft:8,color:'#F59E0B'}}>Finance department notified</span>}
                       </div>
                     </div>
                     <div style={{flexShrink:0}}>
-                      {m.status==='claimed'
+                      {m.status==='received'
                         ? <span style={{fontSize:13,fontWeight:700,color:'#10B981'}}>✓ {fmt(m.amount)}</span>
-                        : m.status==='warning'
+                        : m.status==='invoiced'
+                        ? <span style={{fontSize:13,fontWeight:700,color:'#1D6EFD'}}>{fmt(m.amount)}</span>
+                        : m.status==='ready-to-claim'
                         ? <button style={{padding:'7px 14px',background:'#F59E0B',color:'white',border:'none',borderRadius:8,fontWeight:700,fontSize:12,cursor:'pointer'}}>Submit Claim</button>
                         : <span style={{fontSize:12,color:'#94A3B8',fontWeight:600}}>Pending</span>
                       }
@@ -2126,6 +2623,29 @@ function ReportsScreen() {
                   </div>
                 );
               })}
+
+              {/* Retention Release — 5th Payment Schedule item (§9.5) */}
+              <div style={{background:'white',borderRadius:12,border:'1px solid #FDE68A',borderLeft:'4px solid #F59E0B',padding:'16px 20px',marginBottom:10,display:'flex',alignItems:'center',gap:16,flexWrap:'wrap'}}>
+                <div style={{width:52,height:52,borderRadius:26,border:'3px solid #F59E0B',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,background:'#FFFBEB'}}>
+                  <span style={{fontSize:18}}>🔒</span>
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:3,flexWrap:'wrap'}}>
+                    <span style={{fontSize:14,fontWeight:700,color:'#1E293B'}}>Retention Release</span>
+                    <span title="Held until defect liability period ends. Typically 3–6 months post Practical Completion."
+                      style={{fontSize:10,fontWeight:700,padding:'3px 9px',borderRadius:20,background:'#FEF3C7',color:'#92400E',letterSpacing:0.2,cursor:'help'}}>
+                      RETENTION HOLDBACK
+                    </span>
+                  </div>
+                  <div style={{fontSize:12,color:'#64748B'}}>
+                    Retention Holdback — pending defect period · <strong>{fmt(RETENTION_AMOUNT)}</strong>
+                  </div>
+                </div>
+                <div style={{flexShrink:0}}>
+                  <span style={{fontSize:12,color:'#F59E0B',fontWeight:700}}>Pending</span>
+                </div>
+              </div>
+
               <div style={{background:'#F0F9FF',border:'1px solid #BAE6FD',borderRadius:10,padding:'12px 16px',fontSize:12,color:'#0369A1'}}>
                 💡 Milestone notifications trigger automatically: <strong>Finance alert at 50%</strong> remaining, <strong>warning at 25%</strong>, <strong>critical at 10%</strong>.
               </div>
@@ -2135,44 +2655,79 @@ function ReportsScreen() {
           {payTab==='deposit' && (
             <div style={{display:'flex',flexDirection:'column',gap:10}}>
               {[
-                {label:'Deposit on Signing',       pct:10, amount:3648,  status:'paid',    date:'10 Mar 2026',note:'Paid on commencement'},
-                {label:'Rough-in Milestone (25%)', pct:25, amount:9120,  status:'invoiced',date:'17 Mar 2026',note:'Invoice #INV-2026-012'},
-                {label:'First Fix Milestone (50%)',pct:25, amount:9120,  status:'pending', date:null,          note:'Pending milestone sign-off'},
-                {label:'Second Fix (75%)',          pct:25, amount:9120,  status:'pending', date:null,          note:''},
-                {label:'Retention Release',        pct:5,  amount:1824,  status:'pending', date:null,          note:'Held until defect period ends'},
-              ].map((p,i)=>(
-                <div key={i} style={{background:'white',borderRadius:10,border:'1px solid #E2E8F0',padding:'14px 18px',display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
-                  <div style={{width:36,height:36,borderRadius:8,background:p.status==='paid'?'#D1FAE5':p.status==='invoiced'?'#DBEAFE':'#F1F5F9',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0}}>
-                    {p.status==='paid'?'✅':p.status==='invoiced'?'📄':'⏳'}
+                {label:'Deposit on Signing',       pct:10, amount:DEPOSIT_AMOUNT, status:'received', date:'10 Mar 2026',note:'Paid on commencement'},
+                {label:'Rough-in Milestone (25%)', pct:25, amount:9120,           status:'invoiced', date:'17 Mar 2026',note:'Invoice #INV-2026-012'},
+                {label:'First Fix Milestone (50%)',pct:25, amount:9120,           status:'ready-to-claim', date:null, note:'Pending milestone sign-off'},
+                {label:'Second Fix (75%)',         pct:25, amount:9120,           status:'pending',  date:null,          note:''},
+                {label:'Retention Release',       pct:5,  amount:RETENTION_AMOUNT,status:'pending',  date:null,          note:'Retention Holdback — held until defect period ends',retention:true},
+              ].map((p,i)=>{
+                const meta = MILESTONE_STATUS[p.status];
+                const icon = p.status==='received'?'✅':p.status==='invoiced'?'📄':p.status==='ready-to-claim'?'🟡':p.retention?'🔒':'⏳';
+                return (
+                  <div key={i} style={{background:'white',borderRadius:10,border:`1px solid ${p.retention?'#FDE68A':'#E2E8F0'}`,borderLeft:p.retention?'4px solid #F59E0B':undefined,padding:'14px 18px',display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
+                    <div style={{width:36,height:36,borderRadius:8,background:meta.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0}}>
+                      {icon}
+                    </div>
+                    <div style={{flex:1}}>
+                      <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                        <span style={{fontSize:13,fontWeight:700,color:'#1E293B'}}>{p.label}</span>
+                        {p.retention && <span title="Held until defect liability period ends. Typically 3–6 months post Practical Completion." style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,background:'#FEF3C7',color:'#92400E',cursor:'help'}}>RETENTION HOLDBACK</span>}
+                      </div>
+                      <div style={{fontSize:11,color:'#94A3B8',marginTop:2}}>{p.note}{p.date && ` · ${p.date}`}</div>
+                    </div>
+                    <div style={{textAlign:'right'}}>
+                      <div style={{fontSize:15,fontWeight:800,color:meta.color}}>{fmt(p.amount)}</div>
+                      <MilestoneBadge status={p.status}/>
+                    </div>
                   </div>
-                  <div style={{flex:1}}>
-                    <div style={{fontSize:13,fontWeight:700,color:'#1E293B'}}>{p.label}</div>
-                    <div style={{fontSize:11,color:'#94A3B8'}}>{p.note}{p.date && ` · ${p.date}`}</div>
-                  </div>
-                  <div style={{textAlign:'right'}}>
-                    <div style={{fontSize:15,fontWeight:800,color:p.status==='paid'?'#10B981':p.status==='invoiced'?'#1D6EFD':'#94A3B8'}}>{fmt(p.amount)}</div>
-                    <div style={{fontSize:10,fontWeight:700,color:p.status==='paid'?'#10B981':p.status==='invoiced'?'#1D6EFD':'#94A3B8',textTransform:'uppercase'}}>{p.status}</div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
+
+              {/* Reconciliation note (§9.4) */}
+              <div style={{marginTop:6,padding:'12px 16px',background:'#F0F9FF',border:'1px solid #BAE6FD',borderRadius:10,fontSize:12,color:'#0369A1',lineHeight:1.5}}>
+                📘 <strong>Reconciliation note:</strong> Deposit ({fmt(DEPOSIT_AMOUNT)}) credited against contract total. Retention ({fmt(RETENTION_AMOUNT)}) held from final milestone payment.
+              </div>
             </div>
           )}
 
-          {payTab==='claims' && (
-            <div style={{background:'white',borderRadius:12,border:'1px solid #E2E8F0',padding:'16px 20px'}}>
-              <div style={{fontSize:13,fontWeight:700,color:'#1E293B',marginBottom:12}}>Claim Summary</div>
-              {[
-                {label:'Total Contract Value', val:fmt(B.total), color:'#1D6EFD'},
-                {label:'Claimed to Date',       val:fmt(claimed),  color:'#10B981'},
-                {label:'Unclaimed Remaining',   val:fmt(B.total-claimed), color:'#F59E0B'},
-              ].map((r,i)=>(
-                <div key={i} style={{display:'flex',justifyContent:'space-between',padding:'10px 0',borderBottom:i<2?'1px solid #F1F5F9':'none'}}>
-                  <span style={{fontSize:13,color:'#64748B'}}>{r.label}</span>
-                  <span style={{fontSize:15,fontWeight:800,color:r.color}}>{r.val}</span>
-                </div>
-              ))}
-            </div>
-          )}
+          {payTab==='claims' && (() => {
+            // §9.3 Claim Status — Deposit is a separate line above Progress Claims.
+            // Total Received = Deposit + confirmed (received) payments.
+            // Outstanding = Contract Value − Total Received.
+            const invoicedMilestones = REPORT_MILESTONES.filter(m => m.status === 'invoiced');
+            const receivedMilestones = REPORT_MILESTONES.filter(m => m.status === 'received');
+            const invoicedAmt = invoicedMilestones.reduce((s,m)=>s+m.amount, 0);
+            const receivedAmt = receivedMilestones.reduce((s,m)=>s+m.amount, 0);
+            const invoicedRef = invoicedMilestones.map(m => m.invoiceNo).filter(Boolean).join(', ');
+            const totalReceived = DEPOSIT_AMOUNT + receivedAmt;
+            const outstanding   = B.total - totalReceived;
+            const rows = [
+              { label:'Total Contract Value',   val:fmt(B.total),       color:'#1D6EFD', note:null, bold:true },
+              { label:'Deposit Received',        val:fmt(DEPOSIT_AMOUNT),color:'#10B981', note:'paid 10 Mar 2026' },
+              { label:'Progress Claims Invoiced',val:fmt(invoicedAmt),   color:'#1D6EFD', note:invoicedRef || '—' },
+              { label:'Progress Claims Received',val:fmt(receivedAmt),   color:receivedAmt>0?'#10B981':'#94A3B8', note:receivedAmt>0 ? null : 'awaiting payment' },
+              { sep:true },
+              { label:'Total Received to Date', val:fmt(totalReceived), color:'#10B981', bold:true },
+              { label:'Outstanding',            val:fmt(outstanding),   color:'#F59E0B', bold:true },
+            ];
+            return (
+              <div style={{background:'white',borderRadius:12,border:'1px solid #E2E8F0',padding:'16px 20px'}}>
+                <div style={{fontSize:13,fontWeight:700,color:'#1E293B',marginBottom:12}}>Claim Summary</div>
+                {rows.map((r,i)=>{
+                  if (r.sep) return <div key={i} style={{height:1,background:'#E2E8F0',margin:'8px 0'}}/>;
+                  return (
+                    <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'8px 0',borderBottom: i<rows.length-1 && !rows[i+1]?.sep ? '1px solid #F1F5F9' : 'none'}}>
+                      <div>
+                        <span style={{fontSize:13,color:'#64748B',fontWeight:r.bold?700:500}}>{r.label}</span>
+                        {r.note && <span style={{fontSize:11,color:'#94A3B8',marginLeft:8}}>({r.note})</span>}
+                      </div>
+                      <span style={{fontSize:r.bold?16:14,fontWeight:r.bold?800:600,color:r.color}}>{r.val}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -2480,9 +3035,14 @@ function VendorPricing() {
 
 // ── Email Upload ────────────────────────────────────────────────────────────
 function EmailUpload({ onNavigate }) {
+  const { tenant } = useTenant();
   const [autoScan, setAutoScan]     = useState(true);
   const [scanning, setScanning]     = useState(null);
   const [scanned, setScanned]       = useState([]);
+  // Derive a tenant-scoped inbox subdomain from the trading name (no ElectraScan branding on outputs).
+  const slug = tenant.tradingName.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 20) || 'company';
+  const inboxLocal = 'drawings';
+  const inboxDomain = `${slug}.drawings.app`;
 
   const triggerScan = (id) => {
     setScanning(id);
@@ -2499,13 +3059,13 @@ function EmailUpload({ onNavigate }) {
         <button className="btn btn-primary btn-sm">📤 Upload File Manually</button>
       </div>
 
-      {/* Inbox address card */}
+      {/* Inbox address card — tenant-scoped, no ElectraScan mention externally */}
       <div style={{background:'linear-gradient(135deg,#0D1B2A 0%,#1A3A5C 100%)',borderRadius:14,padding:24,marginBottom:20,color:'white',display:'flex',alignItems:'center',gap:20,flexWrap:'wrap'}}>
         <div style={{fontSize:36}}>📧</div>
         <div style={{flex:1}}>
-          <div style={{fontSize:11,fontWeight:700,letterSpacing:'1px',textTransform:'uppercase',color:'#60A5FA',marginBottom:4}}>Your ElectraScan Inbox</div>
-          <div style={{fontSize:18,fontWeight:800,letterSpacing:'-0.5px',marginBottom:6}}>damien.callaghan<span style={{color:'#60A5FA'}}>@drawings.electrascan.app</span></div>
-          <div style={{fontSize:12,color:'#94A3B8'}}>Forward or CC this address on any email with drawing attachments. Plans are automatically detected, queued and scanned.</div>
+          <div style={{fontSize:11,fontWeight:700,letterSpacing:'1px',textTransform:'uppercase',color:'#60A5FA',marginBottom:4}}>Your Drawings Inbox</div>
+          <div style={{fontSize:18,fontWeight:800,letterSpacing:'-0.5px',marginBottom:6}}>{inboxLocal}<span style={{color:'#60A5FA'}}>@{inboxDomain}</span></div>
+          <div style={{fontSize:12,color:'#94A3B8'}}>Forward or CC this address on any email with drawing attachments. Plans are automatically detected, queued and scanned. Builders and architects see only your company name — no ElectraScan branding.</div>
         </div>
         <div style={{display:'flex',flexDirection:'column',gap:8}}>
           <button style={{background:'#1D6EFD',color:'white',border:'none',borderRadius:8,padding:'8px 16px',fontSize:12,fontWeight:700,cursor:'pointer'}}>📋 Copy Address</button>
@@ -2593,22 +3153,406 @@ function EmailUpload({ onNavigate }) {
   );
 }
 
+// Shared PDF preview modal — ALWAYS uses tenant letterhead, never ElectraScan
+function PdfPreviewModal({ open, title, subtitle, onClose, children, internal = false }) {
+  const { tenant } = useTenant();
+  if (!open) return null;
+  return (
+    <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:1500,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(4px)',padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:'#F8FAFC',borderRadius:14,width:'100%',maxWidth:640,maxHeight:'92vh',overflow:'auto',boxShadow:'0 24px 80px rgba(0,0,0,0.4)'}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 18px',background:'#0D1B2A',color:'white',borderRadius:'14px 14px 0 0'}}>
+          <div>
+            <div style={{fontSize:13,fontWeight:700}}>{title}</div>
+            <div style={{fontSize:10,color:'#94A3B8'}}>{subtitle}</div>
+          </div>
+          <div style={{display:'flex',gap:8,alignItems:'center'}}>
+            {internal && <span style={{fontSize:9,fontWeight:700,background:'#F59E0B',color:'#0D1B2A',padding:'2px 8px',borderRadius:10,letterSpacing:'1px'}}>INTERNAL ONLY</span>}
+            <button onClick={onClose} style={{background:'rgba(255,255,255,0.15)',border:'none',color:'white',width:28,height:28,borderRadius:6,cursor:'pointer',fontSize:14}}>✕</button>
+          </div>
+        </div>
+        <div style={{padding:18}}>
+          <div style={{background:'white',border:'1px solid #E2E8F0',borderRadius:8,overflow:'hidden',boxShadow:'0 2px 8px rgba(0,0,0,0.06)'}}>
+            <CompanyLetterhead tenant={tenant}/>
+            <div style={{padding:'18px 22px',minHeight:180}}>{children}</div>
+            <CompanyFooter tenant={tenant}/>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Tenant Settings / White-Label Onboarding ───────────────────────────────
+function TenantSettings() {
+  const { tenant, setTenant } = useTenant();
+  const [draft, setDraft] = useState(tenant);
+  const [saved, setSaved] = useState(false);
+  const [preview, setPreview] = useState('estimate'); // estimate | builder-email | bom | milestone
+  const fileRef = useRef(null);
+
+  const isDirty = JSON.stringify(draft) !== JSON.stringify(tenant);
+
+  const handleLogo = (file) => {
+    if (!file) return;
+    if (!/^image\/(png|svg\+xml|jpeg)$/.test(file.type)) {
+      alert('Logo must be PNG, SVG, or JPG');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setDraft(d => ({ ...d, logoDataUrl: reader.result }));
+    reader.readAsDataURL(file);
+  };
+
+  const save = () => { setTenant(draft); setSaved(true); setTimeout(() => setSaved(false), 2200); };
+  const reset = () => setDraft(tenant);
+
+  const inputStyle = { width: '100%', padding: '8px 12px', border: '1px solid #E2E8F0', borderRadius: 8, fontSize: 13, outline: 'none', fontFamily: 'inherit' };
+  const fieldLabelStyle = { fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', color: '#64748B', marginBottom: 5 };
+
+  return (
+    <div>
+      <div className="section-title">Company Settings</div>
+      <div className="section-sub">Your branding appears on every PDF export, builder email, supplier BOM, and milestone notification. ElectraScan branding never appears on external outputs.</div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 1fr) minmax(360px, 1.2fr)', gap: 20 }}>
+        {/* ── Editor ── */}
+        <div className="card">
+          <div className="label" style={{ marginBottom: 12 }}>Business Details</div>
+
+          <div style={{ marginBottom: 14 }}>
+            <div style={fieldLabelStyle}>Trading Name</div>
+            <input type="text" value={draft.tradingName} onChange={e => setDraft(d => ({ ...d, tradingName: e.target.value }))} placeholder="Vesh Electrical Services" style={inputStyle}/>
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <div style={fieldLabelStyle}>ABN</div>
+            <input type="text" value={draft.abn} onChange={e => setDraft(d => ({ ...d, abn: e.target.value }))} placeholder="47 612 389 204" style={inputStyle}/>
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <div style={fieldLabelStyle}>Business Address</div>
+            <input type="text" value={draft.address} onChange={e => setDraft(d => ({ ...d, address: e.target.value }))} placeholder="24 Union Rd, Ascot Vale VIC 3032" style={inputStyle}/>
+          </div>
+
+          <div className="label" style={{ marginBottom: 12, marginTop: 14 }}>Contact</div>
+          <div style={{ marginBottom: 14 }}>
+            <div style={fieldLabelStyle}>Contact Email</div>
+            <input type="email" value={draft.contactEmail} onChange={e => setDraft(d => ({ ...d, contactEmail: e.target.value }))} style={inputStyle}/>
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <div style={fieldLabelStyle}>Contact Phone</div>
+            <input type="text" value={draft.contactPhone} onChange={e => setDraft(d => ({ ...d, contactPhone: e.target.value }))} style={inputStyle}/>
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <div style={fieldLabelStyle}>Email Reply-To</div>
+            <input type="email" value={draft.emailReplyTo} onChange={e => setDraft(d => ({ ...d, emailReplyTo: e.target.value }))} style={inputStyle}/>
+          </div>
+
+          <div className="label" style={{ marginBottom: 12, marginTop: 14 }}>Branding</div>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', color: '#64748B', marginBottom: 5 }}>Logo (PNG / SVG / JPG)</div>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 14 }}>
+            <div style={{ width: 64, height: 64, borderRadius: 10, border: '1px dashed #CBD5E1', background: draft.logoDataUrl ? 'white' : '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+              {draft.logoDataUrl
+                ? <img src={draft.logoDataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }}/>
+                : <span style={{ fontSize: 20 }}>🏢</span>}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <input ref={fileRef} type="file" accept="image/png,image/svg+xml,image/jpeg" onChange={e => handleLogo(e.target.files?.[0])} style={{ display: 'none' }}/>
+              <button className="btn btn-secondary btn-sm" onClick={() => fileRef.current?.click()}>Upload Logo</button>
+              {draft.logoDataUrl && <button className="btn btn-ghost btn-sm" onClick={() => setDraft(d => ({ ...d, logoDataUrl: '' }))}>Remove</button>}
+            </div>
+          </div>
+
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', color: '#64748B', marginBottom: 5 }}>Accent Colour</div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14 }}>
+            <input type="color" value={draft.accentColor} onChange={e => setDraft(d => ({ ...d, accentColor: e.target.value }))} style={{ width: 44, height: 32, padding: 0, border: '1px solid #E2E8F0', borderRadius: 6 }}/>
+            <span style={{ fontSize: 12, color: '#64748B', fontFamily: 'monospace' }}>{draft.accentColor}</span>
+          </div>
+
+          <div className="label" style={{ marginBottom: 12, marginTop: 14 }}>Component Categories (§4.5)</div>
+          <div style={{ fontSize: 11, color: '#64748B', marginBottom: 10 }}>Categories are tenant-configurable. These drive the JSONB <code style={{background:'#F1F5F9',padding:'1px 4px',borderRadius:3,fontSize:10}}>meta</code> schema for every component and line item.</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
+            {draft.categories.map((c, i) => (
+              <div key={c.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 10px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 8 }}>
+                <input type="text" value={c.label} onChange={e => {
+                  const next = [...draft.categories]; next[i] = { ...c, label: e.target.value };
+                  setDraft(d => ({ ...d, categories: next }));
+                }} style={{ flex: 1, padding: '5px 8px', border: '1px solid #E2E8F0', borderRadius: 6, fontSize: 12 }}/>
+                <span style={{ fontSize: 10, color: '#94A3B8', fontFamily: 'monospace' }}>{c.id}</span>
+                <button onClick={() => setDraft(d => ({ ...d, categories: d.categories.filter(x => x.id !== c.id) }))}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#EF4444', fontSize: 14 }}>✕</button>
+              </div>
+            ))}
+          </div>
+          <button className="btn btn-ghost btn-sm" onClick={() => {
+            const id = 'cat-' + Date.now().toString(36);
+            setDraft(d => ({ ...d, categories: [...d.categories, { id, label: 'New category', meta: [] }] }));
+          }}>+ Add Category</button>
+
+          <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
+            <button className="btn btn-primary" onClick={save} disabled={!isDirty}>{saved ? '✓ Saved' : 'Save Changes'}</button>
+            <button className="btn btn-ghost btn-sm" onClick={reset} disabled={!isDirty}>Discard</button>
+          </div>
+        </div>
+
+        {/* ── Preview pane ── */}
+        <div>
+          <div className="label" style={{ marginBottom: 10 }}>External Output Preview</div>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+            {[
+              ['estimate', 'Estimate PDF'],
+              ['builder-email', 'Builder Email'],
+              ['bom', 'Supplier BOM'],
+              ['milestone', 'Milestone Notice'],
+            ].map(([id, lbl]) => (
+              <button key={id} onClick={() => setPreview(id)} className={`pill ${preview===id?'active':''}`}>{lbl}</button>
+            ))}
+          </div>
+
+          {preview === 'estimate' && (
+            <div style={{ background: 'white', border: '1px solid #E2E8F0', borderRadius: 10, overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+              <CompanyLetterhead tenant={draft}/>
+              <div style={{ padding: '18px 20px' }}>
+                <div style={{ fontSize: 15, fontWeight: 800, color: '#0D1B2A' }}>Electrical Estimate</div>
+                <div style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>EST-2026-001-002 · Riverside Apartments · Issued 18 Mar 2026</div>
+                <div style={{ marginTop: 14, fontSize: 12, color: '#1E293B' }}>Total: <strong>$148,500</strong> (incl. GST)</div>
+                <div style={{ marginTop: 4, fontSize: 11, color: '#64748B' }}>Prepared for Lendlease Construction.</div>
+              </div>
+              <CompanyFooter tenant={draft}/>
+            </div>
+          )}
+
+          {preview === 'builder-email' && (
+            <div style={{ background: 'white', border: '1px solid #E2E8F0', borderRadius: 10, overflow: 'hidden' }}>
+              <CompanyLetterhead tenant={draft} variant="email"/>
+              <div style={{ padding: '18px 20px', fontSize: 12, color: '#1E293B', lineHeight: 1.6 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Subject: Revised Estimate — Riverside Apartments | EST-2026-001-002</div>
+                Hi Tom,<br/><br/>
+                {draft.tradingName} has issued a revised estimate for your project.<br/><br/>
+                <strong>Project:</strong> Riverside Apartments<br/>
+                <strong>Estimate Ref:</strong> EST-2026-001-002<br/>
+                <strong>Revision:</strong> Version 2 of 2<br/>
+                <strong>Estimate Value:</strong> $148,500 (incl. GST)<br/><br/>
+                Please review and confirm acceptance to proceed.<br/><br/>
+                <button style={{ background: draft.accentColor, color: 'white', border: 'none', borderRadius: 6, padding: '8px 14px', fontSize: 12, fontWeight: 700 }}>View & Accept Estimate</button>
+                <br/><br/>
+                <span style={{ color: '#64748B' }}>— {draft.tradingName}</span>
+              </div>
+              <CompanyFooter tenant={draft}/>
+            </div>
+          )}
+
+          {preview === 'bom' && (
+            <div style={{ background: 'white', border: '1px solid #E2E8F0', borderRadius: 10, overflow: 'hidden' }}>
+              <CompanyLetterhead tenant={draft}/>
+              <div style={{ padding: '18px 20px' }}>
+                <div style={{ fontSize: 15, fontWeight: 800, color: '#0D1B2A' }}>Bill of Materials — Supplier Request</div>
+                <div style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>Project: Riverside Apartments · Issued to Lawrence & Hanson</div>
+                <table style={{ marginTop: 14, width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                  <thead>
+                    <tr style={{ background: '#F8FAFC' }}>
+                      <th style={{ padding: '6px 10px', textAlign: 'left' }}>Code</th>
+                      <th style={{ padding: '6px 10px', textAlign: 'left' }}>Item</th>
+                      <th style={{ padding: '6px 10px', textAlign: 'right' }}>Qty</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr><td style={{ padding: '6px 10px' }}>2025WE</td><td style={{ padding: '6px 10px' }}>Clipsal 2000 GPO Double</td><td style={{ padding: '6px 10px', textAlign: 'right' }}>23</td></tr>
+                    <tr><td style={{ padding: '6px 10px' }}>BL-DL10WH</td><td style={{ padding: '6px 10px' }}>Brilliant 10W LED Downlight</td><td style={{ padding: '6px 10px', textAlign: 'right' }}>21</td></tr>
+                    <tr><td style={{ padding: '6px 10px' }}>TPS25-100</td><td style={{ padding: '6px 10px' }}>Olex TPS Cable 2.5mm 100m Coil</td><td style={{ padding: '6px 10px', textAlign: 'right' }}>5</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <CompanyFooter tenant={draft}/>
+            </div>
+          )}
+
+          {preview === 'milestone' && (
+            <div style={{ background: 'white', border: '1px solid #E2E8F0', borderRadius: 10, overflow: 'hidden' }}>
+              <CompanyLetterhead tenant={draft} variant="email"/>
+              <div style={{ padding: '18px 20px', fontSize: 12, color: '#1E293B', lineHeight: 1.6 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Subject: Milestone Invoice — Rough-in Complete</div>
+                Dear Allen Build,<br/><br/>
+                The Rough-in Complete milestone has been reached on Riverside Apartments.<br/><br/>
+                <strong>Invoice:</strong> INV-2026-012<br/>
+                <strong>Amount:</strong> $9,120 (incl. GST)<br/>
+                <strong>Payable to:</strong> {draft.tradingName}<br/>
+                <strong>ABN:</strong> {draft.abn}<br/><br/>
+                Payment terms as per contract. Any queries reply-to <strong>{draft.emailReplyTo}</strong>.<br/><br/>
+                Regards,<br/>{draft.tradingName}
+              </div>
+              <CompanyFooter tenant={draft}/>
+            </div>
+          )}
+
+          <div style={{ marginTop: 10, padding: '10px 14px', background: '#F0F9FF', border: '1px solid #BAE6FD', borderRadius: 8, fontSize: 11, color: '#0369A1', display: 'flex', alignItems: 'center', gap: 8 }}>
+            🔒 No ElectraScan branding appears on any external-facing output. Internal app UI (sidebar, dashboard) shows ElectraScan branding only to you.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── App ─────────────────────────────────────────────────────────────────────
 function App() {
+  const [tenant, setTenantState] = useState(() => loadTenant());
+  const setTenant = (t) => { setTenantState(t); saveTenant(t); };
+  const tenantCtx = useMemo(() => ({ tenant, setTenant }), [tenant]);
+
   const [page, setPage] = useState('dashboard');
   const [selectedProject, setSelectedProject] = useState(MOCK_PROJECTS[0]);
   const [navActive, setNavActive] = useState('dashboard');
-  const [showQR, setShowQR] = useState(false);
-  const [qrExpiry, setQrExpiry] = useState(300); // 5 min countdown in seconds
-  const [qrTimer, setQrTimer] = useState(null);
 
-  const openQR = () => {
-    setShowQR(true); setQrExpiry(300);
-    const iv = setInterval(()=> setQrExpiry(s => { if(s<=1){ clearInterval(iv); setShowQR(false); return 0; } return s-1; }), 1000);
-    setQrTimer(iv);
-  };
-  const closeQR = () => { setShowQR(false); if(qrTimer) clearInterval(qrTimer); };
+  const isDesktop = useIsDesktop();
+
+  // ── QR Handoff state (§7) ───────────────────────────────────────────────
+  // Phases: idle → saving (force-save spinner) → active (QR shown) → expired
+  const HANDOFF_TTL = 600; // 10 min per spec
+  const [qrPhase, setQrPhase] = useState('idle');
+  const [qrToken, setQrToken] = useState(null);
+  const [qrUrl, setQrUrl] = useState(null);
+  const [qrSnapshot, setQrSnapshot] = useState(null);
+  const [qrExpiry, setQrExpiry] = useState(HANDOFF_TTL);
+  const qrTimerRef = useRef(null);
   const qrFmt = (s) => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+
+  const requestHandoffToken = async () => {
+    // Force-save payload to backend. Voice note in progress → prompt to stop first (§7)
+    // This prototype doesn't have real per-route state, so we snapshot the current page.
+    const body = {
+      route: page,
+      projectId: selectedProject?.id ?? null,
+      estimateId: page === 'estimate' ? 'EST-2026-001-002' : null,
+      tabState: null,
+    };
+    try {
+      const res = await fetch('/api/sessions/handoff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error('handoff POST failed: ' + res.status);
+      return await res.json();
+    } catch (err) {
+      // The prototype may be served as a static file (no backend). Fall back
+      // to a client-only simulated token so the UX still works end-to-end.
+      console.warn('Handoff API unavailable, using client-only token', err);
+      const r = () => Math.random().toString(36).slice(2, 6).toUpperCase();
+      const token = `ESC-${r()}-${r()}`;
+      const snapshotAt = new Date().toISOString();
+      // Stash the payload in localStorage so the same browser can receive it.
+      try { localStorage.setItem(`handoff:${token}`, JSON.stringify({ ...body, snapshotAt, expiresAt: Date.now() + HANDOFF_TTL * 1000 })); } catch {}
+      return { token, snapshotAt, expiresInSeconds: HANDOFF_TTL, qrPayload: `/handoff?token=${encodeURIComponent(token)}`, backend: 'client' };
+    }
+  };
+
+  const startCountdown = () => {
+    if (qrTimerRef.current) clearInterval(qrTimerRef.current);
+    qrTimerRef.current = setInterval(() => {
+      setQrExpiry(s => {
+        if (s <= 1) {
+          clearInterval(qrTimerRef.current);
+          setQrPhase('expired');
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+  };
+
+  const openQR = async () => {
+    // Voice recording guard — refuse to start handoff while voice note in progress.
+    if (typeof window !== 'undefined' && window.__voiceRecordingActive) {
+      alert('Please stop the voice note recording before continuing on mobile.');
+      return;
+    }
+    setQrPhase('saving');
+    const result = await requestHandoffToken();
+    setQrToken(result.token);
+    setQrSnapshot(result.snapshotAt);
+    const origin = (typeof window !== 'undefined') ? window.location.origin : '';
+    const url = `${origin}${result.qrPayload || `/handoff?token=${result.token}`}`;
+    // For prototype which lives at /prototype.html, add the redirect path so the mobile
+    // receive handler still resolves.
+    const protoUrl = `${origin}/prototype.html?handoff=${encodeURIComponent(result.token)}`;
+    setQrUrl(protoUrl);
+    setQrExpiry(HANDOFF_TTL);
+    setQrPhase('active');
+    startCountdown();
+  };
+
+  const regenerateQR = async () => {
+    if (qrTimerRef.current) clearInterval(qrTimerRef.current);
+    setQrPhase('saving');
+    const result = await requestHandoffToken();
+    setQrToken(result.token);
+    setQrSnapshot(result.snapshotAt);
+    const origin = (typeof window !== 'undefined') ? window.location.origin : '';
+    setQrUrl(`${origin}/prototype.html?handoff=${encodeURIComponent(result.token)}`);
+    setQrExpiry(HANDOFF_TTL);
+    setQrPhase('active');
+    startCountdown();
+  };
+
+  const closeQR = () => {
+    setQrPhase('idle');
+    if (qrTimerRef.current) { clearInterval(qrTimerRef.current); qrTimerRef.current = null; }
+  };
+
+  // ── Mobile handoff receive (§7) ─────────────────────────────────────────
+  // On app load, check for ?handoff=TOKEN; show confirmation modal before loading.
+  const [incomingHandoff, setIncomingHandoff] = useState(null);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const tok = params.get('handoff');
+    if (!tok) return;
+
+    (async () => {
+      // Try backend first; fall back to localStorage stash from same-browser desktop.
+      try {
+        const res = await fetch(`/api/sessions/handoff/${encodeURIComponent(tok)}`);
+        if (res.ok) {
+          const body = await res.json();
+          setIncomingHandoff({ token: tok, session: body.session, source: 'server' });
+          return;
+        }
+      } catch {}
+      try {
+        const raw = localStorage.getItem(`handoff:${tok}`);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed.expiresAt > Date.now()) {
+            setIncomingHandoff({ token: tok, session: parsed, source: 'client' });
+            localStorage.removeItem(`handoff:${tok}`); // single-use
+            return;
+          }
+        }
+      } catch {}
+      setIncomingHandoff({ token: tok, session: null, source: 'expired' });
+    })();
+
+    // Clear the query param from the URL so refresh doesn't re-trigger.
+    const newUrl = window.location.pathname + window.location.hash;
+    window.history.replaceState(null, '', newUrl);
+  }, []);
+
+  const acceptHandoff = () => {
+    const s = incomingHandoff?.session;
+    if (s?.route) { setPage(s.route); setNavActive(s.route); }
+    setIncomingHandoff(null);
+  };
+  const dismissHandoff = () => setIncomingHandoff(null);
+
+  // Mobile Scan button — on mobile, centre-ish bottom nav acts as QR reader.
+  // The spec's full camera flow isn't part of this prototype; we surface a
+  // paste-token fallback so the flow is demonstrable on any device.
+  const [showScanInput, setShowScanInput] = useState(false);
+  const [scanInput, setScanInput] = useState('');
+  const submitScanToken = () => {
+    const tok = scanInput.trim();
+    if (!tok) return;
+    window.location.search = `?handoff=${encodeURIComponent(tok)}`;
+  };
 
   const navigate = (target, data) => {
     if (target === 'project-detail') {
@@ -2640,6 +3584,7 @@ function App() {
     'email-upload': { title: 'Email Upload',     sub: 'Forward drawings to your ElectraScan inbox' },
     approvals:      { title: 'Approvals',        sub: 'EST-2026-003 → EST-2026-004 · Allen Build' },
     reports:        { title: 'Project Reports',  sub: 'Riverside Apartments · Internal Only' },
+    settings:       { title: 'Company Settings', sub: 'White-label configuration for all external outputs' },
   }[page] || { title: 'ElectraScan', sub: '' };
 
   const renderPage = () => {
@@ -2653,19 +3598,21 @@ function App() {
       case 'email-upload':  return <EmailUpload onNavigate={navigate} />;
       case 'approvals':     return <ApprovalsScreen />;
       case 'reports':       return <ReportsScreen />;
+      case 'settings':      return <TenantSettings />;
       default:              return <Dashboard onNavigate={navigate} />;
     }
   };
 
   return (
+    <TenantContext.Provider value={tenantCtx}>
     <div className="app">
-      {/* Sidebar */}
+      {/* Sidebar — internal only, ElectraScan branding allowed here */}
       <div className="sidebar">
         <div className="sidebar-logo">
           <div className="logo-icon">⚡</div>
           <div>
             <div className="logo-text">ElectraScan</div>
-            <div className="logo-sub">Vesh Electrical</div>
+            <div className="logo-sub">{tenant.tradingName}</div>
           </div>
         </div>
         <div className="nav-section">Main</div>
@@ -2683,22 +3630,25 @@ function App() {
           </div>
         ))}
         <div className="nav-section">Tools</div>
-        {NAV.slice(6).map(n => (
+        {NAV.slice(6,8).map(n => (
           <div key={n.id} className={`nav-item ${navActive===n.id?'active':''}`}
             onClick={() => navigate(n.id)}>
             <span className="nav-icon">{n.icon}</span>{n.label}
           </div>
         ))}
-        <div className="nav-section">Quick Actions</div>
-        <div className="nav-item" onClick={() => navigate('project-detail', MOCK_PROJECTS[0])}>
-          <span className="nav-icon">📤</span> Upload Drawings
-        </div>
+        <div className="nav-section">Admin</div>
+        {NAV.slice(8).map(n => (
+          <div key={n.id} className={`nav-item ${navActive===n.id?'active':''}`}
+            onClick={() => navigate(n.id)}>
+            <span className="nav-icon">{n.icon}</span>{n.label}
+          </div>
+        ))}
         <div className="sidebar-footer">
           <div className="user-chip">
             <div className="user-avatar">DC</div>
             <div>
               <div className="user-name" style={{color:'white',fontSize:12,fontWeight:600}}>Damien Callaghan</div>
-              <div className="user-name">Vesh Electrical</div>
+              <div className="user-name">{tenant.tradingName}</div>
             </div>
           </div>
         </div>
@@ -2713,9 +3663,11 @@ function App() {
           </div>
           <div className="topbar-actions">
             <span className="badge badge-green" style={{fontSize:10}}>⚡ ElectraScan v1.0</span>
-            <button className="btn btn-outline btn-sm" onClick={openQR} style={{display:'flex',alignItems:'center',gap:5}}>
-              📱 Continue on Mobile
-            </button>
+            {isDesktop && (
+              <button className="btn btn-outline btn-sm" onClick={openQR} style={{display:'flex',alignItems:'center',gap:5}}>
+                📱 Continue on Mobile
+              </button>
+            )}
             <button className="btn btn-primary btn-sm" onClick={() => navigate('project-detail', MOCK_PROJECTS[0])}>
               + New Project
             </button>
@@ -2726,90 +3678,151 @@ function App() {
         </div>
       </div>
 
-      {/* Mobile bottom nav */}
+      {/* Mobile bottom nav — 5 items: Projects / Estimate / [Scan centre] / Library / More */}
       <div className="bottom-nav">
-        {NAV.slice(0,4).map(n => (
-          <div key={n.id} className={`bottom-nav-item ${navActive===n.id?'active':''}`}
-            onClick={() => navigate(n.id)}>
-            <span className="bottom-nav-icon">{n.icon}</span>
-            {n.label}
-          </div>
-        ))}
+        <div className={`bottom-nav-item ${navActive==='projects'?'active':''}`} onClick={() => navigate('projects')}>
+          <span className="bottom-nav-icon">📁</span>Projects
+        </div>
+        <div className={`bottom-nav-item ${navActive==='estimate'?'active':''}`} onClick={() => navigate('estimate')}>
+          <span className="bottom-nav-icon">💰</span>Estimate
+        </div>
+        {/* Centre Scan button — primary action + QR reader for desktop handoff receive (§7) */}
+        <div className="bottom-nav-scan" onClick={() => setShowScanInput(true)}>
+          <div className="bottom-nav-scan-btn">📷</div>
+          <span>Scan</span>
+        </div>
+        <div className={`bottom-nav-item ${navActive==='pricing'?'active':''}`} onClick={() => navigate('pricing')}>
+          <span className="bottom-nav-icon">🏪</span>Library
+        </div>
+        <div className={`bottom-nav-item ${navActive==='dashboard'?'active':''}`} onClick={() => navigate('dashboard')}>
+          <span className="bottom-nav-icon">⋯</span>More
+        </div>
       </div>
 
-      {/* ── QR Handoff Modal ── */}
-      {showQR && (
-        <div onClick={closeQR} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(4px)'}}>
-          <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:20,padding:36,maxWidth:420,width:'90%',textAlign:'center',boxShadow:'0 24px 80px rgba(0,0,0,0.4)'}}>
-            {/* Header */}
+      {/* ── QR Handoff Modal (§7) ── */}
+      {qrPhase !== 'idle' && (
+        <div onClick={closeQR} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(4px)',padding:20}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:20,padding:32,maxWidth:440,width:'100%',textAlign:'center',boxShadow:'0 24px 80px rgba(0,0,0,0.4)',maxHeight:'92vh',overflow:'auto'}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,marginBottom:6}}>
               <div style={{width:36,height:36,borderRadius:9,background:'linear-gradient(135deg,#1D6EFD,#0EA5E9)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>⚡</div>
               <div style={{fontSize:18,fontWeight:800,color:'#0D1B2A'}}>Continue on Mobile</div>
             </div>
-            <div style={{fontSize:13,color:'#64748B',marginBottom:24}}>Scan this code with your phone to pick up exactly where you left off</div>
 
-            {/* QR code SVG (visual representation) */}
-            <div style={{display:'inline-block',padding:16,background:'white',border:'3px solid #0D1B2A',borderRadius:12,marginBottom:20}}>
-              <svg width="160" height="160" viewBox="0 0 160 160" style={{display:'block'}}>
-                {/* Finder patterns */}
-                <rect x="8" y="8" width="44" height="44" rx="4" fill="#0D1B2A"/>
-                <rect x="14" y="14" width="32" height="32" rx="2" fill="white"/>
-                <rect x="20" y="20" width="20" height="20" rx="1" fill="#0D1B2A"/>
-                <rect x="108" y="8" width="44" height="44" rx="4" fill="#0D1B2A"/>
-                <rect x="114" y="14" width="32" height="32" rx="2" fill="white"/>
-                <rect x="120" y="20" width="20" height="20" rx="1" fill="#0D1B2A"/>
-                <rect x="8" y="108" width="44" height="44" rx="4" fill="#0D1B2A"/>
-                <rect x="14" y="114" width="32" height="32" rx="2" fill="white"/>
-                <rect x="20" y="120" width="20" height="20" rx="1" fill="#0D1B2A"/>
-                {/* Data modules (decorative) */}
-                {[60,68,76,84,92,100].map(x=>[60,68,76,84,92,100].map(y=> Math.sin(x*y)>0.2 &&
-                  <rect key={`${x}-${y}`} x={x} y={y} width="6" height="6" fill="#0D1B2A"/>
-                ))}
-                {[60,76,92].map(x=><rect key={`t${x}`} x={x} y={8} width="6" height="6" fill="#0D1B2A"/>)}
-                {[60,76,92].map(x=><rect key={`b${x}`} x={x} y={152} width="6" height="6" fill="#0D1B2A"/>)}
-                {[60,76,92].map(y=><rect key={`l${y}`} x={8} y={y} width="6" height="6" fill="#0D1B2A"/>)}
-                {/* ElectraScan centre logo */}
-                <rect x="68" y="68" width="24" height="24" rx="4" fill="#1D6EFD"/>
-                <text x="80" y="84" textAnchor="middle" fill="white" fontSize="14" fontWeight="bold">⚡</text>
-              </svg>
-            </div>
+            {qrPhase === 'saving' && (
+              <div style={{padding:'32px 0'}}>
+                <div style={{width:48,height:48,margin:'0 auto 14px',border:'4px solid #E2E8F0',borderTopColor:'#1D6EFD',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>
+                <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+                <div style={{fontSize:14,fontWeight:600,color:'#0D1B2A'}}>Saving your work…</div>
+                <div style={{fontSize:12,color:'#64748B',marginTop:4}}>Pushing your current session to the server.</div>
+              </div>
+            )}
 
-            {/* Session info */}
-            <div style={{background:'#F8FAFC',border:'1px solid #E2E8F0',borderRadius:10,padding:'12px 16px',marginBottom:20,display:'flex',gap:16,justifyContent:'center',flexWrap:'wrap'}}>
-              <div style={{textAlign:'center'}}>
-                <div style={{fontSize:11,color:'#94A3B8',marginBottom:2}}>SESSION ID</div>
-                <div style={{fontSize:13,fontWeight:800,color:'#0D1B2A',letterSpacing:'1px',fontFamily:'monospace'}}>ESC-7F2A-9D1B</div>
-              </div>
-              <div style={{width:1,background:'#E2E8F0'}}/>
-              <div style={{textAlign:'center'}}>
-                <div style={{fontSize:11,color:'#94A3B8',marginBottom:2}}>EXPIRES IN</div>
-                <div style={{fontSize:18,fontWeight:800,color:qrExpiry<60?'#EF4444':'#10B981',letterSpacing:'1px',fontFamily:'monospace'}}>{qrFmt(qrExpiry)}</div>
-              </div>
-              <div style={{width:1,background:'#E2E8F0'}}/>
-              <div style={{textAlign:'center'}}>
-                <div style={{fontSize:11,color:'#94A3B8',marginBottom:2}}>CURRENT PAGE</div>
-                <div style={{fontSize:12,fontWeight:700,color:'#0D1B2A'}}>{pageTitle.title}</div>
-              </div>
-            </div>
+            {qrPhase === 'active' && (
+              <>
+                <div style={{fontSize:13,color:'#64748B',marginBottom:18}}>Scan this code with your phone to pick up exactly where you left off</div>
 
-            {/* Steps */}
-            <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:24,textAlign:'left'}}>
-              {[['1','Open the ElectraScan app on your phone'],['2','Tap the QR scanner icon in the top bar'],['3','Scan this code — your session loads instantly']].map(([n,t])=>(
-                <div key={n} style={{display:'flex',alignItems:'center',gap:10}}>
-                  <div style={{width:22,height:22,borderRadius:11,background:'#EFF6FF',border:'1px solid #BFDBFE',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800,color:'#1D6EFD',flexShrink:0}}>{n}</div>
-                  <div style={{fontSize:12,color:'#64748B'}}>{t}</div>
+                <div style={{display:'inline-block',padding:16,background:'white',border:'3px solid #0D1B2A',borderRadius:12,marginBottom:16}}>
+                  {qrUrl && <QrCodeSvg value={qrUrl} size={180}/>}
                 </div>
-              ))}
-            </div>
 
-            {/* Close */}
-            <button onClick={closeQR} style={{width:'100%',padding:'12px',background:'#0D1B2A',color:'white',border:'none',borderRadius:10,fontSize:14,fontWeight:700,cursor:'pointer'}}>
-              Close
-            </button>
+                <div style={{background:'#F8FAFC',border:'1px solid #E2E8F0',borderRadius:10,padding:'12px 14px',marginBottom:14,display:'flex',gap:14,justifyContent:'center',flexWrap:'wrap'}}>
+                  <div style={{textAlign:'center'}}>
+                    <div style={{fontSize:10,color:'#94A3B8',marginBottom:2,letterSpacing:0.5,textTransform:'uppercase'}}>Session ID</div>
+                    <div style={{fontSize:13,fontWeight:800,color:'#0D1B2A',letterSpacing:1,fontFamily:'monospace'}}>{qrToken}</div>
+                  </div>
+                  <div style={{width:1,background:'#E2E8F0'}}/>
+                  <div style={{textAlign:'center'}}>
+                    <div style={{fontSize:10,color:'#94A3B8',marginBottom:2,letterSpacing:0.5,textTransform:'uppercase'}}>Expires In</div>
+                    <div style={{fontSize:18,fontWeight:800,color:qrExpiry<60?'#EF4444':qrExpiry<180?'#F59E0B':'#10B981',letterSpacing:1,fontFamily:'monospace'}}>{qrFmt(qrExpiry)}</div>
+                  </div>
+                </div>
+
+                <div style={{background:'#F0F9FF',border:'1px solid #BAE6FD',borderRadius:10,padding:'10px 14px',marginBottom:16,textAlign:'left',fontSize:11,color:'#0369A1'}}>
+                  <div style={{fontWeight:700,marginBottom:4}}>Current context</div>
+                  Page: <strong>{pageTitle.title}</strong><br/>
+                  {selectedProject && <>Project: <strong>{selectedProject.name}</strong><br/></>}
+                  Saved: <strong>{qrSnapshot ? new Date(qrSnapshot).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' }) : '—'}</strong>
+                </div>
+
+                <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:18,textAlign:'left'}}>
+                  {[['1','Open the ElectraScan app on your phone'],['2','Tap the centre Scan button in the bottom nav'],['3','Scan this code — your session loads instantly']].map(([n,t])=>(
+                    <div key={n} style={{display:'flex',alignItems:'center',gap:10}}>
+                      <div style={{width:22,height:22,borderRadius:11,background:'#EFF6FF',border:'1px solid #BFDBFE',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800,color:'#1D6EFD',flexShrink:0}}>{n}</div>
+                      <div style={{fontSize:12,color:'#64748B'}}>{t}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{display:'flex',gap:10}}>
+                  <button onClick={regenerateQR} style={{flex:1,padding:'11px',background:'#F1F5F9',color:'#0D1B2A',border:'1px solid #E2E8F0',borderRadius:10,fontSize:13,fontWeight:700,cursor:'pointer'}}>↻ Regenerate</button>
+                  <button onClick={closeQR} style={{flex:2,padding:'11px',background:'#0D1B2A',color:'white',border:'none',borderRadius:10,fontSize:13,fontWeight:700,cursor:'pointer'}}>Close</button>
+                </div>
+              </>
+            )}
+
+            {qrPhase === 'expired' && (
+              <div style={{padding:'10px 0'}}>
+                <div style={{fontSize:40,marginBottom:10}}>⌛</div>
+                <div style={{fontSize:16,fontWeight:800,color:'#EF4444',marginBottom:4}}>Session token expired</div>
+                <div style={{fontSize:12,color:'#64748B',marginBottom:20}}>Handoff tokens are valid for 10 minutes. Regenerate to continue.</div>
+                <div style={{display:'flex',gap:10}}>
+                  <button onClick={closeQR} style={{flex:1,padding:'11px',background:'#F1F5F9',color:'#0D1B2A',border:'1px solid #E2E8F0',borderRadius:10,fontSize:13,fontWeight:700,cursor:'pointer'}}>Close</button>
+                  <button onClick={regenerateQR} style={{flex:2,padding:'11px',background:'#1D6EFD',color:'white',border:'none',borderRadius:10,fontSize:13,fontWeight:800,cursor:'pointer'}}>↻ Regenerate Token</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Mobile handoff receive confirmation (§7) ── */}
+      {incomingHandoff && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:1100,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(4px)',padding:20}}>
+          <div style={{background:'white',borderRadius:20,padding:28,maxWidth:420,width:'100%',textAlign:'center',boxShadow:'0 24px 80px rgba(0,0,0,0.4)'}}>
+            <div style={{fontSize:32,marginBottom:8}}>⚡</div>
+            {incomingHandoff.session ? (
+              <>
+                <div style={{fontSize:16,fontWeight:800,color:'#0D1B2A',marginBottom:4}}>Desktop Session Ready</div>
+                <div style={{fontSize:12,color:'#64748B',marginBottom:16}}>Token {incomingHandoff.token} · loaded from {incomingHandoff.source}</div>
+                <div style={{background:'#F0F9FF',border:'1px solid #BAE6FD',borderRadius:10,padding:'12px 14px',marginBottom:18,textAlign:'left',fontSize:12,color:'#0369A1'}}>
+                  Route: <strong>{incomingHandoff.session.route}</strong><br/>
+                  {incomingHandoff.session.projectId && <>Project ID: <strong>{incomingHandoff.session.projectId}</strong><br/></>}
+                  {incomingHandoff.session.estimateId && <>Estimate: <strong>{incomingHandoff.session.estimateId}</strong><br/></>}
+                  Saved: <strong>{incomingHandoff.session.snapshotAt ? new Date(incomingHandoff.session.snapshotAt).toLocaleString('en-AU', { hour:'2-digit', minute:'2-digit' }) : '—'}</strong>
+                </div>
+                <div style={{display:'flex',gap:10}}>
+                  <button onClick={dismissHandoff} style={{flex:1,padding:'11px',background:'#F1F5F9',color:'#0D1B2A',border:'1px solid #E2E8F0',borderRadius:10,fontSize:13,fontWeight:700,cursor:'pointer'}}>Dismiss</button>
+                  <button onClick={acceptHandoff} style={{flex:2,padding:'11px',background:'#1D6EFD',color:'white',border:'none',borderRadius:10,fontSize:13,fontWeight:800,cursor:'pointer'}}>Load Session</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{fontSize:16,fontWeight:800,color:'#EF4444',marginBottom:4}}>Session expired or already used</div>
+                <div style={{fontSize:12,color:'#64748B',marginBottom:18}}>Tokens are single-use and valid for 10 minutes. Ask the desktop to generate a new QR code.</div>
+                <button onClick={dismissHandoff} style={{width:'100%',padding:'11px',background:'#0D1B2A',color:'white',border:'none',borderRadius:10,fontSize:13,fontWeight:700,cursor:'pointer'}}>Close</button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Scan input (mobile bottom-nav centre button) ── */}
+      {showScanInput && (
+        <div onClick={()=>setShowScanInput(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:1100,display:'flex',alignItems:'flex-end',justifyContent:'center',padding:0}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:'20px 20px 0 0',padding:'24px 22px',width:'100%',maxWidth:520,boxShadow:'0 -12px 40px rgba(0,0,0,0.2)'}}>
+            <div style={{width:44,height:4,background:'#E2E8F0',borderRadius:2,margin:'0 auto 14px'}}/>
+            <div style={{fontSize:16,fontWeight:800,color:'#0D1B2A',marginBottom:4}}>📷 Scan QR / Handoff</div>
+            <div style={{fontSize:12,color:'#64748B',marginBottom:16}}>Scan a QR code to pick up a desktop session, or paste the Session ID below.</div>
+            <input type="text" value={scanInput} onChange={e=>setScanInput(e.target.value)} placeholder="ESC-XXXX-XXXX" style={{width:'100%',padding:'10px 12px',border:'1px solid #E2E8F0',borderRadius:10,fontSize:14,outline:'none',fontFamily:'monospace',textTransform:'uppercase',marginBottom:12}}/>
+            <div style={{display:'flex',gap:10}}>
+              <button onClick={()=>setShowScanInput(false)} style={{flex:1,padding:'11px',background:'#F1F5F9',color:'#0D1B2A',border:'1px solid #E2E8F0',borderRadius:10,fontSize:13,fontWeight:700,cursor:'pointer'}}>Cancel</button>
+              <button onClick={submitScanToken} disabled={!scanInput.trim()} style={{flex:2,padding:'11px',background:scanInput.trim()?'#1D6EFD':'#E2E8F0',color:scanInput.trim()?'white':'#94A3B8',border:'none',borderRadius:10,fontSize:13,fontWeight:800,cursor:scanInput.trim()?'pointer':'not-allowed'}}>Load Session</button>
+            </div>
           </div>
         </div>
       )}
     </div>
+    </TenantContext.Provider>
   );
 }
 
