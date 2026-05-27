@@ -6,7 +6,6 @@ import DesktopApp from './DesktopApp';
 import { ToastProvider } from './contexts/ToastContext';
 import { LicenseProvider } from './contexts/LicenseContext';
 import { suppressConsoleWarnings } from './utils/suppressWarnings';
-import { RouterProvider } from './components/Router';
 
 // Suppress specific PDF.js warnings to prevent performance issues
 suppressConsoleWarnings();
@@ -24,9 +23,7 @@ root.render(
   <React.StrictMode>
     <ToastProvider>
       <LicenseProvider>
-        <RouterProvider>
-          <DesktopApp />
-        </RouterProvider>
+        <DesktopApp />
       </LicenseProvider>
     </ToastProvider>
   </React.StrictMode>
