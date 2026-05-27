@@ -1,5 +1,10 @@
 import { useMemo, useState } from "react";
-import { submitTimesheet, submitMilestoneClaim } from "../services/reportsService";
+import { useProjects, type Project } from "../contexts/ProjectContext";
+import { submitTimesheet, submitMilestoneClaim, calculateLabourSpent, calculateMaterialsSpent, calculateOverrunAmount } from "../services/reportsService";
+import { labourTotals } from "../services/hoursService";
+import { paymentSummary } from "../services/milestonesService";
+import { calculateVariance } from "../services/overrunsService";
+import TimesheetForm from "./TimesheetForm";
 
 // ─── Design tokens (mirror App.tsx) ──────────────
 const C = {
@@ -12,6 +17,7 @@ const C = {
 
 // ─── Props ────────────────────────────────────────
 export interface ReportsScreenProps {
+  projectId?: string; // NEW: real project ID from context
   projectName?: string;
   onBack: () => void;
 }
@@ -144,25 +150,79 @@ const STATUS_LABEL: Record<string, string> = {
 
 // ─── Component ────────────────────────────────────
 export default function ReportsScreen({
+  projectId,
   projectName = "Riverside Apartments",
   onBack,
 }: ReportsScreenProps) {
+  const { getProject, addTimesheet } = useProjects();
+  const project = projectId ? getProject(projectId) : undefined;
+  const [showTimesheetForm, setShowTimesheetForm] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // Use real data if project loaded, otherwise use mock data
+  const isRealData = !!project;
+  const actualProjectName = project?.name ?? projectName;
   const [tab, setTab] = useState<TabId>("overview");
   const [payTab, setPayTab] = useState<"schedule"|"claims"|"deposit">("schedule");
-  const [milestones, setMilestones] = useState<MilestoneRow[]>(MILESTONES_SEED);
+
+  // Derive real data from project if loaded
+  const realBudget = project?.budgetTotal ?? B.total;
+  const realLabourRate = project?.labourRatePerHour ?? 85;
+  const realTimesheets = project?.timesheets ?? [];
+  const realMilestones = project?.milestones ?? [];
+  const realOverruns = project?.overruns ?? [];
+  const realLabourSpent = calculateLabourSpent(realTimesheets);
+  const realMaterialsSpent = calculateMaterialsSpent(realTimesheets);
+  const realOverrunAmount = calculateOverrunAmount(project);
+  const realVariance = calculateVariance(realTimesheets, realOverruns, realMaterialsSpent, realBudget, project?.varianceThreshold);
+
+  // Use real or mock milestones for state
+  const initialMilestones = isRealData
+    ? realMilestones.map(m => ({
+        label: m.label,
+        pct: m.percentage,
+        amount: m.amount,
+        status: m.status,
+        claimDate: m.claimedAt ?? null,
+        invoiceRef: m.invoiceRef,
+        warning: m.status === "ready",
+        retention: m.retention,
+      }))
+    : MILESTONES_SEED;
+
+  const [milestones, setMilestones] = useState<MilestoneRow[]>(initialMilestones);
   const [syncState, setSyncState] = useState<Record<string, "idle"|"connecting"|"connected">>({ myob: "connected", xero: "idle", quickbooks: "idle" });
   const [syncing, setSyncing] = useState<string | null>(null);
   const [syncMsg, setSyncMsg] = useState<"idle"|"ok"|"local">("idle");
 
-  const totalSpent   = B.spentLabour + B.spentMaterials;
-  const remaining    = B.total - totalSpent;
-  const pctBurnt     = (totalSpent / B.total * 100).toFixed(1);
-  const labourPct    = Math.round(B.spentLabour / B.labour * 100);
-  const matPct       = Math.round(B.spentMaterials / B.materials * 100);
-  const totalOverrun = OVERRUNS.reduce((s, o) => s + o.amount, 0);
-  const contingLeft  = B.contingency - totalOverrun;
-  const totalPlanned = HOURS.reduce((s, h) => s + h.planned, 0);
-  const totalActual  = HOURS.reduce((s, h) => s + h.actual, 0);
+  // Use real or mock data
+  const B_ACTUAL = isRealData ? {
+    total: realBudget,
+    labour: realBudget * 0.58, // estimate: ~58% is labour
+    materials: realBudget * 0.42,
+    spentLabour: realLabourSpent,
+    spentMaterials: realMaterialsSpent,
+    contingency: realBudget * 0.1,
+  } : B;
+
+  const totalSpent   = B_ACTUAL.spentLabour + B_ACTUAL.spentMaterials;
+  const remaining    = B_ACTUAL.total - totalSpent;
+  const pctBurnt     = (totalSpent / B_ACTUAL.total * 100).toFixed(1);
+  const labourPct    = Math.round(B_ACTUAL.spentLabour / B_ACTUAL.labour * 100);
+  const matPct       = Math.round(B_ACTUAL.spentMaterials / B_ACTUAL.materials * 100);
+  const totalOverrun = realOverrunAmount;
+  const contingLeft  = B_ACTUAL.contingency - totalOverrun;
+  // Real or mock hours
+  const hoursDisplay = isRealData ? realTimesheets.map(t => ({
+    week: t.week,
+    planned: t.plannedHours,
+    actual: t.actualHours,
+    labour: t.labourCost,
+    materials: t.materialsUsed,
+  })) : HOURS;
+
+  const totalPlanned = hoursDisplay.reduce((s, h) => s + h.planned, 0);
+  const totalActual  = hoursDisplay.reduce((s, h) => s + h.actual, 0);
   const claimed                 = milestones.filter(m => m.status === "invoiced" || m.status === "invoiced-draft" || m.status === "received").reduce((s, m) => s + m.amount, 0);
   const progressClaimsInvoiced  = milestones.filter(m => (m.status === "invoiced" || m.status === "invoiced-draft") && !m.retention).reduce((s, m) => s + m.amount, 0);
   const progressClaimsReceived  = milestones.filter(m => m.status === "received" && !m.retention).reduce((s, m) => s + m.amount, 0);
@@ -213,7 +273,7 @@ export default function ReportsScreen({
           </div>
         </div>
         <div style={{ fontSize: 18, fontWeight: 800, color: C.text }}>Project Reports</div>
-        <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{projectName}</div>
+        <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{actualProjectName}</div>
       </div>
 
       {/* Content */}
@@ -246,7 +306,7 @@ export default function ReportsScreen({
         {tab === "overview" && (
           <>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
-              <StatCard label="Total Budget" value={fmt(B.total)} sub="EST-2026-004 approved" accent={C.blue} />
+              <StatCard label="Total Budget" value={fmt(B_ACTUAL.total)} sub={isRealData ? "Project estimate" : "EST-2026-004 approved"} accent={C.blue} />
               <StatCard label="Spent to Date" value={fmt(totalSpent)} sub={`${pctBurnt}% of budget`} accent={C.amber} />
               <StatCard label="Remaining" value={fmt(remaining)} sub={`${(100 - Number(pctBurnt)).toFixed(1)}% left`} accent={C.green} />
               <StatCard label="Claimed" value={fmt(claimed)} sub={`${milestones.filter(m => m.status === "invoiced" || m.status === "invoiced-draft" || m.status === "received").length} of ${milestones.filter(m => !m.retention).length} milestones`} accent={C.purple} />
@@ -254,11 +314,11 @@ export default function ReportsScreen({
 
             <SectionLabel>Budget Breakdown</SectionLabel>
             <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "14px 16px", marginBottom: 14 }}>
-              <BarRow label="Labour" spent={B.spentLabour} budget={B.labour} pct={labourPct} color={C.blue} />
-              <BarRow label="Materials" spent={B.spentMaterials} budget={B.materials} pct={matPct} color={C.purple} />
+              <BarRow label="Labour" spent={B_ACTUAL.spentLabour} budget={B_ACTUAL.labour} pct={labourPct} color={C.blue} />
+              <BarRow label="Materials" spent={B_ACTUAL.spentMaterials} budget={B_ACTUAL.materials} pct={matPct} color={C.purple} />
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: C.muted, marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}` }}>
-                <span>Contingency: {fmt(B.contingency)}</span>
-                <span style={{ color: contingLeft < 500 ? C.red : C.green, fontWeight: 700 }}>Remaining: {fmt(contingLeft)}</span>
+                <span>Contingency: {fmt(B_ACTUAL.contingency)}</span>
+                <span style={{ color: contingLeft < B_ACTUAL.contingency * 0.2 ? C.red : C.green, fontWeight: 700 }}>Remaining: {fmt(contingLeft)}</span>
               </div>
             </div>
 
@@ -342,18 +402,34 @@ export default function ReportsScreen({
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
               <SectionLabel>Weekly Timesheet</SectionLabel>
-              <button onClick={handleSubmitTimesheet} style={{
+              <button onClick={() => setShowTimesheetForm(true)} style={{
                 background: C.blue, border: "none", color: "#fff", fontSize: 11, fontWeight: 700,
                 padding: "7px 12px", borderRadius: 8, cursor: "pointer",
               }}>+ Submit Timesheet</button>
             </div>
+            {showTimesheetForm && projectId && (
+              <TimesheetForm
+                projectName={actualProjectName}
+                estimatedHours={project?.estimatedLabourHours ?? 40}
+                labourRate={project?.labourRatePerHour ?? 85}
+                weeks={realTimesheets.map(t => t.week.split(" · ")[0]).concat(["W5"])}
+                onSubmit={(timesheet) => {
+                  if (project && projectId) {
+                    addTimesheet(projectId, { ...timesheet, labourCost: timesheet.actualHours * (project.labourRatePerHour ?? 85) });
+                    setShowTimesheetForm(false);
+                    setRefreshKey(k => k + 1);
+                  }
+                }}
+                onCancel={() => setShowTimesheetForm(false)}
+              />
+            )}
             <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden" }}>
-              {HOURS.map((h, i) => {
+              {hoursDisplay.map((h, i) => {
                 const v = h.actual - h.planned;
                 return (
                   <div key={i} style={{
                     display: "grid", gridTemplateColumns: "1fr 50px 50px 70px 70px 50px", gap: 4, padding: "10px 12px",
-                    borderBottom: i < HOURS.length - 1 ? `1px solid ${C.border}` : "none",
+                    borderBottom: i < hoursDisplay.length - 1 ? `1px solid ${C.border}` : "none",
                     background: i % 2 === 0 ? C.card : C.navy,
                     fontSize: 11, alignItems: "center",
                   }}>
@@ -373,8 +449,8 @@ export default function ReportsScreen({
                 <div style={{ color: C.text }}>TOTALS</div>
                 <div style={{ textAlign: "center", color: C.text }}>{totalPlanned}h</div>
                 <div style={{ textAlign: "center", color: totalActual > totalPlanned ? C.red : C.green }}>{totalActual}h</div>
-                <div style={{ textAlign: "right", color: C.text }}>{fmt(HOURS.reduce((s, h) => s + h.labour, 0))}</div>
-                <div style={{ textAlign: "right", color: C.text }}>{fmt(HOURS.reduce((s, h) => s + h.materials, 0))}</div>
+                <div style={{ textAlign: "right", color: C.text }}>{fmt(hoursDisplay.reduce((s, h) => s + h.labour, 0))}</div>
+                <div style={{ textAlign: "right", color: C.text }}>{fmt(hoursDisplay.reduce((s, h) => s + h.materials, 0))}</div>
                 <div style={{ textAlign: "right", color: C.red }}>+{totalActual - totalPlanned}h</div>
               </div>
             </div>
@@ -544,8 +620,9 @@ export default function ReportsScreen({
             </div>
 
             <SectionLabel>Flagged Cost Overruns</SectionLabel>
-            {OVERRUNS.map((o, i) => {
-              const sc = sevColor[o.severity] ?? C.muted;
+            {(isRealData ? realOverruns : OVERRUNS).map((o, i) => {
+              const severity = "severity" in o ? o.severity : o.severity ?? "low";
+              const sc = sevColor[severity] ?? C.muted;
               return (
                 <div key={i} style={{
                   background: C.card, border: `1px solid ${C.border}`, borderLeft: `4px solid ${sc}`,
@@ -555,7 +632,7 @@ export default function ReportsScreen({
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{o.item}</div>
                     <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{o.note}</div>
-                    <Pill text={`${o.cat} · ${o.severity.toUpperCase()}`} color={sc} />
+                    <Pill text={`${"category" in o ? o.category : o.cat ?? "Other"} · ${severity.toUpperCase()}`} color={sc} />
                   </div>
                   <div style={{ fontSize: 16, fontWeight: 800, color: sc }}>{fmt(o.amount)}</div>
                 </div>
