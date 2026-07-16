@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient';
+import { type Project, type Timesheet, type Milestone } from '../contexts/ProjectContext';
 
 // Reports persistence — lightweight hooks for timesheet submissions and
 // milestone claim events. The bulk of the Reports screen is read-only
@@ -53,4 +54,25 @@ export async function submitMilestoneClaim(entry: {
     console.warn('[reportsService] unreachable:', e);
     return { ok: false as const, error: e instanceof Error ? e.message : 'unknown' };
   }
+}
+
+// Helpers to derive financial KPIs from project data
+export function getProjectTimesheets(project: Project | undefined): Timesheet[] {
+  return project?.timesheets ?? [];
+}
+
+export function getProjectMilestones(project: Project | undefined): Milestone[] {
+  return project?.milestones ?? [];
+}
+
+export function calculateLabourSpent(timesheets: Timesheet[]): number {
+  return timesheets.reduce((sum, t) => sum + t.labourCost, 0);
+}
+
+export function calculateMaterialsSpent(timesheets: Timesheet[]): number {
+  return timesheets.reduce((sum, t) => sum + t.materialsUsed, 0);
+}
+
+export function calculateOverrunAmount(project: Project | undefined): number {
+  return (project?.overruns ?? []).reduce((sum, o) => sum + o.amount, 0);
 }

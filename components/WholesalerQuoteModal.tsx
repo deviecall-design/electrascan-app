@@ -6,7 +6,8 @@ import type {
 import { useProjects } from "../contexts/ProjectContext";
 import { useTenant } from "../contexts/TenantContext";
 import { useToast } from "../contexts/ToastContext";
-import { sendWholesalerQuoteRequest } from "../services/estimateService";
+import { sendWholesalerQuoteRequest, sendTleQuoteRequest } from "../services/estimateService";
+import { matchEstimateToTle, type TleBomResult } from "../services/tleMatcher";
 
 const C = {
   bg: "#0A1628",
@@ -59,11 +60,23 @@ const WholesalerQuoteModal: React.FC<Props> = ({ estimate, project, onClose }) =
   const [recipientEmail, setRecipientEmail] = useState<string>(defaultWholesaler?.email ?? "");
   const [notes, setNotes] = useState<string>("");
   const [sending, setSending] = useState(false);
+  const [tleBom, setTleBom] = useState<TleBomResult | null>(null);
+  const [tleMatching, setTleMatching] = useState(false);
 
   const wholesaler = useMemo(
     () => tenant.wholesalers.find(w => w.id === wholesalerId) ?? defaultWholesaler,
     [tenant.wholesalers, wholesalerId, defaultWholesaler],
   );
+
+  const isTle = wholesaler?.name?.toLowerCase().includes("tle");
+
+  React.useEffect(() => {
+    if (!isTle || lineItems.length === 0) { setTleBom(null); return; }
+    setTleMatching(true);
+    matchEstimateToTle(lineItems)
+      .then(setTleBom)
+      .finally(() => setTleMatching(false));
+  }, [isTle, lineItems]);
 
   const onWholesalerChange = (id: string) => {
     setWholesalerId(id);
@@ -86,10 +99,22 @@ const WholesalerQuoteModal: React.FC<Props> = ({ estimate, project, onClose }) =
 
   const cableRunsTotal = cableRunsWithPrice.reduce((s, r) => s + r.line_total, 0);
 
+  const lineItemsWithTotal = useMemo(
+    () =>
+      lineItems.map(li => ({
+        ...li,
+        line_total: +(li.qty * li.unitPrice).toFixed(2),
+      })),
+    [lineItems],
+  );
+
+  const lineItemsTotal = lineItemsWithTotal.reduce((s, li) => s + li.line_total, 0);
+  const grandTotal = cableRunsTotal + lineItemsTotal;
+
   const subject = `Quote Request — ${estimateRef || estimateId} — ${projectName} — ${tenant.name}`;
 
   const emailMissing = !recipientEmail.trim();
-  const noBomItems = cableRuns.length === 0 && lineItems.length === 0;
+  const noBomItems = cableRuns.length === 0;
 
   const onSend = async () => {
     if (!wholesaler) {
@@ -101,7 +126,8 @@ const WholesalerQuoteModal: React.FC<Props> = ({ estimate, project, onClose }) =
       return;
     }
     setSending(true);
-    const res = await sendWholesalerQuoteRequest({
+
+    const basePayload = {
       estimate_id: estimateId,
       estimate_ref: estimateRef || estimateId,
       project_name: projectName,
@@ -115,18 +141,30 @@ const WholesalerQuoteModal: React.FC<Props> = ({ estimate, project, onClose }) =
         unit_price: r.unit_price,
         line_total: r.line_total,
       })),
-      line_items: lineItems.map(li => ({
+      line_items: lineItemsWithTotal.map(li => ({
         description: li.description,
         category: li.category,
         qty: li.qty,
         unit: li.unit,
+        unit_price: li.unitPrice,
+        line_total: li.line_total,
       })),
       notes: notes.trim(),
       tenant: tenant.name,
       sent_at: new Date().toISOString(),
-    });
+    };
+
+    const unitPrices = Object.fromEntries(lineItems.map(li => [li.id, li.unitPrice]));
+    const res = isTle
+      ? await sendTleQuoteRequest(basePayload, unitPrices, lineItems)
+      : await sendWholesalerQuoteRequest(basePayload);
+
     setSending(false);
     if (res.ok) {
+      const tleRes = isTle && "matched" in res ? res as { ok: true; matched: number; excluded: number } : null;
+      const detail = tleRes
+        ? ` (${tleRes.matched} items matched to TLE SKUs${tleRes.excluded > 0 ? `, ${tleRes.excluded} sourced elsewhere` : ""})`
+        : "";
       saveEstimate(project.id, {
         ...estimate,
         wholesaleQuoteSentAt: new Date().toISOString(),
@@ -136,10 +174,10 @@ const WholesalerQuoteModal: React.FC<Props> = ({ estimate, project, onClose }) =
         wholesaleQuoteOrderedAt: undefined,
         updatedAt: new Date().toISOString(),
       });
-      addToast(`Quote request sent to ${wholesaler.name}`, "success");
+      addToast(`Quote request sent to ${wholesaler.name}${detail}`, "success");
       onClose();
     } else {
-      addToast(`Send failed: ${res.error}`, "error");
+      addToast(`Send failed: ${(res as { ok: false; error: string }).error}`, "error");
     }
   };
 
@@ -304,43 +342,171 @@ const WholesalerQuoteModal: React.FC<Props> = ({ estimate, project, onClose }) =
           </div>
         )}
 
-        <SectionHeader>LINE ITEMS ({lineItems.length})</SectionHeader>
-        {lineItems.length === 0 ? (
-          <EmptyRow>No line items on this estimate.</EmptyRow>
-        ) : (
+        {noBomItems && (
+          <Banner color={C.amber}>
+            No cable runs added yet. Use the Cable / Conduit calculator to add BOM items.
+          </Banner>
+        )}
+
+        {lineItemsWithTotal.length > 0 && (
+          <>
+            <SectionHeader>
+              LINE ITEMS ({lineItemsWithTotal.length})
+            </SectionHeader>
+            <div
+              style={{
+                background: C.card,
+                border: `1px solid ${C.border}`,
+                borderRadius: 10,
+                overflow: "hidden",
+                marginBottom: 14,
+              }}
+            >
+              <HeaderRow
+                cols="3fr 1.5fr 0.8fr 1fr 1fr"
+                labels={["DESCRIPTION", "CATEGORY", "QTY", "UNIT $", "LINE TOTAL"]}
+              />
+              {lineItemsWithTotal.map((li, i) => (
+                <DataRow
+                  key={li.id}
+                  cols="3fr 1.5fr 0.8fr 1fr 1fr"
+                  last={i === lineItemsWithTotal.length - 1}
+                  values={[
+                    li.description,
+                    li.category,
+                    `${li.qty}${li.unit ? ` ${li.unit}` : " EA"}`,
+                    fmtMoney(li.unitPrice),
+                    fmtMoney(li.line_total),
+                  ]}
+                />
+              ))}
+              <div
+                style={{
+                  padding: "8px 12px",
+                  background: `${C.green}15`,
+                  borderTop: `1px solid ${C.border}`,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: C.green,
+                  display: "flex",
+                  justifyContent: "space-between",
+                }}
+              >
+                <span>Subtotal (materials)</span>
+                <span>{fmtMoney(lineItemsTotal)}</span>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* TLE BOM matching preview */}
+        {isTle && (
+          <>
+            <SectionHeader>TLE PRODUCT MATCHING</SectionHeader>
+            {tleMatching && (
+              <div style={{ fontSize: 12, color: C.muted, marginBottom: 14 }}>
+                Matching items to TLE catalogue…
+              </div>
+            )}
+            {tleBom && !tleMatching && (
+              <>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    marginBottom: 10,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <Pill color={C.green} label={`${tleBom.summary.matched} Matched`} />
+                  {tleBom.summary.review > 0 && (
+                    <Pill color={C.amber} label={`${tleBom.summary.review} Review`} />
+                  )}
+                  {tleBom.summary.sourceElsewhere > 0 && (
+                    <Pill color={C.red} label={`${tleBom.summary.sourceElsewhere} Source Elsewhere`} />
+                  )}
+                </div>
+                <div
+                  style={{
+                    background: C.card,
+                    border: `1px solid ${C.border}`,
+                    borderRadius: 10,
+                    overflow: "hidden",
+                    marginBottom: 14,
+                  }}
+                >
+                  <HeaderRow
+                    cols="3fr 2fr 1fr"
+                    labels={["ITEM", "TLE SKU", "STATUS"]}
+                  />
+                  {tleBom.items.map((r, i) => {
+                    const topMatch = r.matches[0];
+                    const statusColor =
+                      r.status === "MATCHED" ? C.green
+                      : r.status === "REVIEW" ? C.amber
+                      : r.status === "SOURCE_ELSEWHERE" ? C.red
+                      : C.muted;
+                    const statusLabel =
+                      r.status === "MATCHED" ? `✓ ${topMatch?.sku ?? ""}`
+                      : r.status === "REVIEW" ? `? ${topMatch?.sku ?? ""}`
+                      : r.status === "SOURCE_ELSEWHERE" ? "Source elsewhere"
+                      : "Not found";
+                    return (
+                      <div
+                        key={r.item.id}
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "3fr 2fr 1fr",
+                          padding: "7px 12px",
+                          borderBottom: i === tleBom.items.length - 1 ? "none" : `1px solid ${C.border}`,
+                          fontSize: 12,
+                          alignItems: "center",
+                        }}
+                      >
+                        <div style={{ color: C.text }}>{r.item.description}</div>
+                        <div style={{ color: C.dim, fontSize: 11 }}>
+                          {topMatch?.name ? topMatch.name.substring(0, 40) + (topMatch.name.length > 40 ? "…" : "") : "—"}
+                        </div>
+                        <div style={{ color: statusColor, fontSize: 11, fontWeight: 700, textAlign: "right" }}>
+                          {statusLabel}
+                          {r.confidence > 0 && (
+                            <span style={{ color: C.muted, fontWeight: 400, marginLeft: 4 }}>
+                              {r.confidence}%
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {tleBom.summary.sourceElsewhere > 0 && (
+                  <Banner color={C.amber}>
+                    {tleBom.summary.sourceElsewhere} item{tleBom.summary.sourceElsewhere > 1 ? "s" : ""} not stocked at TLE will be excluded from this quote and must be sourced elsewhere.
+                  </Banner>
+                )}
+              </>
+            )}
+          </>
+        )}
+
+        {(cableRunsWithPrice.length > 0 || lineItemsWithTotal.length > 0) && (
           <div
             style={{
-              background: C.card,
-              border: `1px solid ${C.border}`,
+              padding: "10px 14px",
+              background: `${C.blue}20`,
+              border: `1px solid ${C.blue}55`,
               borderRadius: 10,
-              overflow: "hidden",
+              fontSize: 14,
+              fontWeight: 800,
+              color: C.text,
+              display: "flex",
+              justifyContent: "space-between",
               marginBottom: 14,
             }}
           >
-            <HeaderRow
-              cols="2.4fr 1.2fr 0.6fr"
-              labels={["DESCRIPTION", "CATEGORY", "QTY"]}
-            />
-            {lineItems.map((li, i) => (
-              <DataRow
-                key={li.id}
-                cols="2.4fr 1.2fr 0.6fr"
-                last={i === lineItems.length - 1}
-                values={[
-                  li.description,
-                  li.category,
-                  `${li.qty}${li.unit ? ` ${li.unit}` : ""}`,
-                ]}
-              />
-            ))}
+            <span>Total to order</span>
+            <span style={{ color: C.green }}>{fmtMoney(grandTotal)}</span>
           </div>
-        )}
-
-        {noBomItems && (
-          <Banner color={C.amber}>
-            This estimate has no cable runs or line items yet — there's nothing to
-            quote.
-          </Banner>
         )}
 
         <div
@@ -495,6 +661,22 @@ const DataRow: React.FC<{ cols: string; values: React.ReactNode[]; last: boolean
       </div>
     ))}
   </div>
+);
+
+const Pill: React.FC<{ color: string; label: string }> = ({ color, label }) => (
+  <span
+    style={{
+      background: `${color}20`,
+      border: `1px solid ${color}55`,
+      color,
+      padding: "3px 10px",
+      borderRadius: 20,
+      fontSize: 11,
+      fontWeight: 700,
+    }}
+  >
+    {label}
+  </span>
 );
 
 const Banner: React.FC<{ color: string; children: React.ReactNode }> = ({

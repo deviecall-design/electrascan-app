@@ -7,18 +7,18 @@ import {
 import { useTenant } from "../contexts/TenantContext";
 
 const C = {
-  bg: "#0A1628",
+  bg: "#0f172a",
   navy: "#0F1E35",
-  card: "#132240",
-  blue: "#1D6EFD",
-  blueLt: "#4B8FFF",
+  card: "#1e293b",
+  blue: "#3b82f6",
+  blueLt: "#60a5fa",
   green: "#00C48C",
   greenDk: "#059669",
   amber: "#FFB020",
   red: "#FF4D4D",
   text: "#EDF2FF",
   muted: "#5C7A9E",
-  border: "#1A3358",
+  border: "#1e3a5f",
   dim: "#8BA4C4",
   purple: "#7C3AED",
   teal: "#0EA5E9",
@@ -35,13 +35,15 @@ interface Tile {
   title: string;
   sub: string;
   accent: string;
+  badge: string;
+  cta: string;
 }
 const TILES: Tile[] = [
-  { id: "budget",      icon: "💰", title: "Budget Summary",   sub: "Live budget, approved vs pending",        accent: C.blue   },
-  { id: "hours",       icon: "⏱️", title: "Hours & Labour",   sub: "Planned vs logged timesheets",            accent: C.amber  },
-  { id: "milestones",  icon: "🚩", title: "Milestones",        sub: "Claim status across payment schedule",    accent: C.purple },
-  { id: "overruns",    icon: "⚠️", title: "Overruns",          sub: "Flagged cost overruns & risk factors",    accent: C.red    },
-  { id: "accounting",  icon: "🔗", title: "Accounting Sync",   sub: "MYOB, Xero, QuickBooks connectors",       accent: C.teal   },
+  { id: "budget",      icon: "💰", title: "Budget Summary",   sub: "Live budget vs approved estimate. Track spend against signed-off total.",     accent: C.blue,   badge: "Live",     cta: "Open Report"    },
+  { id: "hours",       icon: "⏱", title: "Hours & Labour",   sub: "Planned vs logged timesheets week by week. Catch overruns early.",             accent: C.amber,  badge: "Timesheet", cta: "View Hours"     },
+  { id: "milestones",  icon: "🚩", title: "Milestones",       sub: "Payment schedule with claim status — Pending, Ready to Claim, Invoiced.",     accent: C.purple, badge: "Claims",   cta: "View Schedule"  },
+  { id: "overruns",    icon: "⚠", title: "Overruns",          sub: "Flagged cost overruns and external risk factors affecting project margin.",    accent: C.red,    badge: "Risk",     cta: "View Flags"     },
+  { id: "accounting",  icon: "🔗", title: "Accounting Sync",  sub: "Connect MYOB, Xero or QuickBooks. Push invoices and timesheets automatically.",accent: C.teal,   badge: "Integrations", cta: "Connect"    },
 ];
 
 const fmt = (n: number) => `$${Math.round(n).toLocaleString("en-AU")}`;
@@ -146,59 +148,77 @@ const ReportsIndexScreen: React.FC<ReportsIndexProps> = ({ onBack }) => {
         <KpiCard label="Scans Used" value={String(kpis.scansUsed)} sub="this tenant" color={C.amber} />
       </div>
 
-      {/* Report tiles */}
+      {/* Report tiles — MiroFish feature-card pattern */}
       <div style={{ padding: "20px 24px 0" }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, letterSpacing: 0.6, marginBottom: 12 }}>
+        <div style={{ fontSize: 9, fontWeight: 800, color: C.muted, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 14 }}>
           REPORTS
         </div>
         <div
           style={{
             display: "grid",
-            gap: 12,
+            gap: 14,
             gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
           }}
         >
           {TILES.map(t => (
-            <button
+            <div
               key={t.id}
-              onClick={() => setOpenTile(t.id)}
               style={{
-                textAlign: "left",
                 background: C.card,
                 border: `1px solid ${C.border}`,
-                borderTop: `3px solid ${t.accent}`,
-                borderRadius: 14,
-                padding: 16,
-                cursor: "pointer",
-                color: C.text,
+                borderRadius: 16,
+                padding: "18px 18px 16px",
                 display: "flex",
                 flexDirection: "column",
-                gap: 8,
+                gap: 10,
+                position: "relative",
+                overflow: "hidden",
               }}
             >
-              <div
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 12,
-                  background: `${t.accent}22`,
-                  color: t.accent,
-                  fontSize: 22,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
+              {/* Top accent line */}
+              <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: t.accent, borderRadius: "16px 16px 0 0" }} />
+              {/* Badge label */}
+              <div style={{
+                fontSize: 9, fontWeight: 800, color: t.accent,
+                letterSpacing: "0.10em", textTransform: "uppercase",
+              }}>{t.badge}</div>
+              {/* Icon chip */}
+              <div style={{
+                width: 40, height: 40, borderRadius: 12,
+                background: `${t.accent}18`, border: `1px solid ${t.accent}33`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 20,
+              }}>
                 {t.icon}
               </div>
-              <div style={{ fontSize: 15, fontWeight: 800 }}>{t.title}</div>
-              <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.5 }}>{t.sub}</div>
-            </button>
+              {/* Title */}
+              <div style={{ fontSize: 15, fontWeight: 800, color: C.text, lineHeight: 1.2 }}>{t.title}</div>
+              {/* Description */}
+              <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.6, flex: 1 }}>{t.sub}</div>
+              {/* CTA button */}
+              <button
+                onClick={() => setOpenTile(t.id)}
+                style={{
+                  marginTop: 4,
+                  background: `${t.accent}14`,
+                  border: `1px solid ${t.accent}44`,
+                  color: t.accent,
+                  fontSize: 11, fontWeight: 700,
+                  padding: "8px 14px",
+                  borderRadius: 8,
+                  cursor: "pointer",
+                  textAlign: "left",
+                  width: "100%",
+                }}
+              >
+                {t.cta} →
+              </button>
+            </div>
           ))}
         </div>
       </div>
 
-      <div style={{ padding: "28px 24px 40px", color: C.muted, fontSize: 11 }}>
+      <div style={{ padding: "28px 24px 40px", color: C.muted, fontSize: 11, lineHeight: 1.6 }}>
         Budget Summary shows live data from your projects. Other reports are
         placeholders until the full reporting module ships.
       </div>
@@ -226,24 +246,25 @@ const KpiCard: React.FC<{ label: string; value: string; sub?: string; color: str
     style={{
       background: C.card,
       border: `1px solid ${C.border}`,
-      borderTop: `3px solid ${color}`,
       borderRadius: 14,
-      padding: 16,
+      padding: "16px 18px",
+      display: "flex",
+      flexDirection: "column",
+      gap: 2,
     }}
   >
     <div
       style={{
-        fontSize: 11,
+        fontSize: 10,
         fontWeight: 700,
         color: C.muted,
-        letterSpacing: 0.6,
-        marginBottom: 8,
+        letterSpacing: "0.08em",
         textTransform: "uppercase",
       }}
     >
       {label}
     </div>
-    <div style={{ fontSize: 26, fontWeight: 800, color }}>{value}</div>
+    <div style={{ fontSize: 28, fontWeight: 800, color, lineHeight: 1.1 }}>{value}</div>
     {sub && <div style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>{sub}</div>}
   </div>
 );

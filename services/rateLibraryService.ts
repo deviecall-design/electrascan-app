@@ -18,6 +18,8 @@ import { supabase } from './supabaseClient';
 //   rrp numeric,                -- wholesaler RRP
 //   unit text,                  -- 'EA' | 'LM' | 'COIL'
 //   my_rate numeric,            -- contractor's applied rate (drives estimates)
+//   suppliers text[] default '{}', -- wholesalers that stock this item e.g. {"TLE","Reece"}
+//   supplier_skus jsonb default '{}', -- per-supplier SKUs e.g. {"TLE":"CLI3025VW"}
 //   updated_at timestamptz default now()
 //
 // Table 2 — rate_library_sync_log (audit of sync events):
@@ -48,6 +50,8 @@ export interface WholesalerProduct {
 
 export interface LibraryItem extends WholesalerProduct {
   myRate: number;
+  suppliers: string[];                  // e.g. ["TLE", "Reece"]
+  supplierSkus: Record<string, string>; // e.g. { TLE: "CLI3025VW" }
 }
 
 export interface SyncLogEntry {
@@ -81,6 +85,8 @@ export async function fetchLibrary(): Promise<
       rrp: Number(r.rrp ?? 0),
       unit: ((r.unit as LibraryItem['unit']) ?? 'EA'),
       myRate: Number(r.my_rate ?? 0),
+      suppliers: (r.suppliers as string[]) ?? [],
+      supplierSkus: (r.supplier_skus as Record<string, string>) ?? {},
     }));
     return { ok: true, items };
   } catch (e) {
@@ -101,6 +107,8 @@ export async function upsertLibraryItem(item: LibraryItem) {
       rrp: item.rrp,
       unit: item.unit,
       my_rate: item.myRate,
+      suppliers: item.suppliers ?? [],
+      supplier_skus: item.supplierSkus ?? {},
     }, { onConflict: 'product_id' });
     if (error) {
       console.warn('[rateLibraryService] upsert skipped:', error.message);
@@ -127,6 +135,71 @@ export async function removeLibraryItem(productId: string) {
   } catch (e) {
     console.warn('[rateLibraryService] unreachable:', e);
     return { ok: false as const, error: e instanceof Error ? e.message : 'unknown' };
+  }
+}
+
+// ─── Supplier queries ─────────────────────────────
+
+// Returns only items tagged for a specific supplier — used to build the BOM.
+// SQL: WHERE 'TLE' = ANY(suppliers)
+export async function fetchLibraryBySupplier(supplier: string): Promise<
+  { ok: true; items: LibraryItem[] } | { ok: false; error: string }
+> {
+  try {
+    const { data, error } = await supabase
+      .from('rate_library_items')
+      .select('*')
+      .contains('suppliers', [supplier]);
+    if (error) return { ok: false, error: error.message };
+    const items: LibraryItem[] = (data ?? []).map((r: Record<string, unknown>) => ({
+      productId: String(r.product_id ?? ''),
+      code: String(r.code ?? ''),
+      name: String(r.name ?? ''),
+      brand: String(r.brand ?? ''),
+      category: (r.category as RateCategory) ?? 'Power Points',
+      trade: Number(r.trade ?? 0),
+      rrp: Number(r.rrp ?? 0),
+      unit: ((r.unit as LibraryItem['unit']) ?? 'EA'),
+      myRate: Number(r.my_rate ?? 0),
+      suppliers: (r.suppliers as string[]) ?? [],
+      supplierSkus: (r.supplier_skus as Record<string, string>) ?? {},
+    }));
+    return { ok: true, items };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'unknown' };
+  }
+}
+
+// Tag a library item with a supplier and their specific SKU.
+// Merges into existing suppliers/supplier_skus — does not overwrite other suppliers.
+export async function tagSupplier(
+  productId: string,
+  supplier: string,
+  supplierSku: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    // Fetch current tags first so we can merge
+    const { data, error: fetchErr } = await supabase
+      .from('rate_library_items')
+      .select('suppliers, supplier_skus')
+      .eq('product_id', productId)
+      .single();
+    if (fetchErr) return { ok: false, error: fetchErr.message };
+
+    const existing: string[] = (data?.suppliers as string[]) ?? [];
+    const existingSkus: Record<string, string> = (data?.supplier_skus as Record<string, string>) ?? {};
+
+    const updatedSuppliers = existing.includes(supplier) ? existing : [...existing, supplier];
+    const updatedSkus = { ...existingSkus, [supplier]: supplierSku };
+
+    const { error } = await supabase
+      .from('rate_library_items')
+      .update({ suppliers: updatedSuppliers, supplier_skus: updatedSkus })
+      .eq('product_id', productId);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'unknown' };
   }
 }
 

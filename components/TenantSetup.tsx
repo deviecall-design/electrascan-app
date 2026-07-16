@@ -18,6 +18,8 @@ const C = {
 
 interface TenantSetupProps {
   onBack: () => void;
+  userEmail?: string;
+  onSignOut?: () => void;
 }
 
 type StringField = "name" | "abn" | "address" | "contactPhone" | "contactEmail" | "emailReplyTo";
@@ -41,7 +43,7 @@ async function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
-export default function TenantSetup({ onBack }: TenantSetupProps) {
+export default function TenantSetup({ onBack, userEmail, onSignOut }: TenantSetupProps) {
   const { tenant, updateTenant, resetTenant } = useTenant();
   const { addToast } = useToast();
   const [draft, setDraft] = useState<TenantConfig>(tenant);
@@ -389,6 +391,30 @@ export default function TenantSetup({ onBack }: TenantSetupProps) {
             {saving ? "Saving…" : saved ? "Saved ✓" : "Save changes"}
           </button>
         </div>
+
+        {(userEmail || onSignOut) && (
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: 16, marginTop: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 10 }}>Account</div>
+            {userEmail && (
+              <div style={{ fontSize: 13, color: C.text, marginBottom: 12 }}>
+                <span style={{ color: C.muted, marginRight: 6 }}>Signed in as</span>
+                {userEmail}
+              </div>
+            )}
+            {onSignOut && (
+              <button
+                onClick={onSignOut}
+                style={{
+                  width: "100%", background: "none", border: `1px solid ${C.red}55`,
+                  color: C.red, fontSize: 13, fontWeight: 600, padding: "11px",
+                  borderRadius: 12, cursor: "pointer",
+                }}
+              >
+                Sign out
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

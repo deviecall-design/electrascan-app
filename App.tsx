@@ -22,6 +22,9 @@ import { useTenant } from "./contexts/TenantContext";
 import { useAppRouter } from "./components/Router";
 import { useProjects, type Project as CtxProject } from "./contexts/ProjectContext";
 import type { RiskFlag as DetectionRiskFlag } from "./analyze_pdf";
+import { useAuth } from './contexts/AuthContext';
+import { useLicense } from './contexts/LicenseContext';
+import LoginScreen from './components/LoginScreen';
 
 // ─── Design tokens ─────────────────────────────
 const C = {
@@ -563,7 +566,7 @@ function UploadScreen({ onFile, onBack, error }: { onFile: (f: File) => void; on
       </div>
       {error && (
         <div style={{ margin: "12px 20px 0", background: `${C.red}22`, border: `1px solid ${C.red}`, borderRadius: 10, padding: "12px 14px", fontSize: 13, color: C.red, flexShrink: 0, maxHeight: 280, overflowY: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: error.includes("Pass 1 response") ? "ui-monospace, SFMono-Regular, Menlo, monospace" : "inherit" }}>
-          <div style={{ fontWeight: 700, marginBottom: 4 }}>Detection error</div>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>Couldn't read this drawing</div>
           {error}
         </div>
       )}
@@ -957,6 +960,45 @@ function ApprovalsIndex({ projects, onOpenProject }: {
 }
 
 // ─── Root App ───────────────────────────────────
+function PendingAccessScreen({ email, onSignOut }: { email?: string; onSignOut: () => void }) {
+  const C = { bg: '#0A1628', navy: '#0F1E35', card: '#132240', blue: '#1D6EFD', text: '#EDF2FF', muted: '#5C7A9E', border: '#1A3358' };
+  return (
+    <div style={{
+      height: '100vh', background: C.bg, display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center', padding: '32px 20px',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif',
+    }}>
+      <div style={{ marginBottom: 8, fontSize: 32, fontWeight: 800, letterSpacing: '-0.03em' }}>
+        <span style={{ color: C.blue }}>Electra</span><span style={{ color: C.text }}>Scan</span>
+      </div>
+      <div style={{ fontSize: 13, color: C.muted, marginBottom: 40 }}>Workspace access</div>
+      <div style={{
+        background: C.navy, border: `1px solid ${C.border}`, borderRadius: 20,
+        padding: '32px 28px', width: '100%', maxWidth: 380, textAlign: 'center',
+      }}>
+        <div style={{ fontSize: 40, marginBottom: 16 }}>⏳</div>
+        <div style={{ fontSize: 17, fontWeight: 700, color: C.text, marginBottom: 8 }}>
+          Pending activation
+        </div>
+        <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.6, marginBottom: 24 }}>
+          Your account{email ? ` (${email})` : ''} is awaiting approval.
+          Contact <span style={{ color: C.text }}>damienc13@gmail.com</span> to get access.
+        </div>
+        <button
+          onClick={onSignOut}
+          style={{
+            width: '100%', background: 'none', border: `1px solid ${C.border}`,
+            borderRadius: 12, padding: '12px', fontSize: 14, fontWeight: 600,
+            color: C.muted, cursor: 'pointer',
+          }}
+        >
+          Sign out
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const { route, navigate } = useAppRouter();
   const { tenant } = useTenant();
@@ -1108,6 +1150,24 @@ export default function App() {
     screen === "settings" ||
     screen === "project"; // legacy MOCK_PROJECTS detail screen
 
+  const { session, user, loading: authLoading, signOut } = useAuth();
+  const { isLicensed, checkingLicense } = useLicense();
+
+  if (authLoading || (session && checkingLicense)) return (
+    <div style={{
+      height: "100vh", background: "#0A1628", display: "flex",
+      alignItems: "center", justifyContent: "center",
+    }}>
+      <div style={{
+        width: 32, height: 32, border: "3px solid #1A3358",
+        borderTopColor: "#1D6EFD", borderRadius: "50%",
+        animation: "spin 0.8s linear infinite",
+      }} />
+    </div>
+  );
+  if (!session) return <LoginScreen />;
+  if (!isLicensed) return <PendingAccessScreen email={user?.email} onSignOut={signOut} />;
+
   return (
     <>
       <style>{CSS}</style>
@@ -1125,6 +1185,7 @@ export default function App() {
           pageSubtitle={tenant.name}
           onNavigate={navigate}
           onOpenSettings={() => setScreen("settings")}
+          onSignOut={signOut}
           onNewScan={goToScan}
           topbarActions={
             <>
@@ -1192,6 +1253,7 @@ export default function App() {
           pageSubtitle={`${ctxProjects.length} total · ${ctxProjects.filter(p => p.status === "Active").length} active`}
           onNavigate={navigate}
           onOpenSettings={() => setScreen("settings")}
+          onSignOut={signOut}
           onNewScan={goToScan}
           topbarActions={
             <button
@@ -1230,6 +1292,7 @@ export default function App() {
           pageSubtitle={ctxProjects.find(p => p.id === route.id)?.clientName || undefined}
           onNavigate={navigate}
           onOpenSettings={() => setScreen("settings")}
+          onSignOut={signOut}
           onNewScan={goToScan}
         >
           <ProjectDetail
@@ -1245,6 +1308,7 @@ export default function App() {
           pageSubtitle="Track estimate sign-off across your projects"
           onNavigate={navigate}
           onOpenSettings={() => setScreen("settings")}
+          onSignOut={signOut}
           onNewScan={goToScan}
         >
           <ApprovalsIndex
@@ -1260,6 +1324,7 @@ export default function App() {
           pageSubtitle="Wholesaler pricing + your custom rates"
           onNavigate={navigate}
           onOpenSettings={() => setScreen("settings")}
+          onSignOut={signOut}
           onNewScan={goToScan}
         >
           <RateLibrary onBack={() => navigate({ name: "dashboard" })} />
@@ -1272,6 +1337,7 @@ export default function App() {
           pageSubtitle="Budget, burndown, hours, milestones"
           onNavigate={navigate}
           onOpenSettings={() => setScreen("settings")}
+          onSignOut={signOut}
           onNewScan={goToScan}
         >
           <ReportsIndexScreen onBack={() => navigate({ name: "dashboard" })} />
@@ -1284,6 +1350,7 @@ export default function App() {
           pageSubtitle="Forward drawings into ElectraScan by email"
           onNavigate={navigate}
           onOpenSettings={() => setScreen("settings")}
+          onSignOut={signOut}
           onNewScan={goToScan}
         >
           <EmailUpload
@@ -1335,7 +1402,11 @@ export default function App() {
         />
       )}
       {screen === "settings" && (
-        <TenantSetup onBack={() => setScreen("dashboard")} />
+        <TenantSetup
+          onBack={() => setScreen("dashboard")}
+          userEmail={user?.email}
+          onSignOut={signOut}
+        />
       )}
     </>
   );

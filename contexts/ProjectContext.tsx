@@ -37,6 +37,7 @@ export interface CableRun {
   lengthMeters: number;
   wasteFactorPct: number; // 10 default
   totalLength: number;
+  unitRate: number; // $/m — stored per run so it can be amended as copper/freight prices move
   approvedUnitPrice?: number; // $/m — set when TLE quote is applied
 }
 
@@ -77,6 +78,10 @@ export interface ProjectEstimate {
   wholesaleQuoteReceivedAt?: string;
   wholesaleQuoteOrderedAt?: string;
   bomStatus?: BomStatus;
+  // Labour estimation (added for Vesh POC)
+  estimatedLabourHours?: number; // e.g., 40 hours
+  labourRatePerHour?: number; // e.g., $85/hr
+  estimatedLabourCost?: number; // calculated: hours × rate
 }
 
 export interface ProjectDocument {
@@ -88,6 +93,54 @@ export interface ProjectDocument {
 }
 
 export type ApprovalStatus = "pending" | "approved" | "rejected";
+
+// ─── Labour & Financial Types (Vesh POC) ─────────────────────
+export interface Timesheet {
+  id: string;
+  week: string; // "W1", "W2", etc.
+  electrician: string;
+  plannedHours: number;
+  actualHours: number;
+  labourCost: number; // calculated: actualHours × labourRatePerHour
+  materialsUsed: number; // $ materials used this week
+  submitted: boolean;
+  submittedAt?: string;
+  approvedAt?: string;
+  note?: string;
+}
+
+export interface Milestone {
+  id: string;
+  label: string; // "Rough-in Complete", "First Fix Complete", etc.
+  percentage: number; // 25, 50, 75, 100
+  amount: number; // $ amount for this milestone
+  status: "pending" | "ready" | "invoiced-draft" | "invoiced" | "received";
+  claimedAt?: string;
+  invoiceRef?: string;
+  receivedAt?: string;
+  retention?: boolean; // true for retention holdback line
+}
+
+export interface CostOverrun {
+  id: string;
+  item: string; // "Copper cable surcharge"
+  category: string; // "Materials", "Labour", "Admin"
+  amount: number; // $
+  severity: "high" | "medium" | "low";
+  reason: string;
+  detectedAt: string;
+  acknowledged: boolean;
+}
+
+export interface DepositSchedule {
+  id: string;
+  label: string; // "Deposit on Signing", "Rough-in Milestone (25%)", etc.
+  percentage: number;
+  amount: number; // $
+  status: "pending" | "invoiced" | "received";
+  dueDate?: string;
+  receivedDate?: string;
+}
 
 export interface Project {
   id: string;
@@ -102,6 +155,16 @@ export interface Project {
   documents: ProjectDocument[];
   approvalStatus?: ApprovalStatus;
   approvalUpdatedAt?: string;
+
+  // Vesh POC labour & financial fields
+  budgetTotal?: number; // locked estimate: BOM + labour combined
+  labourRatePerHour?: number; // e.g., $85/hr
+  estimatedLabourHours?: number; // from estimate
+  varianceThreshold?: number; // default 0.05 = 5%
+  timesheets?: Timesheet[];
+  milestones?: Milestone[];
+  overruns?: CostOverrun[];
+  deposits?: DepositSchedule[];
 }
 
 // ─── Persistence ────────────────────────────────────────────
@@ -171,6 +234,19 @@ interface ProjectContextValue {
   ) => ProjectScan | undefined;
   saveEstimate: (projectId: string, estimate: ProjectEstimate) => void;
   newEstimateId: () => string;
+  // Labour & financial CRUD (Vesh POC)
+  addTimesheet: (projectId: string, timesheet: Omit<Timesheet, "id">) => void;
+  updateTimesheet: (projectId: string, timesheetId: string, patch: Partial<Timesheet>) => void;
+  deleteTimesheet: (projectId: string, timesheetId: string) => void;
+  addMilestone: (projectId: string, milestone: Omit<Milestone, "id">) => void;
+  updateMilestone: (projectId: string, milestoneId: string, patch: Partial<Milestone>) => void;
+  deleteMilestone: (projectId: string, milestoneId: string) => void;
+  addOverrun: (projectId: string, overrun: Omit<CostOverrun, "id">) => void;
+  updateOverrun: (projectId: string, overrunId: string, patch: Partial<CostOverrun>) => void;
+  deleteOverrun: (projectId: string, overrunId: string) => void;
+  addDeposit: (projectId: string, deposit: Omit<DepositSchedule, "id">) => void;
+  updateDeposit: (projectId: string, depositId: string, patch: Partial<DepositSchedule>) => void;
+  deleteDeposit: (projectId: string, depositId: string) => void;
 }
 
 const ProjectContext = createContext<ProjectContextValue | undefined>(undefined);
@@ -256,6 +332,178 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
     );
   }, []);
 
+  // Timesheet CRUD
+  const addTimesheet = useCallback((projectId: string, timesheet: Omit<Timesheet, "id">) => {
+    setProjects(prev =>
+      prev.map(p =>
+        p.id === projectId
+          ? {
+              ...p,
+              timesheets: [...(p.timesheets ?? []), { ...timesheet, id: uid() }],
+              updatedAt: new Date().toISOString(),
+            }
+          : p,
+      ),
+    );
+  }, []);
+
+  const updateTimesheet = useCallback((projectId: string, timesheetId: string, patch: Partial<Timesheet>) => {
+    setProjects(prev =>
+      prev.map(p =>
+        p.id === projectId
+          ? {
+              ...p,
+              timesheets: (p.timesheets ?? []).map(t => (t.id === timesheetId ? { ...t, ...patch } : t)),
+              updatedAt: new Date().toISOString(),
+            }
+          : p,
+      ),
+    );
+  }, []);
+
+  const deleteTimesheet = useCallback((projectId: string, timesheetId: string) => {
+    setProjects(prev =>
+      prev.map(p =>
+        p.id === projectId
+          ? {
+              ...p,
+              timesheets: (p.timesheets ?? []).filter(t => t.id !== timesheetId),
+              updatedAt: new Date().toISOString(),
+            }
+          : p,
+      ),
+    );
+  }, []);
+
+  // Milestone CRUD
+  const addMilestone = useCallback((projectId: string, milestone: Omit<Milestone, "id">) => {
+    setProjects(prev =>
+      prev.map(p =>
+        p.id === projectId
+          ? {
+              ...p,
+              milestones: [...(p.milestones ?? []), { ...milestone, id: uid() }],
+              updatedAt: new Date().toISOString(),
+            }
+          : p,
+      ),
+    );
+  }, []);
+
+  const updateMilestone = useCallback((projectId: string, milestoneId: string, patch: Partial<Milestone>) => {
+    setProjects(prev =>
+      prev.map(p =>
+        p.id === projectId
+          ? {
+              ...p,
+              milestones: (p.milestones ?? []).map(m => (m.id === milestoneId ? { ...m, ...patch } : m)),
+              updatedAt: new Date().toISOString(),
+            }
+          : p,
+      ),
+    );
+  }, []);
+
+  const deleteMilestone = useCallback((projectId: string, milestoneId: string) => {
+    setProjects(prev =>
+      prev.map(p =>
+        p.id === projectId
+          ? {
+              ...p,
+              milestones: (p.milestones ?? []).filter(m => m.id !== milestoneId),
+              updatedAt: new Date().toISOString(),
+            }
+          : p,
+      ),
+    );
+  }, []);
+
+  // Overrun CRUD
+  const addOverrun = useCallback((projectId: string, overrun: Omit<CostOverrun, "id">) => {
+    setProjects(prev =>
+      prev.map(p =>
+        p.id === projectId
+          ? {
+              ...p,
+              overruns: [...(p.overruns ?? []), { ...overrun, id: uid() }],
+              updatedAt: new Date().toISOString(),
+            }
+          : p,
+      ),
+    );
+  }, []);
+
+  const updateOverrun = useCallback((projectId: string, overrunId: string, patch: Partial<CostOverrun>) => {
+    setProjects(prev =>
+      prev.map(p =>
+        p.id === projectId
+          ? {
+              ...p,
+              overruns: (p.overruns ?? []).map(o => (o.id === overrunId ? { ...o, ...patch } : o)),
+              updatedAt: new Date().toISOString(),
+            }
+          : p,
+      ),
+    );
+  }, []);
+
+  const deleteOverrun = useCallback((projectId: string, overrunId: string) => {
+    setProjects(prev =>
+      prev.map(p =>
+        p.id === projectId
+          ? {
+              ...p,
+              overruns: (p.overruns ?? []).filter(o => o.id !== overrunId),
+              updatedAt: new Date().toISOString(),
+            }
+          : p,
+      ),
+    );
+  }, []);
+
+  // Deposit CRUD
+  const addDeposit = useCallback((projectId: string, deposit: Omit<DepositSchedule, "id">) => {
+    setProjects(prev =>
+      prev.map(p =>
+        p.id === projectId
+          ? {
+              ...p,
+              deposits: [...(p.deposits ?? []), { ...deposit, id: uid() }],
+              updatedAt: new Date().toISOString(),
+            }
+          : p,
+      ),
+    );
+  }, []);
+
+  const updateDeposit = useCallback((projectId: string, depositId: string, patch: Partial<DepositSchedule>) => {
+    setProjects(prev =>
+      prev.map(p =>
+        p.id === projectId
+          ? {
+              ...p,
+              deposits: (p.deposits ?? []).map(d => (d.id === depositId ? { ...d, ...patch } : d)),
+              updatedAt: new Date().toISOString(),
+            }
+          : p,
+      ),
+    );
+  }, []);
+
+  const deleteDeposit = useCallback((projectId: string, depositId: string) => {
+    setProjects(prev =>
+      prev.map(p =>
+        p.id === projectId
+          ? {
+              ...p,
+              deposits: (p.deposits ?? []).filter(d => d.id !== depositId),
+              updatedAt: new Date().toISOString(),
+            }
+          : p,
+      ),
+    );
+  }, []);
+
   const value = useMemo<ProjectContextValue>(
     () => ({
       projects,
@@ -266,8 +514,40 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
       addScanToProject,
       saveEstimate,
       newEstimateId: uid,
+      addTimesheet,
+      updateTimesheet,
+      deleteTimesheet,
+      addMilestone,
+      updateMilestone,
+      deleteMilestone,
+      addOverrun,
+      updateOverrun,
+      deleteOverrun,
+      addDeposit,
+      updateDeposit,
+      deleteDeposit,
     }),
-    [projects, createProject, updateProject, deleteProject, getProject, addScanToProject, saveEstimate],
+    [
+      projects,
+      createProject,
+      updateProject,
+      deleteProject,
+      getProject,
+      addScanToProject,
+      saveEstimate,
+      addTimesheet,
+      updateTimesheet,
+      deleteTimesheet,
+      addMilestone,
+      updateMilestone,
+      deleteMilestone,
+      addOverrun,
+      updateOverrun,
+      deleteOverrun,
+      addDeposit,
+      updateDeposit,
+      deleteDeposit,
+    ],
   );
 
   return <ProjectContext.Provider value={value}>{children}</ProjectContext.Provider>;

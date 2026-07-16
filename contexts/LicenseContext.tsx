@@ -1,6 +1,5 @@
 import React, { createContext, useState, useEffect, useContext, ReactNode } from 'react';
-import { useToast } from './ToastContext';
-import { Loader2 } from 'lucide-react';
+import { supabase } from '../services/supabaseClient';
 
 interface LicenseContextType {
   isLicensed: boolean;
@@ -12,21 +11,46 @@ interface LicenseContextType {
 const LicenseContext = createContext<LicenseContextType | undefined>(undefined);
 
 export const LicenseProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const { addToast } = useToast();
-  const [isLicensed, setIsLicensed] = useState(true); // Always licensed
-  const [checkingLicense, setCheckingLicense] = useState(false); // No checking needed
-  const [licenseExpiration, setLicenseExpiration] = useState<Date | null>(null); // No expiration
+  const [isLicensed, setIsLicensed] = useState(false);
+  const [checkingLicense, setCheckingLicense] = useState(true);
 
-  const checkLicense = async () => {
-    // No license check needed
+  const checkApproval = async () => {
+    setCheckingLicense(true);
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      const userId = userData?.user?.id;
+      if (!userId) {
+        setIsLicensed(false);
+        return;
+      }
+      const { data, error } = await supabase
+        .from('approved_users')
+        .select('user_id')
+        .eq('user_id', userId)
+        .maybeSingle();
+      setIsLicensed(!error && data !== null);
+    } catch {
+      setIsLicensed(false);
+    } finally {
+      setCheckingLicense(false);
+    }
   };
 
   useEffect(() => {
-    // No effect needed
+    checkApproval();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
+      checkApproval();
+    });
+    return () => subscription.unsubscribe();
   }, []);
 
   return (
-    <LicenseContext.Provider value={{ isLicensed, licenseExpiration, checkingLicense, refreshLicense: checkLicense }}>
+    <LicenseContext.Provider value={{
+      isLicensed,
+      licenseExpiration: null,
+      checkingLicense,
+      refreshLicense: checkApproval,
+    }}>
       {children}
     </LicenseContext.Provider>
   );
