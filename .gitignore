@@ -28,3 +28,4 @@ src-tauri/target
 target
 .env
 .vercel
+.gstack/

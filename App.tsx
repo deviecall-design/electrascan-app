@@ -17,6 +17,7 @@ import DashboardScreen from "./components/DashboardScreen";
 import ProjectsScreen from "./components/ProjectsScreen";
 import ProjectDetail from "./components/ProjectDetail";
 import AppShell from "./components/AppShell";
+import LandingPage from "./components/LandingPage";
 import { useTenant } from "./contexts/TenantContext";
 import { useAppRouter } from "./components/Router";
 import { useProjects, type Project as CtxProject } from "./contexts/ProjectContext";
@@ -1110,6 +1111,11 @@ export default function App() {
   return (
     <>
       <style>{CSS}</style>
+
+      {/* Public marketing route — full-page, no AppShell chrome. */}
+      {route.name === "landing" && (
+        <LandingPage onEnterApp={() => navigate({ name: "dashboard" })} />
+      )}
 
       {/* New app routes (ProjectContext-backed) — wrapped in AppShell */}
       {!legacyActive && route.name === "dashboard" && (

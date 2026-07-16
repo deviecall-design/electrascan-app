@@ -45,6 +45,19 @@
   --radius-2xl: calc(var(--radius) + 8px);
   --radius-3xl: calc(var(--radius) + 12px);
   --radius-4xl: calc(var(--radius) + 16px);
+
+  /* Brand tokens (DESIGN.md) — additive, scoped to brand-register surfaces
+     like the landing page. Do not repoint the app's --primary/--foreground
+     etc. at these; that would recolor the whole restrained product UI. */
+  --color-verdigris: var(--verdigris);
+  --color-verdigris-deep: var(--verdigris-deep);
+  --color-amber-signal: var(--amber-signal);
+  --color-panel: var(--panel);
+  --color-panel-sunken: var(--panel-sunken);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-hairline-brand: var(--hairline-brand);
+  --color-success-brand: var(--success-brand);
 }
 
 :root {
@@ -80,6 +93,17 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /* Brand tokens — see DESIGN.md §2 Colors. Verdigris + Amber Signal. */
+  --verdigris: oklch(0.42 0.095 180);
+  --verdigris-deep: oklch(0.34 0.075 180);
+  --amber-signal: oklch(0.72 0.16 75);
+  --panel: oklch(0.97 0.006 180);
+  --panel-sunken: oklch(0.945 0.009 180);
+  --ink: oklch(0.16 0.01 180);
+  --ink-muted: oklch(0.52 0.014 180);
+  --hairline-brand: oklch(0.90 0.008 180);
+  --success-brand: oklch(0.55 0.13 150);
 }
 
 .dark {
@@ -123,5 +147,36 @@
 
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+/* Scroll-reveal used by the landing page (see hooks/useReveal.ts). The base
+   class is ALWAYS fully visible — no persistent hidden state, so a headless
+   render or a screenshot taken before any JS runs never ships a blank
+   section. `.ds-reveal-play` is added on intersect and layers a one-shot
+   settle-in animation whose "from" keyframe only dips to 40% opacity, so
+   even a screenshot caught mid-animation still shows legible content. */
+.ds-reveal {
+  opacity: 1;
+  transform: none;
+}
+.ds-reveal.ds-reveal-play {
+  animation: ds-reveal-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes ds-reveal-in {
+  from {
+    opacity: 0.4;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ds-reveal.ds-reveal-play {
+    animation: none;
   }
 }

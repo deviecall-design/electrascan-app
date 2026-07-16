@@ -1,0 +1,133 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-16T00:00:00.000Z",
+  "title": "Design System: ElectraScan",
+  "extensions": {
+    "colorMeta": {
+      "verdigris": {
+        "role": "primary",
+        "displayName": "Verdigris",
+        "canonical": "oklch(0.42 0.095 180)",
+        "tonalRamp": [
+          "oklch(0.15 0.03 180)",
+          "oklch(0.25 0.05 180)",
+          "oklch(0.34 0.075 180)",
+          "oklch(0.42 0.095 180)",
+          "oklch(0.52 0.09 180)",
+          "oklch(0.65 0.075 180)",
+          "oklch(0.80 0.05 180)",
+          "oklch(0.93 0.02 180)"
+        ]
+      },
+      "amber-signal": {
+        "role": "secondary",
+        "displayName": "Amber Signal",
+        "canonical": "oklch(0.72 0.16 75)",
+        "tonalRamp": [
+          "oklch(0.20 0.04 75)",
+          "oklch(0.32 0.07 75)",
+          "oklch(0.45 0.10 75)",
+          "oklch(0.58 0.13 75)",
+          "oklch(0.72 0.16 75)",
+          "oklch(0.80 0.14 75)",
+          "oklch(0.88 0.09 75)",
+          "oklch(0.95 0.03 75)"
+        ]
+      },
+      "paper": { "role": "neutral", "displayName": "Paper", "canonical": "oklch(1 0 0)" },
+      "panel": { "role": "neutral", "displayName": "Panel", "canonical": "oklch(0.97 0.006 180)" },
+      "panel-sunken": { "role": "neutral", "displayName": "Panel Sunken", "canonical": "oklch(0.945 0.009 180)" },
+      "ink": { "role": "neutral", "displayName": "Ink", "canonical": "oklch(0.16 0.01 180)" },
+      "ink-muted": { "role": "neutral", "displayName": "Ink Muted", "canonical": "oklch(0.52 0.014 180)" },
+      "hairline": { "role": "neutral", "displayName": "Hairline", "canonical": "oklch(0.90 0.008 180)" },
+      "success": { "role": "semantic", "displayName": "Success", "canonical": "oklch(0.55 0.13 150)" },
+      "error": { "role": "semantic", "displayName": "Error", "canonical": "oklch(0.58 0.22 27)" }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "Headline", "purpose": "Page-level titles, one per screen." },
+      "title": { "displayName": "Title", "purpose": "Section and modal headers." },
+      "body": { "displayName": "Body", "purpose": "Default UI voice: labels, descriptions, list rows." },
+      "label": { "displayName": "Label", "purpose": "Dense meta text: eyebrows, table headers, badge text." }
+    },
+    "shadows": [
+      { "name": "overlay", "value": "0 4px 6px -1px rgb(0 0 0 / 0.1)", "purpose": "Modals, dropdowns, popovers." },
+      { "name": "drag", "value": "0 8px 16px -4px rgb(0 0 0 / 0.18)", "purpose": "An item actively being dragged on the canvas or in a list." }
+    ],
+    "motion": [
+      { "name": "ease-standard", "value": "cubic-bezier(0.4, 0, 0.2, 1)", "purpose": "Default easing for hover/focus/state transitions (150-250ms)." }
+    ],
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Default action button — verdigris fill, white text.",
+      "html": "<button class=\"ds-btn-primary\">Save Estimate</button>",
+      "css": ".ds-btn-primary { background: oklch(0.42 0.095 180); color: oklch(1 0 0); height: 28px; padding: 0 8px; border-radius: 8px; font-family: Inter, system-ui, sans-serif; font-size: 0.75rem; font-weight: 500; border: none; transition: background 0.2s cubic-bezier(0.4,0,0.2,1); } .ds-btn-primary:hover { background: oklch(0.34 0.075 180); } .ds-btn-primary:focus-visible { outline: 2px solid oklch(0.42 0.095 180 / 0.4); outline-offset: 2px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Low-emphasis action — sunken panel fill, ink text.",
+      "html": "<button class=\"ds-btn-secondary\">Cancel</button>",
+      "css": ".ds-btn-secondary { background: oklch(0.945 0.009 180); color: oklch(0.16 0.01 180); height: 28px; padding: 0 8px; border-radius: 8px; font-family: Inter, system-ui, sans-serif; font-size: 0.75rem; font-weight: 500; border: none; transition: background 0.2s cubic-bezier(0.4,0,0.2,1); } .ds-btn-secondary:hover { background: oklch(0.90 0.008 180); }"
+    },
+    {
+      "name": "Status Badge (Signal)",
+      "kind": "chip",
+      "refersTo": "badge-status",
+      "description": "Amber highlight badge for states needing attention (e.g. quote sent).",
+      "html": "<span class=\"ds-badge-signal\">Quote Sent</span>",
+      "css": ".ds-badge-signal { display: inline-flex; align-items: center; height: 20px; padding: 2px 8px; border-radius: 9999px; background: oklch(0.72 0.16 75); color: oklch(0.16 0.01 180); font-family: Inter, system-ui, sans-serif; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input-default",
+      "description": "Default text field — panel fill, hairline border, verdigris focus ring.",
+      "html": "<input class=\"ds-input\" placeholder=\"Search items…\" />",
+      "css": ".ds-input { height: 28px; padding: 2px 8px; border-radius: 8px; background: oklch(0.97 0.006 180); border: 1px solid oklch(0.90 0.008 180); color: oklch(0.16 0.01 180); font-family: Inter, system-ui, sans-serif; font-size: 0.875rem; transition: border-color 0.2s, box-shadow 0.2s; } .ds-input::placeholder { color: oklch(0.52 0.014 180); } .ds-input:focus-visible { outline: none; border-color: oklch(0.42 0.095 180); box-shadow: 0 0 0 2px oklch(0.42 0.095 180 / 0.3); }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Default container — panel fill, hairline ring, no shadow at rest.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-title\">Kitchen Circuit</div><div class=\"ds-card-body\">14 items · $1,240.00</div></div>",
+      "css": ".ds-card { background: oklch(0.97 0.006 180); border-radius: 10px; box-shadow: inset 0 0 0 1px oklch(0.16 0.01 180 / 0.1); padding: 16px; font-family: Inter, system-ui, sans-serif; } .ds-card-title { font-size: 0.875rem; font-weight: 600; color: oklch(0.16 0.01 180); margin-bottom: 4px; } .ds-card-body { font-size: 0.75rem; color: oklch(0.52 0.014 180); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Quiet Multimeter",
+    "overview": "ElectraScan should feel like a well-made instrument, not a dashboard performing for an audience. A multimeter doesn't decorate its reading — it gives you the number, clearly, and gets out of the way. Every screen here carries that same restraint: dense, precise, calm, and built for someone who opens it fifty times a day and needs it to stay out of their head. The system is currently a stock shadcn gray scaffold with no committed identity; this spec introduces the first real brand pair — a deep verdigris teal and a warm amber-gold — used exactly as sparingly as a good instrument uses color: to mark a reading, not to decorate the case. This system explicitly rejects the bloated legacy enterprise/construction-ERP look — dense toolbars, dated skeuomorphic chrome, menus that assume a full-time power user. It also rejects the obvious \"electrician\" trope: no safety yellow, no black hazard stripes, no bolt-icon literalism. And it rejects consumer-app playfulness — this is a professional's tool, approachable through clarity and plain language, not through cartoon warmth.",
+    "keyCharacteristics": [
+      "Dense, single-family typography — no display font, ever.",
+      "One brand color used for action and selection; a second, warmer color used only for highlights and status.",
+      "Flat by default; lift (shadow) is reserved for things that float above the canvas — modals, popovers, dragged items.",
+      "Compact controls (28px buttons/inputs) tuned for someone working the interface all day, not glancing at it once."
+    ],
+    "rules": [
+      { "name": "The One Reading Rule", "body": "Only one color speaks at a time. Verdigris marks the action; amber marks the thing needing attention. They never both fire on the same element.", "section": "colors" },
+      { "name": "The No-Stripe Rule", "body": "No side-stripe borders, no black/yellow hazard patterns, no bolt iconography as a design motif. The trade is the subject matter, not the aesthetic.", "section": "colors" },
+      { "name": "The One-Family Rule", "body": "Inter does every job. If a screen needs more visual weight, reach for size or weight within Inter, never a second typeface.", "section": "typography" },
+      { "name": "The Flat-Canvas Rule", "body": "The takeoff canvas, sidebar, and estimate tables are always flat. If you're reaching for a shadow on a resting surface, use a tonal layer instead.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep one color per meaning: Verdigris = act on this, Amber Signal = look at this. Never mix them on the same element.",
+      "Do keep controls compact (28px buttons/inputs, 12-14px body text) — density serves someone using this all day.",
+      "Do use tonal layering (Panel → Panel Sunken) for structural depth; reserve shadows for modals, popovers, and dragged items only.",
+      "Do size touch targets and contrast generously enough to hold up in bright, uncontrolled jobsite light."
+    ],
+    "donts": [
+      "Don't reach for the electrician clichés — no safety-yellow/black hazard striping, no bolt-icon motifs, no navy-and-hazard-orange combinations.",
+      "Don't build \"bloated legacy enterprise software\" — no dense toolbars, no skeuomorphic chrome, no menu structures that assume a trained power user.",
+      "Don't leave ad-hoc Tailwind status colors (bg-blue-600, text-green-700, bg-red-50) scattered per-component — route every status color through the tokens above.",
+      "Don't drop secondary text to light gray for \"elegance\" — Ink Muted already sits at the edge of comfortable contrast; anything lighter fails outdoors.",
+      "Don't use a shadow on a resting card, sidebar, or table row. If it's not a modal, popover, or drag state, it stays flat.",
+      "Don't mix 600 and 700 font-weight on headings of the same tier — pick 600 for both Headline and Title and stop treating weight as accidental."
+    ]
+  }
+}

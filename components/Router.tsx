@@ -4,6 +4,7 @@ import React, { useState, createContext, useContext, useEffect, ReactNode } from
 // Hash-backed routes so reload / browser-back work. Keeps the whole
 // app mounted on a single HTML page (Vite SPA) with no framework dep.
 export type AppRoute =
+  | { name: 'landing' }
   | { name: 'dashboard' }
   | { name: 'projects' }
   | { name: 'project-detail'; id: string }
@@ -28,6 +29,7 @@ const RouterContext = createContext<RouterContextType | undefined>(undefined);
 
 // Serialise a route → URL hash so reload preserves state and deep-links work.
 function routeToHash(r: AppRoute): string {
+  if (r.name === 'landing') return '#/welcome';
   if (r.name === 'dashboard') return '#/';
   if (r.name === 'projects') return '#/projects';
   if (r.name === 'approvals') return '#/approvals';
@@ -39,8 +41,12 @@ function routeToHash(r: AppRoute): string {
 
 function hashToRoute(hash: string): AppRoute {
   const h = hash.replace(/^#\/?/, '');
+  // No auth gate exists yet (see PRODUCT.md follow-ups), so the root path
+  // still opens straight into the dashboard. The marketing page lives at
+  // its own address until real logged-out routing is wired up.
   if (h === '' || h === '/') return { name: 'dashboard' };
   const parts = h.split('/').filter(Boolean);
+  if (parts[0] === 'welcome') return { name: 'landing' };
   if (parts[0] === 'projects') {
     if (parts[1]) return { name: 'project-detail', id: parts[1] };
     return { name: 'projects' };
