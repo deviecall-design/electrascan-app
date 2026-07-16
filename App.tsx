@@ -6,9 +6,25 @@ import {
   groupByRoom,
   getReviewItems,
 } from "./analyze_pdf";
-import VariationReport, { VariationItem, VariationRisk } from "./components/VariationReport";
-import { getActiveCompanyProfile } from "./services/companyProfile";
-import { downloadEstimatePDF } from "./utils/estimatePdf";
+import VariationReport, { VariationEstimateLike } from "./components/VariationReport";
+import ApprovalsScreen, { ApprovalEstimateLike } from "./components/ApprovalsScreen";
+import RateLibrary from "./components/RateLibrary";
+import EmailUpload from "./components/EmailUpload";
+import ReportsIndexScreen from "./components/ReportsIndexScreen";
+import ReportsScreen from "./components/ReportsScreen";
+import TenantSetup from "./components/TenantSetup";
+import DashboardScreen from "./components/DashboardScreen";
+import ProjectsScreen from "./components/ProjectsScreen";
+import ProjectDetail from "./components/ProjectDetail";
+import AppShell from "./components/AppShell";
+import LandingPage from "./components/LandingPage";
+import { useTenant } from "./contexts/TenantContext";
+import { useAppRouter } from "./components/Router";
+import { useProjects, type Project as CtxProject } from "./contexts/ProjectContext";
+import type { RiskFlag as DetectionRiskFlag } from "./analyze_pdf";
+import { useAuth } from './contexts/AuthContext';
+import { useLicense } from './contexts/LicenseContext';
+import LoginScreen from './components/LoginScreen';
 
 // ─── Design tokens ─────────────────────────────
 const C = {
@@ -864,6 +880,47 @@ export default function App() {
     setProjects(prev => [newProject, ...prev]);
     setScreen("estimate");
   };
+
+
+  // Legacy screens (upload, scanning, variation, approvals, etc.) render when
+  // active. Otherwise the app route drives the primary navigation between
+  // Dashboard (4.1), Projects (4.2), and Project Detail (4.3).
+  const legacyActive =
+    screen === "upload" ||
+    screen === "scanning" ||
+    screen === "results" ||
+    screen === "estimate" ||
+    screen === "variation" ||
+    screen === "approvals" ||
+    screen === "ratelibrary" ||
+    screen === "email" ||
+    screen === "reports" ||
+    screen === "settings" ||
+    screen === "project"; // legacy MOCK_PROJECTS detail screen
+
+  const { session, user, loading: authLoading, signOut } = useAuth();
+  const { isLicensed, checkingLicense } = useLicense();
+
+  // Public marketing route — must render before any auth/license gate below.
+  if (route.name === "landing") {
+    return <LandingPage onEnterApp={() => navigate({ name: "dashboard" })} />;
+  }
+
+  if (authLoading || (session && checkingLicense)) return (
+    <div style={{
+      height: "100vh", background: "#0A1628", display: "flex",
+      alignItems: "center", justifyContent: "center",
+    }}>
+      <div style={{
+        width: 32, height: 32, border: "3px solid #1A3358",
+        borderTopColor: "#1D6EFD", borderRadius: "50%",
+        animation: "spin 0.8s linear infinite",
+      }} />
+    </div>
+  );
+  if (!session) return <LoginScreen />;
+  if (!isLicensed) return <PendingAccessScreen email={user?.email} onSignOut={signOut} />;
+
 
   return (
     <>

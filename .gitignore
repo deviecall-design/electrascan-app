@@ -30,4 +30,4 @@ target
 .vercel
 
 # Tooling
-.gstack
+.gstack/
