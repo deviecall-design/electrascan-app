@@ -1153,6 +1153,14 @@ export default function App() {
   const { session, user, loading: authLoading, signOut } = useAuth();
   const { isLicensed, checkingLicense } = useLicense();
 
+  // Public marketing route — must render before any auth/license gate below.
+  // Landing pages gated behind a session defeat the point of having one; the
+  // CTA routes into the dashboard, and the gates below take it from there
+  // (no session → LoginScreen, unlicensed → PendingAccessScreen).
+  if (route.name === "landing") {
+    return <LandingPage onEnterApp={() => navigate({ name: "dashboard" })} />;
+  }
+
   if (authLoading || (session && checkingLicense)) return (
     <div style={{
       height: "100vh", background: "#0A1628", display: "flex",
@@ -1171,11 +1179,6 @@ export default function App() {
   return (
     <>
       <style>{CSS}</style>
-
-      {/* Public marketing route — full-page, no AppShell chrome. */}
-      {route.name === "landing" && (
-        <LandingPage onEnterApp={() => navigate({ name: "dashboard" })} />
-      )}
 
       {/* New app routes (ProjectContext-backed) — wrapped in AppShell */}
       {!legacyActive && route.name === "dashboard" && (
