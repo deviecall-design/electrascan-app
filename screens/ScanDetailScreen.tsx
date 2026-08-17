@@ -801,6 +801,7 @@ function StepReview({ onNext, onBack, initialItems }: { onNext: () => void; onBa
 
 // ─── Step 4: Quote ──────────────────────────────────────────────────────
 function StepQuote({ onBack, initialItems }: { onBack: () => void; initialItems?: DetectedItem[] }) {
+  const navigate = useNavigate();
   const source = initialItems ?? DETECTED_ITEMS;
   const company = getActiveCompanyProfile();
   const subtotal = useMemo(
@@ -941,6 +942,7 @@ function StepQuote({ onBack, initialItems }: { onBack: () => void; initialItems?
         </div>
 
         <GhostButton onClick={onBack} icon={<ArrowLeft size={14} />}>Back to review</GhostButton>
+        <GhostButton onClick={() => navigate('/detection/new')} icon={<Plus size={14} />} style={{ marginTop: 4 }}>New scan</GhostButton>
       </div>
     </div>
   );
