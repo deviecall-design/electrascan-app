@@ -49,7 +49,7 @@ export default function DetectionScreen() {
         cta={
           <PrimaryButton
             icon={<Plus size={15} strokeWidth={2.5} />}
-            onClick={() => navigate("/detection/new")}
+            onClick={() => navigate("/detection")}
           >
             New scan
           </PrimaryButton>
