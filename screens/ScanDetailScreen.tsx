@@ -38,6 +38,7 @@ import {
   Copy,
   Sparkles,
   RefreshCw,
+  Plus,
 } from "lucide-react";
 import { detectElectricalComponents, DetectionResult } from "../analyze_pdf";
 import { C, FONT, RADIUS } from "../components/desktop/tokens";
@@ -1170,7 +1171,7 @@ function StepQuote({ onBack, items: propItems }: { onBack: () => void; items?: D
         </div>
 
         <GhostButton onClick={onBack} icon={<ArrowLeft size={14} />}>Back to review</GhostButton>
-        <GhostButton onClick={() => navigate('/detection/new')} icon={<Plus size={14} />} style={{ marginTop: 4 }}>New scan</GhostButton>
+        <GhostButton onClick={() => navigate('/detection/new')} icon={<Plus size={14} />}>New scan</GhostButton>
       </div>
     </div>
   );
