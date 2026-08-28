@@ -22,6 +22,18 @@ import { mapLegendItem, type CatalogueItem } from "./vesh_catalogue";
 // If detection breaks with a not_found_error naming the model, update this.
 const DETECTION_MODEL = "claude-opus-5";
 
+// Pull the text out of a response. Never index content[0] directly: current
+// models think by default, so the first block is usually a thinking block and
+// the model's actual answer sits after it. Assuming index 0 silently yielded ""
+// and made every scan look like "0 components detected".
+function extractText(r: Anthropic.Message): string {
+  return r.content
+    .filter((b): b is Anthropic.TextBlock => b.type === "text")
+    .map(b => b.text)
+    .join("\n")
+    .trim();
+}
+
 // ─────────────────────────────────────────────
 // TYPES
 // ─────────────────────────────────────────────
@@ -503,7 +515,7 @@ export async function detectElectricalComponents(
         ],
       }],
     });
-    rawLegendResponse = r.content[0].type === "text" ? r.content[0].text : "";
+    rawLegendResponse = extractText(r);
     console.log("[ElectraScan][detect] Pass 1 raw response (first 500 chars):", rawLegendResponse.slice(0, 500));
     console.log("[ElectraScan][detect] Pass 1 stop_reason / content blocks:", r.stop_reason, r.content.length);
     const extracted = extractJSON(rawLegendResponse);
@@ -561,7 +573,7 @@ export async function detectElectricalComponents(
         ],
       }],
     });
-    rawResponse = r.content[0].type === "text" ? r.content[0].text : "";
+    rawResponse = extractText(r);
     console.log("[ElectraScan][detect] Pass 2 raw response (first 500 chars):", rawResponse.slice(0, 500));
     console.log("[ElectraScan][detect] Pass 2 stop_reason / content blocks:", r.stop_reason, r.content.length);
     const extracted = extractJSON(rawResponse);
