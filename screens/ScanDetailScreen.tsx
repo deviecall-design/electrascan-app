@@ -69,6 +69,43 @@ interface DetectedItem {
   conf: number;
   x: number;
   y: number;
+  /**
+   * Unit price carried straight through from detection, which matched the
+   * symbol against the Vesh catalogue. When present this is the price of
+   * record and RATE_LOOKUP is not consulted — the lookup below only covers
+   * ten demo rate codes, so pricing real drawings from it silently produced
+   * $0 lines and mis-priced anything it did not recognise.
+   */
+  unitPrice?: number;
+  /** Real category from the detected component type, for the quote breakdown. */
+  category?: string;
+}
+
+// Groups a raw ComponentType into the buckets shown on the quote. Derived from
+// what was actually detected rather than from fixed ratios of the subtotal.
+function categoryFor(type: string): string {
+  const t = (type || "").toUpperCase();
+  if (t.startsWith("GPO")) return "Power outlets";
+  if (t.startsWith("DOWNLIGHT") || t.startsWith("PENDANT") || t.startsWith("LIGHT")) return "Lighting";
+  if (t.startsWith("SWITCHING")) return "Switching & dimming";
+  if (t.startsWith("DATA")) return "Data & comms";
+  if (t.startsWith("SWITCHBOARD")) return "Distribution board";
+  if (t.startsWith("SECURITY") || t.startsWith("SMOKE")) return "Safety & compliance";
+  if (t.startsWith("EXHAUST") || t.startsWith("AC_")) return "Ventilation & climate";
+  if (t.startsWith("EV_") || t.startsWith("POOL") || t.startsWith("GATE") || t.startsWith("AUTOMATION")) return "Specialist & automation";
+  return "Other";
+}
+
+/** Line total for an item: catalogue price when known, demo rates otherwise. */
+function lineTotal(it: DetectedItem): number {
+  if (typeof it.unitPrice === "number" && it.unitPrice > 0) return it.unitPrice * it.qty;
+  const r = RATE_LOOKUP[it.rateCode];
+  return r ? (r.rate + r.labour) * it.qty : 0;
+}
+
+/** True when we have no price at all — surfaced as "Price required" in Review. */
+function isUnpriced(it: DetectedItem): boolean {
+  return lineTotal(it) === 0;
 }
 
 const DETECTED_ITEMS: DetectedItem[] = [
@@ -138,10 +175,15 @@ function mapDetectionToItems(detection: DetectionResult | null | undefined): Det
       symbol: symbolMap[c.type] ?? "EL",
       qty: c.quantity,
       desc: label,
-      rateCode: rateMap[c.type] ?? "GPO-001",
+      // No rateMap entry means we genuinely do not know the rate code. Leaving
+      // it blank marks the line "price required"; defaulting to GPO-001 (as
+      // this did) silently priced switchboards and EV chargers as double GPOs.
+      rateCode: rateMap[c.type] ?? "",
       conf: Math.min(1, Math.max(0, (c.confidence ?? 90) / 100)),
       x: 60 + ((i * 73) % 420),
       y: 60 + ((i * 61) % 280),
+      unitPrice: typeof c.unit_price === "number" ? c.unit_price : undefined,
+      category: categoryFor(c.type),
     };
   });
 }
@@ -153,6 +195,7 @@ export default function ScanDetailScreen() {
   const [liveScan, setLiveScan] = useState<ScanRow | null>(null);
   const [step, setStep] = useState(id === "new" ? 1 : 2);
   const [detectedItems, setDetectedItems] = useState<DetectedItem[]>(DETECTED_ITEMS);
+  const [uploadedName, setUploadedName] = useState<string>("");
 
   useEffect(() => {
     if (!id || id === "new") return;
@@ -170,8 +213,13 @@ export default function ScanDetailScreen() {
   }, [id]);
 
   const isNew = id === "new";
-  const fileName = liveScan?.file_name ?? (isNew ? "New scan" : "Switchboard_LV2_rev3.pdf");
-  const clientLabel = liveScan?.client ?? (isNew ? "" : "Bondi Tower Residences · Level 2");
+  // Prefer the name of the file the user actually uploaded this session, then
+  // the persisted scan, and only then a placeholder. Previously a new scan was
+  // always titled "New scan" no matter what was uploaded, and a saved scan fell
+  // back to a hardcoded demo filename.
+  const fileName =
+    uploadedName || liveScan?.file_name || (isNew ? "New scan" : "Untitled scan");
+  const clientLabel = liveScan?.client ?? "";
 
   return (
     <div className="anim-in">
@@ -199,15 +247,23 @@ export default function ScanDetailScreen() {
 
       {step === 1 && (
         <StepUpload
-          onNext={(items?: DetectedItem[]) => {
+          onNext={(items?: DetectedItem[], name?: string) => {
             if (items && items.length > 0) setDetectedItems(items);
+            if (name) setUploadedName(name);
             setStep(2);
           }}
         />
       )}
       {step === 2 && <StepDetecting onNext={() => setStep(3)} items={detectedItems} />}
       {step === 3 && <StepReview onNext={() => setStep(4)} onBack={() => setStep(2)} items={detectedItems} />}
-      {step === 4 && <StepQuote onBack={() => setStep(3)} items={detectedItems} />}
+      {step === 4 && (
+        <StepQuote
+          onBack={() => setStep(3)}
+          items={detectedItems}
+          clientName={clientLabel}
+          sourceFileName={uploadedName || liveScan?.file_name}
+        />
+      )}
 
       <Footer />
     </div>
@@ -275,7 +331,7 @@ function StepBar({ step, onStep }: StepBarProps) {
 // ─── Step 1: Upload ─────────────────────────────────────────────────────
 type UploadState = "idle" | "detecting" | "error";
 
-function StepUpload({ onNext }: { onNext: (items?: DetectedItem[]) => void }) {
+function StepUpload({ onNext }: { onNext: (items?: DetectedItem[], fileName?: string) => void }) {
   const [uploadState, setUploadState] = useState<UploadState>("idle");
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [fileName, setFileName] = useState<string>("");
@@ -290,7 +346,7 @@ function StepUpload({ onNext }: { onNext: (items?: DetectedItem[]) => void }) {
       const result = await detectElectricalComponents(file);
       const mapped = mapDetectionToItems(result);
       // Fall back to DETECTED_ITEMS if the model returned nothing
-      onNext(mapped.length > 0 ? mapped : undefined);
+      onNext(mapped.length > 0 ? mapped : undefined, file.name);
     } catch (err: any) {
       console.error("[ElectraScan] Detection failed:", err);
       setErrorMsg(err?.message ?? "Unknown error during detection.");
@@ -956,9 +1012,8 @@ function StepReview({ onNext, onBack, items: propItems }: { onNext: () => void; 
           </thead>
           <tbody>
             {items.map(it => {
-              const rate = RATE_LOOKUP[it.rateCode];
-              const unit = rate ? rate.rate + rate.labour : 0;
-              const total = unit * it.qty;
+              const total = lineTotal(it);
+              const unit = it.qty > 0 ? total / it.qty : 0;
               return (
                 <tr key={it.id} className="es-row" style={{ borderTop: `1px solid ${C.border}` }}>
                   <Td>
@@ -981,12 +1036,16 @@ function StepReview({ onNext, onBack, items: propItems }: { onNext: () => void; 
                   <Td><SymbolBadge symbol={it.symbol} small /></Td>
                   <Td>{it.desc}</Td>
                   <Td>
-                    <span style={{ fontFamily: FONT.mono, fontSize: 12, color: C.textMuted }}>{it.rateCode}</span>
+                    <span style={{ fontFamily: FONT.mono, fontSize: 12, color: C.textMuted }}>
+                      {it.rateCode || "—"}
+                    </span>
                     <span style={{ color: C.textSubtle, margin: "0 6px" }}>·</span>
-                    <span style={{ fontSize: 13 }}>{rate?.description}</span>
+                    <span style={{ fontSize: 13 }}>
+                      {RATE_LOOKUP[it.rateCode]?.description ?? (total > 0 ? "Catalogue rate" : "Price required")}
+                    </span>
                   </Td>
                   <Td align="right" mono>{it.qty}</Td>
-                  <Td align="right" mono>${unit}</Td>
+                  <Td align="right" mono>${Math.round(unit).toLocaleString()}</Td>
                   <Td align="right" mono><B>${total.toLocaleString()}</B></Td>
                   <Td><ConfPill c={it.conf} withBar /></Td>
                 </tr>
@@ -1027,33 +1086,50 @@ function StepReview({ onNext, onBack, items: propItems }: { onNext: () => void; 
 }
 
 // ─── Step 4: Quote ──────────────────────────────────────────────────────
-function StepQuote({ onBack, items: propItems }: { onBack: () => void; items?: DetectedItem[] }) {
+function StepQuote({
+  onBack,
+  items: propItems,
+  clientName,
+  sourceFileName,
+}: {
+  onBack: () => void;
+  items?: DetectedItem[];
+  clientName?: string;
+  sourceFileName?: string;
+}) {
   const navigate = useNavigate();
   // Fall back to sample data only when detection produced nothing — an empty
   // live array must not render an empty quote.
   const source = propItems && propItems.length > 0 ? propItems : DETECTED_ITEMS;
   const company = getActiveCompanyProfile();
   const subtotal = useMemo(
-    () =>
-      source.reduce((sum, it) => {
-        const r = RATE_LOOKUP[it.rateCode];
-        return sum + (r ? (r.rate + r.labour) * it.qty : 0);
-      }, 0),
+    () => source.reduce((sum, it) => sum + lineTotal(it), 0),
     [source],
   );
   const margin = Math.round(subtotal * 0.18);
   const gst = Math.round((subtotal + margin) * 0.1);
   const total = subtotal + margin + gst;
 
-  const rows = [
-    { d: "Power outlets (GPO + WP)",            t: subtotal * 0.12 },
-    { d: "Lighting (LED downlights + pendant)", t: subtotal * 0.22 },
-    { d: "Switching & dimming",                 t: subtotal * 0.08 },
-    { d: "Data & comms (Cat6A)",                t: subtotal * 0.09 },
-    { d: "Distribution board (12-way)",         t: subtotal * 0.10 },
-    { d: "Safety & compliance",                 t: subtotal * 0.09 },
-    { d: "Cabling & conduit",                   t: subtotal * 0.30 },
-  ];
+  // Breakdown built by summing the detected lines in each category. This used
+  // to be fixed percentages of the subtotal (12% power, 22% lighting, ...),
+  // which produced a plausible-looking quote with no relationship to the
+  // drawing — including a "Cabling & conduit" line worth 30% of every job
+  // whether or not any cable was detected.
+  const rows = useMemo(() => {
+    const byCategory = new Map<string, number>();
+    for (const it of source) {
+      const key = it.category ?? "Other";
+      byCategory.set(key, (byCategory.get(key) ?? 0) + lineTotal(it));
+    }
+    return [...byCategory.entries()]
+      .filter(([, t]) => t > 0)
+      .sort((a, b) => b[1] - a[1])
+      .map(([d, t]) => ({ d, t }));
+  }, [source]);
+
+  // Items detection found but could not price. They are excluded from the
+  // subtotal above, so the quote must say so rather than reading as complete.
+  const unpricedCount = useMemo(() => source.filter(isUnpriced).length, [source]);
 
   return (
     <div className="anim-in" style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: 24 }}>
@@ -1092,14 +1168,22 @@ function StepQuote({ onBack, items: propItems }: { onBack: () => void; items?: D
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginBottom: 24, fontSize: 12 }}>
               <div>
                 <div style={{ fontFamily: FONT.heading, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textSubtle, marginBottom: 4 }}>Prepared for</div>
-                <div style={{ fontWeight: 500 }}>Bondi Tower Residences</div>
-                <div style={{ color: C.textMuted }}>Attn: Marco Petrou</div>
-                <div style={{ color: C.textMuted }}>12 Campbell Parade, Bondi Beach</div>
+                {/* Was hardcoded to a fictional client (Bondi Tower Residences,
+                    Attn: Marco Petrou). On a document the contractor sends to a
+                    builder, invented recipient details are worse than a blank —
+                    so show a clear prompt until the client is set. */}
+                {clientName ? (
+                  <div style={{ fontWeight: 500 }}>{clientName}</div>
+                ) : (
+                  <div style={{ fontWeight: 500, color: C.orange }}>Client not set</div>
+                )}
               </div>
               <div>
                 <div style={{ fontFamily: FONT.heading, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textSubtle, marginBottom: 4 }}>Scope</div>
-                <div style={{ fontWeight: 500 }}>Level 2 electrical fit-out</div>
-                <div style={{ color: C.textMuted, fontStyle: "italic" }}>per Switchboard_LV2_rev3.pdf</div>
+                <div style={{ fontWeight: 500 }}>Electrical fit-out</div>
+                <div style={{ color: C.textMuted, fontStyle: "italic" }}>
+                  {sourceFileName ? `per ${sourceFileName}` : "per uploaded drawing"}
+                </div>
               </div>
             </div>
 
@@ -1139,14 +1223,21 @@ function StepQuote({ onBack, items: propItems }: { onBack: () => void; items?: D
             ${total.toLocaleString()}
           </div>
           <div style={{ fontSize: 13, color: C.textMuted, fontStyle: "italic", marginTop: 8 }}>
-            incl. GST · 68 items · 18% margin
+            incl. GST · {source.length} {source.length === 1 ? "item" : "items"} · 18% margin
           </div>
 
+          {/* Materials/Labour used to be a fixed 55/45 split of the subtotal.
+              The catalogue gives a single supply-and-install rate per item, so
+              that split was invented. These four are values we actually hold. */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 20 }}>
-            <MiniStat label="Materials" v={`$${Math.round(subtotal * 0.55).toLocaleString()}`} />
-            <MiniStat label="Labour"    v={`$${Math.round(subtotal * 0.45).toLocaleString()}`} />
-            <MiniStat label="Margin"    v={`$${margin.toLocaleString()}`} tint={C.green} />
-            <MiniStat label="Scan time" v="6m 48s" />
+            <MiniStat label="Subtotal ex GST" v={`$${subtotal.toLocaleString()}`} />
+            <MiniStat label="GST"             v={`$${gst.toLocaleString()}`} />
+            <MiniStat label="Margin"          v={`$${margin.toLocaleString()}`} tint={C.green} />
+            <MiniStat
+              label="Price required"
+              v={String(unpricedCount)}
+              tint={unpricedCount > 0 ? C.orange : undefined}
+            />
           </div>
         </Card>
 
