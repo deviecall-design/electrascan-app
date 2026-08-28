@@ -15,12 +15,56 @@ import Anthropic from "@anthropic-ai/sdk";
 import * as pdfjsLib from "pdfjs-dist";
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 import { mapLegendItem, type CatalogueItem } from "./vesh_catalogue";
+import { supabase } from "./services/supabaseClient";
 
 // Model used for both detection passes. Kept in one place because model IDs get
 // retired: the previous value (claude-sonnet-4-20250514) was withdrawn and every
 // scan started failing with a 404 that surfaced only as "0 components detected".
 // If detection breaks with a not_found_error naming the model, update this.
 const DETECTION_MODEL = "claude-opus-5";
+
+/**
+ * Runs one detection pass through the server-side proxy.
+ *
+ * The Anthropic key is deliberately not available in the browser — see
+ * api/detect.js. Failures are thrown with the upstream reason attached so a
+ * broken model id or an expired session surfaces as a real error instead of
+ * silently becoming "0 components detected".
+ */
+async function callDetect(payload: {
+  model: string;
+  max_tokens: number;
+  system: string;
+  messages: unknown[];
+}): Promise<Anthropic.Message> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) {
+    throw new Error("You need to be signed in to run a scan.");
+  }
+
+  const res = await fetch("/api/detect", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const raw = await res.text();
+  if (!res.ok) {
+    let reason = raw.slice(0, 300);
+    try {
+      const parsed = JSON.parse(raw);
+      reason = parsed.detail || parsed.error || reason;
+    } catch {
+      /* keep the raw text */
+    }
+    throw new Error(`Detection failed (${res.status}): ${reason}`);
+  }
+  return JSON.parse(raw) as Anthropic.Message;
+}
 
 // Pull the text out of a response. Never index content[0] directly: current
 // models think by default, so the first block is usually a thinking block and
@@ -252,19 +296,48 @@ Return ONLY valid JSON:
 // PDF → IMAGES
 // ─────────────────────────────────────────────
 
+// Detection now posts these images through /api/detect, and Vercel rejects
+// request bodies over ~4.5 MB. Full-scale PNG renders of a large drawing blow
+// past that, so pages are encoded as JPEG and the scale is stepped down until
+// the whole set fits inside the budget below. JPEG at this quality is visually
+// indistinguishable for symbol detection and roughly an order of magnitude
+// smaller than PNG for line drawings with anti-aliasing.
+const PAYLOAD_BUDGET_BYTES = 3_400_000; // headroom under Vercel's ~4.5 MB cap
+const RENDER_SCALES = [2.0, 1.5, 1.2, 1.0, 0.8];
+const JPEG_QUALITY = 0.82;
+
 async function pdfToImages(file: File): Promise<string[]> {
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
-  const images: string[] = [];
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const viewport = page.getViewport({ scale: 2.0 });
-    const canvas = document.createElement("canvas");
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    await page.render({ canvasContext: canvas.getContext("2d")!, viewport }).promise;
-    images.push(canvas.toDataURL("image/png").split(",")[1]);
+
+  let images: string[] = [];
+  for (const scale of RENDER_SCALES) {
+    images = [];
+    let total = 0;
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement("canvas");
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      await page.render({ canvasContext: canvas.getContext("2d")!, viewport }).promise;
+      const b64 = canvas.toDataURL("image/jpeg", JPEG_QUALITY).split(",")[1];
+      total += b64.length;
+      images.push(b64);
+    }
+    if (total <= PAYLOAD_BUDGET_BYTES) {
+      console.log(
+        `[ElectraScan v4] Rendered ${images.length} page(s) at scale ${scale} (${Math.round(total / 1024)} KB)`,
+      );
+      return images;
+    }
+    console.warn(
+      `[ElectraScan v4] Scale ${scale} produced ${Math.round(total / 1024)} KB — retrying smaller.`,
+    );
   }
+  // Even the smallest scale overflowed; send it and let the server's page limit
+  // return a clear error rather than failing silently on an oversized body.
+  console.warn("[ElectraScan v4] Drawing is very large — sending at minimum scale.");
   return images;
 }
 
@@ -481,18 +554,16 @@ function generateRiskFlags(components: DetectedComponent[]): RiskFlag[] {
 export async function detectElectricalComponents(
   file: File,
   drawingVersion: string = "001",
-  apiKey?: string
+  // Retained so existing callers keep compiling. It is deliberately ignored:
+  // the key now lives server-side behind /api/detect and never reaches the
+  // browser. Passing one here has no effect.
+  _apiKey?: string
 ): Promise<DetectionResult> {
-  const client = new Anthropic({
-    apiKey: apiKey ?? (import.meta as any).env.VITE_ANTHROPIC_API_KEY,
-    dangerouslyAllowBrowser: true,
-  });
-
   console.log(`[ElectraScan v4] Converting: ${file.name}`);
   const pageImages = await pdfToImages(file);
   const imageBlocks: Anthropic.ImageBlockParam[] = pageImages.map(base64 => ({
     type: "image" as const,
-    source: { type: "base64" as const, media_type: "image/png" as const, data: base64 },
+    source: { type: "base64" as const, media_type: "image/jpeg" as const, data: base64 },
   }));
 
   // ── PASS 1: Symbol-aware legend extraction ────
@@ -503,7 +574,7 @@ export async function detectElectricalComponents(
   let scaleDetected = "unknown";
 
   try {
-    const r = await client.messages.create({
+    const r = await callDetect({
       model: DETECTION_MODEL,
       max_tokens: 16000,
       system: LEGEND_SYSTEM_PROMPT,
@@ -561,7 +632,7 @@ export async function detectElectricalComponents(
   }
 
   try {
-    const r = await client.messages.create({
+    const r = await callDetect({
       model: DETECTION_MODEL,
       max_tokens: 16000,
       system: buildFloorPlanPrompt(legendItems),
