@@ -16,6 +16,12 @@ import * as pdfjsLib from "pdfjs-dist";
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 import { mapLegendItem, type CatalogueItem } from "./vesh_catalogue";
 
+// Model used for both detection passes. Kept in one place because model IDs get
+// retired: the previous value (claude-sonnet-4-20250514) was withdrawn and every
+// scan started failing with a 404 that surfaced only as "0 components detected".
+// If detection breaks with a not_found_error naming the model, update this.
+const DETECTION_MODEL = "claude-opus-5";
+
 // ─────────────────────────────────────────────
 // TYPES
 // ─────────────────────────────────────────────
@@ -486,8 +492,8 @@ export async function detectElectricalComponents(
 
   try {
     const r = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 2000,
+      model: DETECTION_MODEL,
+      max_tokens: 16000,
       system: LEGEND_SYSTEM_PROMPT,
       messages: [{
         role: "user",
@@ -544,8 +550,8 @@ export async function detectElectricalComponents(
 
   try {
     const r = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 4096,
+      model: DETECTION_MODEL,
+      max_tokens: 16000,
       system: buildFloorPlanPrompt(legendItems),
       messages: [{
         role: "user",
