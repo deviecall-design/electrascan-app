@@ -21,7 +21,15 @@ import { supabase } from "./services/supabaseClient";
 // retired: the previous value (claude-sonnet-4-20250514) was withdrawn and every
 // scan started failing with a 404 that surfaced only as "0 components detected".
 // If detection breaks with a not_found_error naming the model, update this.
-const DETECTION_MODEL = "claude-opus-5";
+const DETECTION_MODEL = "claude-sonnet-5";
+
+/** Phases reported back to the UI so a multi-minute scan shows real progress. */
+export type DetectionPhase = "rendering" | "legend" | "floorplan" | "building" | "done";
+export interface DetectionProgress {
+  phase: DetectionPhase;
+  message: string;
+}
+export type ProgressFn = (p: DetectionProgress) => void;
 
 /**
  * Runs one detection pass through the server-side proxy.
@@ -557,9 +565,17 @@ export async function detectElectricalComponents(
   // Retained so existing callers keep compiling. It is deliberately ignored:
   // the key now lives server-side behind /api/detect and never reaches the
   // browser. Passing one here has no effect.
-  _apiKey?: string
+  _apiKey?: string,
+  onProgress?: ProgressFn,
 ): Promise<DetectionResult> {
+  // A scan runs for minutes. Without these callbacks the UI sits on a spinner
+  // with no sign of life, which reads as a hung app rather than a working one.
+  const report = (phase: DetectionPhase, message: string) => {
+    onProgress?.({ phase, message });
+  };
+
   console.log(`[ElectraScan v4] Converting: ${file.name}`);
+  report("rendering", "Rendering drawing pages…");
   const pageImages = await pdfToImages(file);
   const imageBlocks: Anthropic.ImageBlockParam[] = pageImages.map(base64 => ({
     type: "image" as const,
@@ -567,6 +583,10 @@ export async function detectElectricalComponents(
   }));
 
   // ── PASS 1: Symbol-aware legend extraction ────
+  report(
+    "legend",
+    `Reading the legend across ${pageImages.length} page${pageImages.length === 1 ? "" : "s"}…`,
+  );
   console.log("[ElectraScan v4] Pass 1: Reading legend + symbols...");
   let rawLegendResponse = "";
   let legendItems: LegendItem[] = [];
@@ -609,6 +629,12 @@ export async function detectElectricalComponents(
   }
 
   // ── PASS 2: Floor plan scan with symbol decoder ─
+  report(
+    "floorplan",
+    legendItems.length > 0
+      ? `Found ${legendItems.length} legend items — now counting them across the plan…`
+      : "No legend found — estimating from the floor plan…",
+  );
   console.log("[ElectraScan v4] Pass 2: Scanning floor plan with symbol decoder...");
   let rawResponse = "";
   let roomComponents: any[] = [];
@@ -659,6 +685,7 @@ export async function detectElectricalComponents(
     console.warn("[ElectraScan][detect] Pass 2 failure — raw response was:", rawResponse);
   }
 
+  report("building", "Matching symbols to your rate library…");
   console.log(`[ElectraScan][detect] buildComponents inputs: legendItems=${legendItems.length}, roomComponents=${roomComponents.length}`);
   const components = buildComponents(legendItems, roomComponents);
   console.log(`[ElectraScan][detect] buildComponents output: components=${components.length}`);
@@ -666,6 +693,7 @@ export async function detectElectricalComponents(
   const estimateSubtotal = components.reduce((s, c) => s + c.line_total, 0);
 
   console.log(`[ElectraScan v4] Complete: ${components.length} items, $${estimateSubtotal.toLocaleString()}`);
+  report("done", `${components.length} items · $${estimateSubtotal.toLocaleString()}`);
 
   if (components.length === 0) {
     console.error(

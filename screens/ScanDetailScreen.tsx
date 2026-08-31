@@ -40,7 +40,7 @@ import {
   RefreshCw,
   Plus,
 } from "lucide-react";
-import { detectElectricalComponents, DetectionResult } from "../analyze_pdf";
+import { detectElectricalComponents, DetectionResult, DetectionPhase } from "../analyze_pdf";
 import { C, FONT, RADIUS } from "../components/desktop/tokens";
 import {
   Card,
@@ -240,7 +240,10 @@ export default function ScanDetailScreen() {
         </span>
       </div>
       <p style={{ color: C.textMuted, fontStyle: "italic", margin: "0 0 28px 0" }}>
-        {clientLabel}{!liveScan && !isNew ? " · uploaded 14 minutes ago" : ""}
+        {/* "uploaded 14 minutes ago" was hardcoded and shown on every scan
+            regardless of age, leaving a dangling separator when no client is
+            set. Show the client when we have one, and nothing when we do not. */}
+        {clientLabel}
       </p>
 
       <StepBar step={step} onStep={setStep} />
@@ -336,14 +339,32 @@ function StepUpload({ onNext }: { onNext: (items?: DetectedItem[], fileName?: st
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [fileName, setFileName] = useState<string>("");
   const [dragOver, setDragOver] = useState(false);
+  const [phase, setPhase] = useState<DetectionPhase>("rendering");
+  const [phaseMsg, setPhaseMsg] = useState<string>("Starting…");
+  const [elapsed, setElapsed] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // A scan runs for minutes. Ticking the elapsed time is the clearest signal
+  // that work is still happening — a static spinner reads as a hung page.
+  useEffect(() => {
+    if (uploadState !== "detecting") return;
+    const started = Date.now();
+    setElapsed(0);
+    const t = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => clearInterval(t);
+  }, [uploadState]);
 
   const runDetection = useCallback(async (file: File) => {
     setFileName(file.name);
     setUploadState("detecting");
     setErrorMsg("");
+    setPhase("rendering");
+    setPhaseMsg("Rendering drawing pages…");
     try {
-      const result = await detectElectricalComponents(file);
+      const result = await detectElectricalComponents(file, "001", undefined, p => {
+        setPhase(p.phase);
+        setPhaseMsg(p.message);
+      });
       const mapped = mapDetectionToItems(result);
       // Fall back to DETECTED_ITEMS if the model returned nothing
       onNext(mapped.length > 0 ? mapped : undefined, file.name);
@@ -414,24 +435,46 @@ function StepUpload({ onNext }: { onNext: (items?: DetectedItem[], fileName?: st
             Claude Vision is analysing
           </h2>
           <p style={{ color: C.textMuted, fontStyle: "italic", margin: 0 }}>
-            {fileName} — detecting electrical symbols…
+            {fileName} — {phaseMsg}
+          </p>
+          <p style={{ color: C.textSubtle, fontFamily: FONT.mono, fontSize: 12, margin: "8px 0 0 0" }}>
+            {Math.floor(elapsed / 60)}m {String(elapsed % 60).padStart(2, "0")}s elapsed
+            {" · "}a full drawing usually takes 2–4 minutes
           </p>
         </div>
+        {/* These pills used to animate on a timer regardless of what was
+            happening. They now track the real phase reported by the detector,
+            so a long pass looks like progress instead of a stalled page. */}
         <div style={{ display: "flex", gap: 4 }}>
-          {["Rendering pages", "Reading legend", "Scanning floor plan"].map((label, i) => (
+          {([
+            { label: "Rendering pages", key: "rendering" },
+            { label: "Reading legend", key: "legend" },
+            { label: "Scanning floor plan", key: "floorplan" },
+            { label: "Pricing", key: "building" },
+          ] as const).map(({ label, key }, i) => {
+            const order: DetectionPhase[] = ["rendering", "legend", "floorplan", "building", "done"];
+            const current = order.indexOf(phase);
+            const mine = order.indexOf(key);
+            const state = mine < current ? "done" : mine === current ? "active" : "pending";
+            return (
             <span
               key={label}
               style={{
                 fontSize: 11, fontFamily: FONT.heading, padding: "3px 10px",
                 borderRadius: RADIUS.pill,
-                backgroundColor: C.orangeSoft, color: C.orange,
-                animationDelay: `${i * 0.4}s`,
+                backgroundColor: state === "pending" ? C.bgSoft : C.orangeSoft,
+                color: state === "pending" ? C.textSubtle : C.orange,
+                fontWeight: state === "active" ? 600 : 400,
+                opacity: state === "pending" ? 0.6 : 1,
+                display: "inline-flex", alignItems: "center", gap: 5,
               }}
-              className="pulse"
+              className={state === "active" ? "pulse" : undefined}
             >
+              {state === "done" ? <Check size={10} strokeWidth={3} /> : null}
               {label}
             </span>
-          ))}
+            );
+          })}
         </div>
       </div>
     );
@@ -1139,7 +1182,10 @@ function StepQuote({
           <span style={{ fontFamily: FONT.heading, fontSize: 12, fontWeight: 500, color: C.textMuted }}>Preview · page 1 of 3</span>
           <span style={{ fontFamily: FONT.mono, fontSize: 11, color: C.textSubtle }}>EST-2026-0143.pdf</span>
         </div>
-        <div style={{ padding: 40, backgroundColor: C.bgPaper }}>
+        {/* The quote preview is a document, so it stays on light paper even in
+            the navy theme. Pin the text colour here: the inherited `C.text` is
+            near-white and would be invisible on this surface. */}
+        <div style={{ padding: 40, backgroundColor: C.bgPaper, color: C.paperText }}>
           <div
             style={{
               backgroundColor: "#fff",

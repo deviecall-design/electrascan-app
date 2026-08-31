@@ -95,6 +95,16 @@ This system explicitly rejects the bloated legacy enterprise/construction-ERP lo
 
 ## 2. Colors
 
+> **Status (2026-08-31): this section is aspirational, not what ships.** The
+> verdigris/teal scheme below was proposed but never implemented. The palette
+> actually rendered by the app lives in `components/desktop/tokens.ts`, mirrored
+> as `--es-*` variables in `index.css` — both must be edited together. It is
+> currently the navy/blue scheme (`#0A1628` surface, `#1D6EFD` accent), restored
+> from the original design after a period on warm cream + orange (`d85ecbf`).
+> Note the brand keys are still named `orange*` for call-site compatibility;
+> their values are blue. Reconcile this document with the tokens before treating
+> it as a source of truth.
+
 Restrained: two brand colors carry the whole identity, and both are used sparingly against a near-white, barely-tinted-teal neutral scaffold.
 
 ### Primary
