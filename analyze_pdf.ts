@@ -47,21 +47,20 @@ async function callDetect(payload: {
 }): Promise<Anthropic.Message> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
-  if (!token) {
-    throw new Error("You need to be signed in to run a scan.");
-  }
 
-  const res = await fetch("/api/detect", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(payload),
-  });
+  if (token) {
+    const res = await fetch("/api/detect", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
 
-  const raw = await res.text();
-  if (!res.ok) {
+    const raw = await res.text();
+    if (res.ok) return JSON.parse(raw) as Anthropic.Message;
+
     let reason = raw.slice(0, 300);
     try {
       const parsed = JSON.parse(raw);
@@ -69,9 +68,34 @@ async function callDetect(payload: {
     } catch {
       /* keep the raw text */
     }
-    throw new Error(`Detection failed (${res.status}): ${reason}`);
+
+    // 500 here means the server has no ANTHROPIC_API_KEY yet. Deploying the
+    // proxy before that variable exists would otherwise take the scanner down,
+    // so fall through to the legacy in-browser path rather than failing. Any
+    // other status is a real error and must surface.
+    const notConfigured = res.status === 500 && /ANTHROPIC_API_KEY/.test(reason);
+    if (!notConfigured) {
+      throw new Error(`Detection failed (${res.status}): ${reason}`);
+    }
+    console.warn(
+      "[ElectraScan] /api/detect has no server key — falling back to the in-browser key. " +
+        "Set ANTHROPIC_API_KEY in Vercel to move the key server-side.",
+    );
   }
-  return JSON.parse(raw) as Anthropic.Message;
+
+  // Legacy path: key inlined into the bundle by Vite. Retained only so the
+  // scanner keeps working until ANTHROPIC_API_KEY is configured; remove this
+  // branch, and VITE_ANTHROPIC_API_KEY, once the proxy is serving.
+  const browserKey = (import.meta as any).env?.VITE_ANTHROPIC_API_KEY;
+  if (!browserKey) {
+    throw new Error(
+      token
+        ? "Detection is not configured. Set ANTHROPIC_API_KEY in Vercel."
+        : "You need to be signed in to run a scan.",
+    );
+  }
+  const client = new Anthropic({ apiKey: browserKey, dangerouslyAllowBrowser: true });
+  return (await client.messages.create(payload as any)) as Anthropic.Message;
 }
 
 // Pull the text out of a response. Never index content[0] directly: current
