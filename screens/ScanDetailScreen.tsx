@@ -16,7 +16,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { fetchScanById, ScanRow } from "../services/supabaseData";
-import { detectElectricalComponents } from "../analyze_pdf";
 import {
   ArrowLeft,
   ArrowRight,
@@ -38,7 +37,10 @@ import {
   Send,
   Copy,
   Sparkles,
+  RefreshCw,
+  Plus,
 } from "lucide-react";
+import { detectElectricalComponents, DetectionResult, DetectionPhase } from "../analyze_pdf";
 import { C, FONT, RADIUS } from "../components/desktop/tokens";
 import {
   Card,
@@ -67,6 +69,43 @@ interface DetectedItem {
   conf: number;
   x: number;
   y: number;
+  /**
+   * Unit price carried straight through from detection, which matched the
+   * symbol against the Vesh catalogue. When present this is the price of
+   * record and RATE_LOOKUP is not consulted — the lookup below only covers
+   * ten demo rate codes, so pricing real drawings from it silently produced
+   * $0 lines and mis-priced anything it did not recognise.
+   */
+  unitPrice?: number;
+  /** Real category from the detected component type, for the quote breakdown. */
+  category?: string;
+}
+
+// Groups a raw ComponentType into the buckets shown on the quote. Derived from
+// what was actually detected rather than from fixed ratios of the subtotal.
+function categoryFor(type: string): string {
+  const t = (type || "").toUpperCase();
+  if (t.startsWith("GPO")) return "Power outlets";
+  if (t.startsWith("DOWNLIGHT") || t.startsWith("PENDANT") || t.startsWith("LIGHT")) return "Lighting";
+  if (t.startsWith("SWITCHING")) return "Switching & dimming";
+  if (t.startsWith("DATA")) return "Data & comms";
+  if (t.startsWith("SWITCHBOARD")) return "Distribution board";
+  if (t.startsWith("SECURITY") || t.startsWith("SMOKE")) return "Safety & compliance";
+  if (t.startsWith("EXHAUST") || t.startsWith("AC_")) return "Ventilation & climate";
+  if (t.startsWith("EV_") || t.startsWith("POOL") || t.startsWith("GATE") || t.startsWith("AUTOMATION")) return "Specialist & automation";
+  return "Other";
+}
+
+/** Line total for an item: catalogue price when known, demo rates otherwise. */
+function lineTotal(it: DetectedItem): number {
+  if (typeof it.unitPrice === "number" && it.unitPrice > 0) return it.unitPrice * it.qty;
+  const r = RATE_LOOKUP[it.rateCode];
+  return r ? (r.rate + r.labour) * it.qty : 0;
+}
+
+/** True when we have no price at all — surfaced as "Price required" in Review. */
+function isUnpriced(it: DetectedItem): boolean {
+  return lineTotal(it) === 0;
 }
 
 const DETECTED_ITEMS: DetectedItem[] = [
@@ -95,14 +134,68 @@ const RATE_LOOKUP: Record<string, { description: string; rate: number; labour: n
   "DC-001":  { description: "Cat6A data point + faceplate",    rate: 135, labour: 55 },
 };
 
+// ─── mapDetectionToItems ─────────────────────────────────────────────────
+// Converts a DetectionResult.components array (from analyze_pdf.ts
+// detectElectricalComponents) into the DetectedItem shape used by this screen.
+// Returns an empty array when detection is null/undefined so the caller can
+// decide whether to fall back to the hardcoded DETECTED_ITEMS constant.
+function mapDetectionToItems(detection: DetectionResult | null | undefined): DetectedItem[] {
+  if (!detection || !Array.isArray(detection.components) || detection.components.length === 0) {
+    return [];
+  }
+  const symbolMap: Record<string, string> = {
+    GPO_STANDARD: "GPO", GPO_DOUBLE: "GPO", GPO_WEATHERPROOF: "GPO", GPO_USB: "GPO",
+    DOWNLIGHT_RECESSED: "LT", PENDANT_FEATURE: "LT", EXHAUST_FAN: "FN",
+    SWITCHING_STANDARD: "SW", SWITCHING_DIMMER: "SW", SWITCHING_2WAY: "SW",
+    SWITCHBOARD_MAIN: "DB", SWITCHBOARD_SUB: "DB",
+    DATA_CAT6: "DC", DATA_TV: "DC",
+    AC_SPLIT: "FN", AC_DUCTED: "FN",
+    SECURITY_CCTV: "SA", SECURITY_INTERCOM: "SA", SECURITY_ALARM: "SA",
+    EV_CHARGER: "EX", POOL_OUTDOOR: "EX", GATE_ACCESS: "EX",
+    AUTOMATION_HUB: "DC",
+  };
+  const rateMap: Record<string, string> = {
+    GPO_STANDARD: "GPO-004", GPO_DOUBLE: "GPO-001", GPO_WEATHERPROOF: "GPO-003", GPO_USB: "GPO-002",
+    DOWNLIGHT_RECESSED: "LT-001", PENDANT_FEATURE: "LT-005", EXHAUST_FAN: "FN-001",
+    SWITCHING_STANDARD: "SW-001", SWITCHING_DIMMER: "SW-003", SWITCHING_2WAY: "SW-002",
+    SWITCHBOARD_MAIN: "SB-001", SWITCHBOARD_SUB: "SB-002",
+    DATA_CAT6: "DC-001", DATA_TV: "DC-002",
+    AC_SPLIT: "FN-002", AC_DUCTED: "FN-002",
+    SECURITY_CCTV: "SA-002", SECURITY_INTERCOM: "SA-002", SECURITY_ALARM: "SA-001",
+    EV_CHARGER: "EX-003", POOL_OUTDOOR: "EX-001", GATE_ACCESS: "EX-001",
+    AUTOMATION_HUB: "DC-003",
+  };
+  return detection.components.map((c, i) => {
+    const label = (c.catalogue_item_name || c.type || "Unknown item")
+      .replace(/_/g, " ")
+      .toLowerCase()
+      .replace(/^\w/, (ch: string) => ch.toUpperCase());
+    return {
+      id: i + 1,
+      symbol: symbolMap[c.type] ?? "EL",
+      qty: c.quantity,
+      desc: label,
+      // No rateMap entry means we genuinely do not know the rate code. Leaving
+      // it blank marks the line "price required"; defaulting to GPO-001 (as
+      // this did) silently priced switchboards and EV chargers as double GPOs.
+      rateCode: rateMap[c.type] ?? "",
+      conf: Math.min(1, Math.max(0, (c.confidence ?? 90) / 100)),
+      x: 60 + ((i * 73) % 420),
+      y: 60 + ((i * 61) % 280),
+      unitPrice: typeof c.unit_price === "number" ? c.unit_price : undefined,
+      category: categoryFor(c.type),
+    };
+  });
+}
+
 // ─── Screen root ────────────────────────────────────────────────────────
 export default function ScanDetailScreen() {
   const navigate = useNavigate();
   const { id } = useParams();
   const [liveScan, setLiveScan] = useState<ScanRow | null>(null);
   const [step, setStep] = useState(id === "new" ? 1 : 2);
-  const [scannedItems, setScannedItems] = useState<DetectedItem[] | null>(null);
-  const [scannedFileName, setScannedFileName] = useState<string | null>(null);
+  const [detectedItems, setDetectedItems] = useState<DetectedItem[]>(DETECTED_ITEMS);
+  const [uploadedName, setUploadedName] = useState<string>("");
 
   useEffect(() => {
     if (!id || id === "new") return;
@@ -119,8 +212,14 @@ export default function ScanDetailScreen() {
     });
   }, [id]);
 
-  const fileName = liveScan?.file_name ?? "Switchboard_LV2_rev3.pdf";
-  const clientLabel = liveScan?.client ?? "Bondi Tower Residences · Level 2";
+  const isNew = id === "new";
+  // Prefer the name of the file the user actually uploaded this session, then
+  // the persisted scan, and only then a placeholder. Previously a new scan was
+  // always titled "New scan" no matter what was uploaded, and a saved scan fell
+  // back to a hardcoded demo filename.
+  const fileName =
+    uploadedName || liveScan?.file_name || (isNew ? "New scan" : "Untitled scan");
+  const clientLabel = liveScan?.client ?? "";
 
   return (
     <div className="anim-in">
@@ -141,15 +240,33 @@ export default function ScanDetailScreen() {
         </span>
       </div>
       <p style={{ color: C.textMuted, fontStyle: "italic", margin: "0 0 28px 0" }}>
-        {clientLabel}{liveScan ? "" : " · uploaded 14 minutes ago"}
+        {/* "uploaded 14 minutes ago" was hardcoded and shown on every scan
+            regardless of age, leaving a dangling separator when no client is
+            set. Show the client when we have one, and nothing when we do not. */}
+        {clientLabel}
       </p>
 
       <StepBar step={step} onStep={setStep} />
 
-      {step === 1 && <StepUpload onNext={(items, name) => { setScannedItems(items); setScannedFileName(name); setStep(2); }} />}
-      {step === 2 && <StepDetecting onNext={() => setStep(3)} initialItems={scannedItems ?? liveScan?.detected_items as DetectedItem[] | undefined} />}
-      {step === 3 && <StepReview onNext={() => setStep(4)} onBack={() => setStep(2)} initialItems={scannedItems ?? liveScan?.detected_items as DetectedItem[] | undefined} />}
-      {step === 4 && <StepQuote onBack={() => setStep(3)} initialItems={scannedItems ?? liveScan?.detected_items as DetectedItem[] | undefined} />}
+      {step === 1 && (
+        <StepUpload
+          onNext={(items?: DetectedItem[], name?: string) => {
+            if (items && items.length > 0) setDetectedItems(items);
+            if (name) setUploadedName(name);
+            setStep(2);
+          }}
+        />
+      )}
+      {step === 2 && <StepDetecting onNext={() => setStep(3)} items={detectedItems} />}
+      {step === 3 && <StepReview onNext={() => setStep(4)} onBack={() => setStep(2)} items={detectedItems} />}
+      {step === 4 && (
+        <StepQuote
+          onBack={() => setStep(3)}
+          items={detectedItems}
+          clientName={clientLabel}
+          sourceFileName={uploadedName || liveScan?.file_name}
+        />
+      )}
 
       <Footer />
     </div>
@@ -215,47 +332,205 @@ function StepBar({ step, onStep }: StepBarProps) {
 }
 
 // ─── Step 1: Upload ─────────────────────────────────────────────────────
-function StepUpload({ onNext }: { onNext: (items: DetectedItem[], fileName: string) => void }) {
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [dragging, setDragging] = useState(false);
+type UploadState = "idle" | "detecting" | "error";
 
-  const processFile = useCallback(async (file: File) => {
-    if (!file) return;
-    setStatus("loading");
-    setErrorMsg(null);
+function StepUpload({ onNext }: { onNext: (items?: DetectedItem[], fileName?: string) => void }) {
+  const [uploadState, setUploadState] = useState<UploadState>("idle");
+  const [errorMsg, setErrorMsg] = useState<string>("");
+  const [fileName, setFileName] = useState<string>("");
+  const [dragOver, setDragOver] = useState(false);
+  const [phase, setPhase] = useState<DetectionPhase>("rendering");
+  const [phaseMsg, setPhaseMsg] = useState<string>("Starting…");
+  const [elapsed, setElapsed] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // A scan runs for minutes. Ticking the elapsed time is the clearest signal
+  // that work is still happening — a static spinner reads as a hung page.
+  useEffect(() => {
+    if (uploadState !== "detecting") return;
+    const started = Date.now();
+    setElapsed(0);
+    const t = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => clearInterval(t);
+  }, [uploadState]);
+
+  const runDetection = useCallback(async (file: File) => {
+    setFileName(file.name);
+    setUploadState("detecting");
+    setErrorMsg("");
+    setPhase("rendering");
+    setPhaseMsg("Rendering drawing pages…");
     try {
-      const result = await detectElectricalComponents(file);
-      const items: DetectedItem[] = result.components.map((c, i) => ({
-        id: i + 1,
-        symbol: c.type.replace(/_/g, " ").split(" ").map((w: string) => w[0] ?? "").join("").slice(0, 3).toUpperCase(),
-        qty: c.quantity,
-        desc: c.catalogue_item_name || c.type.replace(/_/g, " ").replace(/\b\w/g, (l: string) => l.toUpperCase()),
-        rateCode: c.drawing_ref || `${c.type.slice(0, 3)}-${String(i + 1).padStart(3, "0")}`,
-        conf: c.confidence,
-        x: 50 + Math.random() * 380,
-        y: 50 + Math.random() * 280,
-      }));
-      onNext(items, file.name);
+      const result = await detectElectricalComponents(file, "001", undefined, p => {
+        setPhase(p.phase);
+        setPhaseMsg(p.message);
+      });
+      const mapped = mapDetectionToItems(result);
+      // Fall back to DETECTED_ITEMS if the model returned nothing
+      onNext(mapped.length > 0 ? mapped : undefined, file.name);
     } catch (err: any) {
-      setStatus("error");
-      setErrorMsg(err?.message ?? "Detection failed. Check your API key and try again.");
+      console.error("[ElectraScan] Detection failed:", err);
+      setErrorMsg(err?.message ?? "Unknown error during detection.");
+      setUploadState("error");
     }
   }, [onNext]);
 
-  const handleFile = (f: File | null | undefined) => { if (f) processFile(f); };
+  const handleFile = useCallback((file: File | null) => {
+    if (!file) return;
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    const isPng = file.type === "image/png" || file.name.toLowerCase().endsWith(".png");
+    if (!isPdf && !isPng) {
+      setErrorMsg("Only PDF or PNG files are accepted.");
+      setUploadState("error");
+      return;
+    }
+    runDetection(file);
+  }, [runDetection]);
 
+  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0] ?? null;
+    handleFile(file);
+  }, [handleFile]);
+
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback(() => {
+    setDragOver(false);
+  }, []);
+
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    handleFile(file);
+    // Reset so the same file can be re-selected after an error
+    e.target.value = "";
+  }, [handleFile]);
+
+  // ── Detecting state ──
+  if (uploadState === "detecting") {
+    return (
+      <div
+        className="anim-in"
+        style={{
+          backgroundColor: C.bgCard,
+          border: `2px dashed ${C.border}`,
+          borderRadius: RADIUS.xl,
+          padding: 64,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 18,
+          textAlign: "center",
+        }}
+      >
+        <div style={{ width: 56, height: 56, borderRadius: RADIUS.xl, backgroundColor: C.orangeSoft, color: C.orange, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Loader2 size={28} className="spin" />
+        </div>
+        <div>
+          <h2 style={{ fontFamily: FONT.heading, fontSize: 20, fontWeight: 600, margin: "0 0 6px 0" }}>
+            Claude Vision is analysing
+          </h2>
+          <p style={{ color: C.textMuted, fontStyle: "italic", margin: 0 }}>
+            {fileName} — {phaseMsg}
+          </p>
+          <p style={{ color: C.textSubtle, fontFamily: FONT.mono, fontSize: 12, margin: "8px 0 0 0" }}>
+            {Math.floor(elapsed / 60)}m {String(elapsed % 60).padStart(2, "0")}s elapsed
+            {" · "}a full drawing usually takes 2–4 minutes
+          </p>
+        </div>
+        {/* These pills used to animate on a timer regardless of what was
+            happening. They now track the real phase reported by the detector,
+            so a long pass looks like progress instead of a stalled page. */}
+        <div style={{ display: "flex", gap: 4 }}>
+          {([
+            { label: "Rendering pages", key: "rendering" },
+            { label: "Reading legend", key: "legend" },
+            { label: "Scanning floor plan", key: "floorplan" },
+            { label: "Pricing", key: "building" },
+          ] as const).map(({ label, key }, i) => {
+            const order: DetectionPhase[] = ["rendering", "legend", "floorplan", "building", "done"];
+            const current = order.indexOf(phase);
+            const mine = order.indexOf(key);
+            const state = mine < current ? "done" : mine === current ? "active" : "pending";
+            return (
+            <span
+              key={label}
+              style={{
+                fontSize: 11, fontFamily: FONT.heading, padding: "3px 10px",
+                borderRadius: RADIUS.pill,
+                backgroundColor: state === "pending" ? C.bgSoft : C.orangeSoft,
+                color: state === "pending" ? C.textSubtle : C.orange,
+                fontWeight: state === "active" ? 600 : 400,
+                opacity: state === "pending" ? 0.6 : 1,
+                display: "inline-flex", alignItems: "center", gap: 5,
+              }}
+              className={state === "active" ? "pulse" : undefined}
+            >
+              {state === "done" ? <Check size={10} strokeWidth={3} /> : null}
+              {label}
+            </span>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Error state ──
+  if (uploadState === "error") {
+    return (
+      <div
+        className="anim-in"
+        style={{
+          backgroundColor: "#FEF2F2",
+          border: `2px dashed #EF4444`,
+          borderRadius: RADIUS.xl,
+          padding: 64,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 14,
+          textAlign: "center",
+        }}
+      >
+        <div style={{ width: 56, height: 56, borderRadius: RADIUS.xl, backgroundColor: "#FEE2E2", color: "#EF4444", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <AlertCircle size={28} />
+        </div>
+        <h2 style={{ fontFamily: FONT.heading, fontSize: 20, fontWeight: 600, margin: 0, color: "#EF4444" }}>
+          Detection failed
+        </h2>
+        <p style={{ color: "#B91C1C", fontStyle: "italic", margin: 0, maxWidth: 480 }}>
+          {errorMsg}
+        </p>
+        <div style={{ display: "flex", gap: 10 }}>
+          <PrimaryButton
+            onClick={() => { setUploadState("idle"); setErrorMsg(""); setFileName(""); }}
+            icon={<RefreshCw size={15} />}
+          >
+            Try again
+          </PrimaryButton>
+          <GhostButton onClick={() => onNext(undefined)}>
+            Use sample data →
+          </GhostButton>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Idle / drag-and-drop state ──
   return (
     <div
       className="anim-in"
-      onDragOver={e => { e.preventDefault(); setDragging(true); }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={e => { e.preventDefault(); setDragging(false); handleFile(e.dataTransfer.files[0]); }}
-      onClick={() => status !== "loading" && fileRef.current?.click()}
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
       style={{
-        backgroundColor: C.bgCard,
-        border: `2px dashed ${dragging ? C.orange : C.border}`,
+        backgroundColor: dragOver ? C.orangeSoft : C.bgCard,
+        border: `2px dashed ${dragOver ? C.orange : C.border}`,
         borderRadius: RADIUS.xl,
         padding: 64,
         display: "flex",
@@ -263,53 +538,42 @@ function StepUpload({ onNext }: { onNext: (items: DetectedItem[], fileName: stri
         alignItems: "center",
         gap: 14,
         textAlign: "center",
-        cursor: status === "loading" ? "wait" : "pointer",
-        transition: "border-color 150ms",
+        transition: "background-color 180ms, border-color 180ms",
+        cursor: "default",
       }}
     >
       <input
-        ref={fileRef}
+        ref={fileInputRef}
         type="file"
-        accept=".pdf,.png,.jpg,.jpeg"
+        accept=".pdf,.png,application/pdf,image/png"
         style={{ display: "none" }}
-        onChange={e => handleFile(e.target.files?.[0])}
+        onChange={handleInputChange}
       />
       <div style={{ width: 56, height: 56, borderRadius: RADIUS.xl, backgroundColor: C.orangeSoft, color: C.orange, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        {status === "loading" ? <Loader2 size={24} className="spin" /> : <UploadIcon size={24} />}
+        <UploadIcon size={24} />
       </div>
-      {status === "loading" ? (
-        <>
-          <h2 style={{ fontFamily: FONT.heading, fontSize: 20, fontWeight: 600, margin: 0 }}>Analysing floor plan…</h2>
-          <p style={{ color: C.textMuted, fontStyle: "italic", margin: 0, maxWidth: 420 }}>
-            Claude Vision is reading symbols and mapping to your rate library. This takes 20–60 seconds.
-          </p>
-        </>
-      ) : (
-        <>
-          <h2 style={{ fontFamily: FONT.heading, fontSize: 20, fontWeight: 600, margin: 0 }}>Drop your floor plan here</h2>
-          <p style={{ color: C.textMuted, fontStyle: "italic", margin: 0, maxWidth: 420 }}>
-            PDF or PNG. Claude Vision will detect electrical symbols, map them to your rate library, and draft a quote.
-          </p>
-          {errorMsg && (
-            <p style={{ color: C.red, fontSize: 13, margin: 0, maxWidth: 420 }}>{errorMsg}</p>
-          )}
-          <PrimaryButton onClick={e => { e.stopPropagation(); fileRef.current?.click(); }}>
-            Choose file
-          </PrimaryButton>
-          <span style={{ fontSize: 12, color: C.textSubtle }}>or drag and drop</span>
-        </>
-      )}
+      <h2 style={{ fontFamily: FONT.heading, fontSize: 20, fontWeight: 600, margin: 0 }}>
+        Drop your floor plan here
+      </h2>
+      <p style={{ color: C.textMuted, fontStyle: "italic", margin: 0, maxWidth: 420 }}>
+        PDF, PNG, or DWG. Claude Vision will detect symbols, map them to your rate library, and draft a quote.
+      </p>
+      <PrimaryButton onClick={() => fileInputRef.current?.click()}>
+        Upload floor plan →
+      </PrimaryButton>
     </div>
   );
 }
 
 // ─── Step 2: Detecting ──────────────────────────────────────────────────
-function StepDetecting({ onNext, initialItems }: { onNext: () => void; initialItems?: DetectedItem[] }) {
-  const source = initialItems ?? DETECTED_ITEMS;
-  const [revealed, setRevealed] = useState(initialItems ? initialItems.length : 0);
+function StepDetecting({ onNext, items: propItems }: { onNext: () => void; items?: DetectedItem[] }) {
+  const source = propItems && propItems.length > 0 ? propItems : DETECTED_ITEMS;
+  // If items came from real detection they are already complete — skip animation
+  const isRealDetection = propItems && propItems !== DETECTED_ITEMS && propItems.length > 0;
+  const [revealed, setRevealed] = useState(isRealDetection ? source.length : 0);
 
   useEffect(() => {
-    if (initialItems) return; // live items already complete — skip animation
+    if (isRealDetection) return; // real detection already complete — skip animation
     setRevealed(0);
     const id = setInterval(() => {
       setRevealed(n => {
@@ -318,7 +582,7 @@ function StepDetecting({ onNext, initialItems }: { onNext: () => void; initialIt
       });
     }, 380);
     return () => clearInterval(id);
-  }, []);
+  }, [source.length]);
 
   const items = source.slice(0, revealed);
   const ready = revealed >= source.length;
@@ -736,8 +1000,8 @@ function ReviewQueuePanel({
 }
 
 // ─── Step 3: Review ─────────────────────────────────────────────────────
-function StepReview({ onNext, onBack, initialItems }: { onNext: () => void; onBack: () => void; initialItems?: DetectedItem[] }) {
-  const source = initialItems ?? DETECTED_ITEMS;
+function StepReview({ onNext, onBack, items: propItems }: { onNext: () => void; onBack: () => void; items?: DetectedItem[] }) {
+  const source = propItems && propItems.length > 0 ? propItems : DETECTED_ITEMS;
   const [items, setItems] = useState(
     source.map(it => ({ ...it, ok: false })),
   );
@@ -791,9 +1055,8 @@ function StepReview({ onNext, onBack, initialItems }: { onNext: () => void; onBa
           </thead>
           <tbody>
             {items.map(it => {
-              const rate = RATE_LOOKUP[it.rateCode];
-              const unit = rate ? rate.rate + rate.labour : 0;
-              const total = unit * it.qty;
+              const total = lineTotal(it);
+              const unit = it.qty > 0 ? total / it.qty : 0;
               return (
                 <tr key={it.id} className="es-row" style={{ borderTop: `1px solid ${C.border}` }}>
                   <Td>
@@ -816,12 +1079,16 @@ function StepReview({ onNext, onBack, initialItems }: { onNext: () => void; onBa
                   <Td><SymbolBadge symbol={it.symbol} small /></Td>
                   <Td>{it.desc}</Td>
                   <Td>
-                    <span style={{ fontFamily: FONT.mono, fontSize: 12, color: C.textMuted }}>{it.rateCode}</span>
+                    <span style={{ fontFamily: FONT.mono, fontSize: 12, color: C.textMuted }}>
+                      {it.rateCode || "—"}
+                    </span>
                     <span style={{ color: C.textSubtle, margin: "0 6px" }}>·</span>
-                    <span style={{ fontSize: 13 }}>{rate?.description}</span>
+                    <span style={{ fontSize: 13 }}>
+                      {RATE_LOOKUP[it.rateCode]?.description ?? (total > 0 ? "Catalogue rate" : "Price required")}
+                    </span>
                   </Td>
                   <Td align="right" mono>{it.qty}</Td>
-                  <Td align="right" mono>${unit}</Td>
+                  <Td align="right" mono>${Math.round(unit).toLocaleString()}</Td>
                   <Td align="right" mono><B>${total.toLocaleString()}</B></Td>
                   <Td><ConfPill c={it.conf} withBar /></Td>
                 </tr>
@@ -862,31 +1129,50 @@ function StepReview({ onNext, onBack, initialItems }: { onNext: () => void; onBa
 }
 
 // ─── Step 4: Quote ──────────────────────────────────────────────────────
-function StepQuote({ onBack, initialItems }: { onBack: () => void; initialItems?: DetectedItem[] }) {
+function StepQuote({
+  onBack,
+  items: propItems,
+  clientName,
+  sourceFileName,
+}: {
+  onBack: () => void;
+  items?: DetectedItem[];
+  clientName?: string;
+  sourceFileName?: string;
+}) {
   const navigate = useNavigate();
-  const source = initialItems ?? DETECTED_ITEMS;
+  // Fall back to sample data only when detection produced nothing — an empty
+  // live array must not render an empty quote.
+  const source = propItems && propItems.length > 0 ? propItems : DETECTED_ITEMS;
   const company = getActiveCompanyProfile();
   const subtotal = useMemo(
-    () =>
-      source.reduce((sum, it) => {
-        const r = RATE_LOOKUP[it.rateCode];
-        return sum + (r ? (r.rate + r.labour) * it.qty : 0);
-      }, 0),
+    () => source.reduce((sum, it) => sum + lineTotal(it), 0),
     [source],
   );
   const margin = Math.round(subtotal * 0.18);
   const gst = Math.round((subtotal + margin) * 0.1);
   const total = subtotal + margin + gst;
 
-  const rows = [
-    { d: "Power outlets (GPO + WP)",            t: subtotal * 0.12 },
-    { d: "Lighting (LED downlights + pendant)", t: subtotal * 0.22 },
-    { d: "Switching & dimming",                 t: subtotal * 0.08 },
-    { d: "Data & comms (Cat6A)",                t: subtotal * 0.09 },
-    { d: "Distribution board (12-way)",         t: subtotal * 0.10 },
-    { d: "Safety & compliance",                 t: subtotal * 0.09 },
-    { d: "Cabling & conduit",                   t: subtotal * 0.30 },
-  ];
+  // Breakdown built by summing the detected lines in each category. This used
+  // to be fixed percentages of the subtotal (12% power, 22% lighting, ...),
+  // which produced a plausible-looking quote with no relationship to the
+  // drawing — including a "Cabling & conduit" line worth 30% of every job
+  // whether or not any cable was detected.
+  const rows = useMemo(() => {
+    const byCategory = new Map<string, number>();
+    for (const it of source) {
+      const key = it.category ?? "Other";
+      byCategory.set(key, (byCategory.get(key) ?? 0) + lineTotal(it));
+    }
+    return [...byCategory.entries()]
+      .filter(([, t]) => t > 0)
+      .sort((a, b) => b[1] - a[1])
+      .map(([d, t]) => ({ d, t }));
+  }, [source]);
+
+  // Items detection found but could not price. They are excluded from the
+  // subtotal above, so the quote must say so rather than reading as complete.
+  const unpricedCount = useMemo(() => source.filter(isUnpriced).length, [source]);
 
   return (
     <div className="anim-in" style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: 24 }}>
@@ -896,7 +1182,10 @@ function StepQuote({ onBack, initialItems }: { onBack: () => void; initialItems?
           <span style={{ fontFamily: FONT.heading, fontSize: 12, fontWeight: 500, color: C.textMuted }}>Preview · page 1 of 3</span>
           <span style={{ fontFamily: FONT.mono, fontSize: 11, color: C.textSubtle }}>EST-2026-0143.pdf</span>
         </div>
-        <div style={{ padding: 40, backgroundColor: C.bgPaper }}>
+        {/* The quote preview is a document, so it stays on light paper even in
+            the navy theme. Pin the text colour here: the inherited `C.text` is
+            near-white and would be invisible on this surface. */}
+        <div style={{ padding: 40, backgroundColor: C.bgPaper, color: C.paperText }}>
           <div
             style={{
               backgroundColor: "#fff",
@@ -925,14 +1214,22 @@ function StepQuote({ onBack, initialItems }: { onBack: () => void; initialItems?
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginBottom: 24, fontSize: 12 }}>
               <div>
                 <div style={{ fontFamily: FONT.heading, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textSubtle, marginBottom: 4 }}>Prepared for</div>
-                <div style={{ fontWeight: 500 }}>Bondi Tower Residences</div>
-                <div style={{ color: C.textMuted }}>Attn: Marco Petrou</div>
-                <div style={{ color: C.textMuted }}>12 Campbell Parade, Bondi Beach</div>
+                {/* Was hardcoded to a fictional client (Bondi Tower Residences,
+                    Attn: Marco Petrou). On a document the contractor sends to a
+                    builder, invented recipient details are worse than a blank —
+                    so show a clear prompt until the client is set. */}
+                {clientName ? (
+                  <div style={{ fontWeight: 500 }}>{clientName}</div>
+                ) : (
+                  <div style={{ fontWeight: 500, color: C.orange }}>Client not set</div>
+                )}
               </div>
               <div>
                 <div style={{ fontFamily: FONT.heading, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textSubtle, marginBottom: 4 }}>Scope</div>
-                <div style={{ fontWeight: 500 }}>Level 2 electrical fit-out</div>
-                <div style={{ color: C.textMuted, fontStyle: "italic" }}>per Switchboard_LV2_rev3.pdf</div>
+                <div style={{ fontWeight: 500 }}>Electrical fit-out</div>
+                <div style={{ color: C.textMuted, fontStyle: "italic" }}>
+                  {sourceFileName ? `per ${sourceFileName}` : "per uploaded drawing"}
+                </div>
               </div>
             </div>
 
@@ -972,14 +1269,21 @@ function StepQuote({ onBack, initialItems }: { onBack: () => void; initialItems?
             ${total.toLocaleString()}
           </div>
           <div style={{ fontSize: 13, color: C.textMuted, fontStyle: "italic", marginTop: 8 }}>
-            incl. GST · 68 items · 18% margin
+            incl. GST · {source.length} {source.length === 1 ? "item" : "items"} · 18% margin
           </div>
 
+          {/* Materials/Labour used to be a fixed 55/45 split of the subtotal.
+              The catalogue gives a single supply-and-install rate per item, so
+              that split was invented. These four are values we actually hold. */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 20 }}>
-            <MiniStat label="Materials" v={`$${Math.round(subtotal * 0.55).toLocaleString()}`} />
-            <MiniStat label="Labour"    v={`$${Math.round(subtotal * 0.45).toLocaleString()}`} />
-            <MiniStat label="Margin"    v={`$${margin.toLocaleString()}`} tint={C.green} />
-            <MiniStat label="Scan time" v="6m 48s" />
+            <MiniStat label="Subtotal ex GST" v={`$${subtotal.toLocaleString()}`} />
+            <MiniStat label="GST"             v={`$${gst.toLocaleString()}`} />
+            <MiniStat label="Margin"          v={`$${margin.toLocaleString()}`} tint={C.green} />
+            <MiniStat
+              label="Price required"
+              v={String(unpricedCount)}
+              tint={unpricedCount > 0 ? C.orange : undefined}
+            />
           </div>
         </Card>
 
@@ -1004,7 +1308,7 @@ function StepQuote({ onBack, initialItems }: { onBack: () => void; initialItems?
         </div>
 
         <GhostButton onClick={onBack} icon={<ArrowLeft size={14} />}>Back to review</GhostButton>
-        <GhostButton onClick={() => navigate('/detection/new')} icon={<Plus size={14} />} style={{ marginTop: 4 }}>New scan</GhostButton>
+        <GhostButton onClick={() => navigate('/detection/new')} icon={<Plus size={14} />}>New scan</GhostButton>
       </div>
     </div>
   );

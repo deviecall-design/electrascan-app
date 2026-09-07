@@ -10,39 +10,55 @@
  * without updating that reference. Mirror tokens also exist as `--es-*` CSS
  * variables in index.css for Tailwind / CSS-only consumers.
  *
- * Design rules (non-negotiable — see the reskin brief):
- *   - Body bg stays #faf9f5 (warm cream). Never pure white.
- *   - Cards are #ffffff with 1px #e8e6dc border — no drop shadows.
- *   - Orange (#d97757) is EARNED — primary CTAs, active nav, progress bars,
+ * PALETTE — restored to the original navy/blue scheme (2026-08-31).
+ *
+ * The warm-cream + orange reskin landed in d85ecbf (2026-04-21). This file
+ * returns the values to the dark navy and electric blue of the original
+ * ElectraScan look while keeping every token NAME unchanged, so all screens
+ * pick it up without edits. Do not rename these keys — roughly 250 call sites
+ * across screens/ and components/ reference them.
+ *
+ * The `orange*` keys are retained as aliases mapped onto the blue brand ramp.
+ * They are referenced widely; renaming them would be a large, risky diff while
+ * the product is in front of a client. Treat them as "brand accent".
+ *
+ * Design rules:
+ *   - Body bg is #0A1628 (deep navy). Cards sit on #132240.
+ *   - Blue (#1D6EFD) is EARNED — primary CTAs, active nav, progress bars,
  *     AI sparkle icons only. Not decoration.
- *   - Poppins for numbers and headings, Lora for prose. Italic Lora is the
- *     accent (secondary copy, timestamps, subtitles).
+ *   - bgPaper stays light: it backs the printed quote preview, which must
+ *     read as paper. Text on it uses `paperText`, never `text`.
  */
 
 export const C = {
   // Surface
-  bg:         "#faf9f5", // App body — warm cream
-  bgSoft:     "#f4f2ea", // Sidebar + zebra row hover
-  bgCard:     "#ffffff", // Cards, tables, inputs
-  bgPaper:    "#fcfbf7", // Document preview paper (PDF letterhead container)
-  border:     "#e8e6dc", // Card + divider borders
-  borderSoft: "#efede4", // Ghost hover, nav hover
+  bg:         "#0A1628", // App body — deep navy
+  bgSoft:     "#0F1E35", // Sidebar + zebra row hover
+  bgCard:     "#132240", // Cards, tables, inputs
+  bgPaper:    "#ffffff", // Document preview paper — stays light, it is paper
+  border:     "#1A3358", // Card + divider borders
+  borderSoft: "#172A4D", // Ghost hover, nav hover
 
   // Text
-  text:       "#141413", // Primary text
-  textMuted:  "#6b6a63", // Secondary (labels, table muted)
-  textSubtle: "#8a887f", // Tertiary (hints, deep de-emphasis)
+  text:       "#EDF2FF", // Primary text on dark
+  textMuted:  "#8BA4C4", // Secondary (labels, table muted)
+  textSubtle: "#5C7A9E", // Tertiary (hints, deep de-emphasis)
 
-  // Brand — earned, never decorative
-  orange:     "#d97757",
-  orangeDark: "#c46a4b", // Hover state
-  orangeSoft: "#f5e4da", // Tinted chip / pill background
+  // Text for the light paper surface (quote/PDF preview only)
+  paperText:      "#0A1628",
+  paperTextMuted: "#4A5B72",
 
-  // Semantic
-  blue:       "#6a9bcc", blueSoft:  "#e2ecf5",  // Sent / informational
-  green:      "#788c5d", greenSoft: "#e4ead9",  // Approved / Aries online / materials
-  amber:      "#c89450", amberSoft: "#f3e6cf",  // Needs review / warning
-  red:        "#c1666b", redSoft:   "#f3e0e0",  // Error / destructive
+  // Brand — earned, never decorative. Named orange* for call-site
+  // compatibility; the values are the blue brand ramp.
+  orange:     "#1D6EFD", // Primary accent
+  orangeDark: "#4B8FFF", // Hover — lighter on dark, not darker
+  orangeSoft: "#16294a", // Tinted chip / pill background on navy
+
+  // Semantic — tuned for contrast on the navy surface
+  blue:       "#4B8FFF", blueSoft:  "#16294a",  // Sent / informational
+  green:      "#00C48C", greenSoft: "#0d3a30",  // Approved / Aries online / materials
+  amber:      "#FFB020", amberSoft: "#3a2c10",  // Needs review / warning
+  red:        "#FF5C5C", redSoft:   "#3a1414",  // Error / destructive
 } as const;
 
 // Font stacks — loaded via Google Fonts <link> in index.html (no npm dep).

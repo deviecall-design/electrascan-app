@@ -159,48 +159,52 @@
    components we use inherit the warm palette automatically.
    ──────────────────────────────────────────────────────────────────────── */
 
+/* Mirror of components/desktop/tokens.ts — keep the two in step. Restored to
+   the original navy/blue palette on 2026-08-31; the values here are what the
+   body background and any CSS-only consumer read, so changing tokens.ts alone
+   leaves the page on the old cream background. */
 :root {
-  /* Anthropic surface */
-  --es-bg:          #faf9f5;
-  --es-bg-soft:     #f4f2ea;
-  --es-bg-card:     #ffffff;
-  --es-bg-paper:    #fcfbf7;
-  --es-border:      #e8e6dc;
-  --es-border-soft: #efede4;
+  /* Surface — deep navy */
+  --es-bg:          #0A1628;
+  --es-bg-soft:     #0F1E35;
+  --es-bg-card:     #132240;
+  --es-bg-paper:    #ffffff; /* quote preview is paper — stays light */
+  --es-border:      #1A3358;
+  --es-border-soft: #172A4D;
 
-  /* Anthropic text */
-  --es-text:        #141413;
-  --es-text-muted:  #6b6a63;
-  --es-text-subtle: #8a887f;
+  /* Text on dark */
+  --es-text:        #EDF2FF;
+  --es-text-muted:  #8BA4C4;
+  --es-text-subtle: #5C7A9E;
 
-  /* Anthropic brand — orange is earned */
-  --es-orange:      #d97757;
-  --es-orange-dark: #c46a4b;
-  --es-orange-soft: #f5e4da;
+  /* Brand — named orange* for call-site compatibility, values are blue */
+  --es-orange:      #1D6EFD;
+  --es-orange-dark: #4B8FFF;
+  --es-orange-soft: #16294a;
 
-  /* Semantic tints */
-  --es-blue:        #6a9bcc;
-  --es-blue-soft:   #e2ecf5;
-  --es-green:       #788c5d;
-  --es-green-soft:  #e4ead9;
-  --es-amber:       #c89450;
-  --es-amber-soft:  #f3e6cf;
+  /* Semantic tints — tuned for the navy surface */
+  --es-blue:        #4B8FFF;
+  --es-blue-soft:   #16294a;
+  --es-green:       #00C48C;
+  --es-green-soft:  #0d3a30;
+  --es-amber:       #FFB020;
+  --es-amber-soft:  #3a2c10;
 
   /* Typography — loaded via <link> in index.html */
   --es-font-heading: 'Poppins', Arial, sans-serif;
   --es-font-body:    'Lora', Georgia, serif;
   --es-font-mono:    'JetBrains Mono', ui-monospace, monospace;
 
-  /* Override shadcn base so ported shadcn components inherit the warm palette */
-  --background: #faf9f5;
-  --foreground: #141413;
-  --card: #ffffff;
-  --card-foreground: #141413;
-  --border: #e8e6dc;
-  --primary: #d97757;
+  /* Override shadcn base so ported shadcn components inherit the navy palette */
+  --background: #0A1628;
+  --foreground: #EDF2FF;
+  --card: #132240;
+  --card-foreground: #EDF2FF;
+  --border: #1A3358;
+  --primary: #1D6EFD;
   --primary-foreground: #ffffff;
-  --muted: #f4f2ea;
-  --muted-foreground: #6b6a63;
+  --muted: #0F1E35;
+  --muted-foreground: #8BA4C4;
 }
 
 /* Body styles — warm bg, grain, Lora serif as default */

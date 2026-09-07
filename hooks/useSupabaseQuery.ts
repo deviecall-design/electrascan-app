@@ -41,6 +41,9 @@ export default function useSupabaseQuery<T>(
     fetcher()
       .then(({ data, error }) => {
         if (cancelled) return;
+        // An empty array is a valid live answer — a real account with no rows
+        // yet must show a genuine empty state, not sample data dressed up as
+        // the user's own. Only a failed fetch falls back.
         if (error || !data) {
           setState({ data: fallback, loading: false, isLive: false });
         } else {

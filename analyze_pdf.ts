@@ -15,6 +15,100 @@ import Anthropic from "@anthropic-ai/sdk";
 import * as pdfjsLib from "pdfjs-dist";
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 import { mapLegendItem, type CatalogueItem } from "./vesh_catalogue";
+import { supabase } from "./services/supabaseClient";
+
+// Model used for both detection passes. Kept in one place because model IDs get
+// retired: the previous value (claude-sonnet-4-20250514) was withdrawn and every
+// scan started failing with a 404 that surfaced only as "0 components detected".
+// If detection breaks with a not_found_error naming the model, update this.
+const DETECTION_MODEL = "claude-sonnet-5";
+
+/** Phases reported back to the UI so a multi-minute scan shows real progress. */
+export type DetectionPhase = "rendering" | "legend" | "floorplan" | "building" | "done";
+export interface DetectionProgress {
+  phase: DetectionPhase;
+  message: string;
+}
+export type ProgressFn = (p: DetectionProgress) => void;
+
+/**
+ * Runs one detection pass through the server-side proxy.
+ *
+ * The Anthropic key is deliberately not available in the browser — see
+ * api/detect.js. Failures are thrown with the upstream reason attached so a
+ * broken model id or an expired session surfaces as a real error instead of
+ * silently becoming "0 components detected".
+ */
+async function callDetect(payload: {
+  model: string;
+  max_tokens: number;
+  system: string;
+  messages: unknown[];
+}): Promise<Anthropic.Message> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+
+  if (token) {
+    const res = await fetch("/api/detect", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const raw = await res.text();
+    if (res.ok) return JSON.parse(raw) as Anthropic.Message;
+
+    let reason = raw.slice(0, 300);
+    try {
+      const parsed = JSON.parse(raw);
+      reason = parsed.detail || parsed.error || reason;
+    } catch {
+      /* keep the raw text */
+    }
+
+    // 500 here means the server has no ANTHROPIC_API_KEY yet. Deploying the
+    // proxy before that variable exists would otherwise take the scanner down,
+    // so fall through to the legacy in-browser path rather than failing. Any
+    // other status is a real error and must surface.
+    const notConfigured = res.status === 500 && /ANTHROPIC_API_KEY/.test(reason);
+    if (!notConfigured) {
+      throw new Error(`Detection failed (${res.status}): ${reason}`);
+    }
+    console.warn(
+      "[ElectraScan] /api/detect has no server key — falling back to the in-browser key. " +
+        "Set ANTHROPIC_API_KEY in Vercel to move the key server-side.",
+    );
+  }
+
+  // Legacy path: key inlined into the bundle by Vite. Retained only so the
+  // scanner keeps working until ANTHROPIC_API_KEY is configured; remove this
+  // branch, and VITE_ANTHROPIC_API_KEY, once the proxy is serving.
+  const browserKey = (import.meta as any).env?.VITE_ANTHROPIC_API_KEY;
+  if (!browserKey) {
+    throw new Error(
+      token
+        ? "Detection is not configured. Set ANTHROPIC_API_KEY in Vercel."
+        : "You need to be signed in to run a scan.",
+    );
+  }
+  const client = new Anthropic({ apiKey: browserKey, dangerouslyAllowBrowser: true });
+  return (await client.messages.create(payload as any)) as Anthropic.Message;
+}
+
+// Pull the text out of a response. Never index content[0] directly: current
+// models think by default, so the first block is usually a thinking block and
+// the model's actual answer sits after it. Assuming index 0 silently yielded ""
+// and made every scan look like "0 components detected".
+function extractText(r: Anthropic.Message): string {
+  return r.content
+    .filter((b): b is Anthropic.TextBlock => b.type === "text")
+    .map(b => b.text)
+    .join("\n")
+    .trim();
+}
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -234,19 +328,48 @@ Return ONLY valid JSON:
 // PDF → IMAGES
 // ─────────────────────────────────────────────
 
+// Detection now posts these images through /api/detect, and Vercel rejects
+// request bodies over ~4.5 MB. Full-scale PNG renders of a large drawing blow
+// past that, so pages are encoded as JPEG and the scale is stepped down until
+// the whole set fits inside the budget below. JPEG at this quality is visually
+// indistinguishable for symbol detection and roughly an order of magnitude
+// smaller than PNG for line drawings with anti-aliasing.
+const PAYLOAD_BUDGET_BYTES = 3_400_000; // headroom under Vercel's ~4.5 MB cap
+const RENDER_SCALES = [2.0, 1.5, 1.2, 1.0, 0.8];
+const JPEG_QUALITY = 0.82;
+
 async function pdfToImages(file: File): Promise<string[]> {
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
-  const images: string[] = [];
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const viewport = page.getViewport({ scale: 2.0 });
-    const canvas = document.createElement("canvas");
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    await page.render({ canvasContext: canvas.getContext("2d")!, viewport }).promise;
-    images.push(canvas.toDataURL("image/png").split(",")[1]);
+
+  let images: string[] = [];
+  for (const scale of RENDER_SCALES) {
+    images = [];
+    let total = 0;
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement("canvas");
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      await page.render({ canvasContext: canvas.getContext("2d")!, viewport }).promise;
+      const b64 = canvas.toDataURL("image/jpeg", JPEG_QUALITY).split(",")[1];
+      total += b64.length;
+      images.push(b64);
+    }
+    if (total <= PAYLOAD_BUDGET_BYTES) {
+      console.log(
+        `[ElectraScan v4] Rendered ${images.length} page(s) at scale ${scale} (${Math.round(total / 1024)} KB)`,
+      );
+      return images;
+    }
+    console.warn(
+      `[ElectraScan v4] Scale ${scale} produced ${Math.round(total / 1024)} KB — retrying smaller.`,
+    );
   }
+  // Even the smallest scale overflowed; send it and let the server's page limit
+  // return a clear error rather than failing silently on an oversized body.
+  console.warn("[ElectraScan v4] Drawing is very large — sending at minimum scale.");
   return images;
 }
 
@@ -463,21 +586,31 @@ function generateRiskFlags(components: DetectedComponent[]): RiskFlag[] {
 export async function detectElectricalComponents(
   file: File,
   drawingVersion: string = "001",
-  apiKey?: string
+  // Retained so existing callers keep compiling. It is deliberately ignored:
+  // the key now lives server-side behind /api/detect and never reaches the
+  // browser. Passing one here has no effect.
+  _apiKey?: string,
+  onProgress?: ProgressFn,
 ): Promise<DetectionResult> {
-  const client = new Anthropic({
-    apiKey: apiKey ?? (import.meta as any).env.VITE_ANTHROPIC_API_KEY,
-    dangerouslyAllowBrowser: true,
-  });
+  // A scan runs for minutes. Without these callbacks the UI sits on a spinner
+  // with no sign of life, which reads as a hung app rather than a working one.
+  const report = (phase: DetectionPhase, message: string) => {
+    onProgress?.({ phase, message });
+  };
 
   console.log(`[ElectraScan v4] Converting: ${file.name}`);
+  report("rendering", "Rendering drawing pages…");
   const pageImages = await pdfToImages(file);
   const imageBlocks: Anthropic.ImageBlockParam[] = pageImages.map(base64 => ({
     type: "image" as const,
-    source: { type: "base64" as const, media_type: "image/png" as const, data: base64 },
+    source: { type: "base64" as const, media_type: "image/jpeg" as const, data: base64 },
   }));
 
   // ── PASS 1: Symbol-aware legend extraction ────
+  report(
+    "legend",
+    `Reading the legend across ${pageImages.length} page${pageImages.length === 1 ? "" : "s"}…`,
+  );
   console.log("[ElectraScan v4] Pass 1: Reading legend + symbols...");
   let rawLegendResponse = "";
   let legendItems: LegendItem[] = [];
@@ -485,9 +618,9 @@ export async function detectElectricalComponents(
   let scaleDetected = "unknown";
 
   try {
-    const r = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 2000,
+    const r = await callDetect({
+      model: DETECTION_MODEL,
+      max_tokens: 16000,
       system: LEGEND_SYSTEM_PROMPT,
       messages: [{
         role: "user",
@@ -497,7 +630,7 @@ export async function detectElectricalComponents(
         ],
       }],
     });
-    rawLegendResponse = r.content[0].type === "text" ? r.content[0].text : "";
+    rawLegendResponse = extractText(r);
     console.log("[ElectraScan][detect] Pass 1 raw response (first 500 chars):", rawLegendResponse.slice(0, 500));
     console.log("[ElectraScan][detect] Pass 1 stop_reason / content blocks:", r.stop_reason, r.content.length);
     const extracted = extractJSON(rawLegendResponse);
@@ -520,6 +653,12 @@ export async function detectElectricalComponents(
   }
 
   // ── PASS 2: Floor plan scan with symbol decoder ─
+  report(
+    "floorplan",
+    legendItems.length > 0
+      ? `Found ${legendItems.length} legend items — now counting them across the plan…`
+      : "No legend found — estimating from the floor plan…",
+  );
   console.log("[ElectraScan v4] Pass 2: Scanning floor plan with symbol decoder...");
   let rawResponse = "";
   let roomComponents: any[] = [];
@@ -543,9 +682,9 @@ export async function detectElectricalComponents(
   }
 
   try {
-    const r = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 4096,
+    const r = await callDetect({
+      model: DETECTION_MODEL,
+      max_tokens: 16000,
       system: buildFloorPlanPrompt(legendItems),
       messages: [{
         role: "user",
@@ -555,7 +694,7 @@ export async function detectElectricalComponents(
         ],
       }],
     });
-    rawResponse = r.content[0].type === "text" ? r.content[0].text : "";
+    rawResponse = extractText(r);
     console.log("[ElectraScan][detect] Pass 2 raw response (first 500 chars):", rawResponse.slice(0, 500));
     console.log("[ElectraScan][detect] Pass 2 stop_reason / content blocks:", r.stop_reason, r.content.length);
     const extracted = extractJSON(rawResponse);
@@ -570,6 +709,7 @@ export async function detectElectricalComponents(
     console.warn("[ElectraScan][detect] Pass 2 failure — raw response was:", rawResponse);
   }
 
+  report("building", "Matching symbols to your rate library…");
   console.log(`[ElectraScan][detect] buildComponents inputs: legendItems=${legendItems.length}, roomComponents=${roomComponents.length}`);
   const components = buildComponents(legendItems, roomComponents);
   console.log(`[ElectraScan][detect] buildComponents output: components=${components.length}`);
@@ -577,6 +717,7 @@ export async function detectElectricalComponents(
   const estimateSubtotal = components.reduce((s, c) => s + c.line_total, 0);
 
   console.log(`[ElectraScan v4] Complete: ${components.length} items, $${estimateSubtotal.toLocaleString()}`);
+  report("done", `${components.length} items · $${estimateSubtotal.toLocaleString()}`);
 
   if (components.length === 0) {
     console.error(
