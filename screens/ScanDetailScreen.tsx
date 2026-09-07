@@ -13,9 +13,10 @@
  * the Detect list will stream from Claude Vision via Supabase Edge Functions.
  */
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { fetchScanById, ScanRow } from "../services/supabaseData";
+import { detectElectricalComponents } from "../analyze_pdf";
 import {
   ArrowLeft,
   ArrowRight,
@@ -100,6 +101,8 @@ export default function ScanDetailScreen() {
   const { id } = useParams();
   const [liveScan, setLiveScan] = useState<ScanRow | null>(null);
   const [step, setStep] = useState(id === "new" ? 1 : 2);
+  const [scannedItems, setScannedItems] = useState<DetectedItem[] | null>(null);
+  const [scannedFileName, setScannedFileName] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id || id === "new") return;
@@ -143,10 +146,10 @@ export default function ScanDetailScreen() {
 
       <StepBar step={step} onStep={setStep} />
 
-      {step === 1 && <StepUpload onNext={() => setStep(2)} />}
-      {step === 2 && <StepDetecting onNext={() => setStep(3)} initialItems={liveScan?.detected_items as DetectedItem[] | undefined} />}
-      {step === 3 && <StepReview onNext={() => setStep(4)} onBack={() => setStep(2)} initialItems={liveScan?.detected_items as DetectedItem[] | undefined} />}
-      {step === 4 && <StepQuote onBack={() => setStep(3)} initialItems={liveScan?.detected_items as DetectedItem[] | undefined} />}
+      {step === 1 && <StepUpload onNext={(items, name) => { setScannedItems(items); setScannedFileName(name); setStep(2); }} />}
+      {step === 2 && <StepDetecting onNext={() => setStep(3)} initialItems={scannedItems ?? liveScan?.detected_items as DetectedItem[] | undefined} />}
+      {step === 3 && <StepReview onNext={() => setStep(4)} onBack={() => setStep(2)} initialItems={scannedItems ?? liveScan?.detected_items as DetectedItem[] | undefined} />}
+      {step === 4 && <StepQuote onBack={() => setStep(3)} initialItems={scannedItems ?? liveScan?.detected_items as DetectedItem[] | undefined} />}
 
       <Footer />
     </div>
@@ -212,14 +215,47 @@ function StepBar({ step, onStep }: StepBarProps) {
 }
 
 // ─── Step 1: Upload ─────────────────────────────────────────────────────
-function StepUpload({ onNext }: { onNext: () => void }) {
-  // TODO: real drag-and-drop + file input wired to analyze_pdf.ts.
+function StepUpload({ onNext }: { onNext: (items: DetectedItem[], fileName: string) => void }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
+
+  const processFile = useCallback(async (file: File) => {
+    if (!file) return;
+    setStatus("loading");
+    setErrorMsg(null);
+    try {
+      const result = await detectElectricalComponents(file);
+      const items: DetectedItem[] = result.components.map((c, i) => ({
+        id: i + 1,
+        symbol: c.type.replace(/_/g, " ").split(" ").map((w: string) => w[0] ?? "").join("").slice(0, 3).toUpperCase(),
+        qty: c.quantity,
+        desc: c.catalogue_item_name || c.type.replace(/_/g, " ").replace(/\b\w/g, (l: string) => l.toUpperCase()),
+        rateCode: c.drawing_ref || `${c.type.slice(0, 3)}-${String(i + 1).padStart(3, "0")}`,
+        conf: c.confidence,
+        x: 50 + Math.random() * 380,
+        y: 50 + Math.random() * 280,
+      }));
+      onNext(items, file.name);
+    } catch (err: any) {
+      setStatus("error");
+      setErrorMsg(err?.message ?? "Detection failed. Check your API key and try again.");
+    }
+  }, [onNext]);
+
+  const handleFile = (f: File | null | undefined) => { if (f) processFile(f); };
+
   return (
     <div
       className="anim-in"
+      onDragOver={e => { e.preventDefault(); setDragging(true); }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={e => { e.preventDefault(); setDragging(false); handleFile(e.dataTransfer.files[0]); }}
+      onClick={() => status !== "loading" && fileRef.current?.click()}
       style={{
         backgroundColor: C.bgCard,
-        border: `2px dashed ${C.border}`,
+        border: `2px dashed ${dragging ? C.orange : C.border}`,
         borderRadius: RADIUS.xl,
         padding: 64,
         display: "flex",
@@ -227,16 +263,42 @@ function StepUpload({ onNext }: { onNext: () => void }) {
         alignItems: "center",
         gap: 14,
         textAlign: "center",
+        cursor: status === "loading" ? "wait" : "pointer",
+        transition: "border-color 150ms",
       }}
     >
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".pdf,.png,.jpg,.jpeg"
+        style={{ display: "none" }}
+        onChange={e => handleFile(e.target.files?.[0])}
+      />
       <div style={{ width: 56, height: 56, borderRadius: RADIUS.xl, backgroundColor: C.orangeSoft, color: C.orange, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <UploadIcon size={24} />
+        {status === "loading" ? <Loader2 size={24} className="spin" /> : <UploadIcon size={24} />}
       </div>
-      <h2 style={{ fontFamily: FONT.heading, fontSize: 20, fontWeight: 600, margin: 0 }}>Drop your floor plan here</h2>
-      <p style={{ color: C.textMuted, fontStyle: "italic", margin: 0, maxWidth: 420 }}>
-        PDF, PNG, or DWG. Claude Vision will detect symbols, map them to your rate library, and draft a quote.
-      </p>
-      <PrimaryButton onClick={onNext}>Simulate upload →</PrimaryButton>
+      {status === "loading" ? (
+        <>
+          <h2 style={{ fontFamily: FONT.heading, fontSize: 20, fontWeight: 600, margin: 0 }}>Analysing floor plan…</h2>
+          <p style={{ color: C.textMuted, fontStyle: "italic", margin: 0, maxWidth: 420 }}>
+            Claude Vision is reading symbols and mapping to your rate library. This takes 20–60 seconds.
+          </p>
+        </>
+      ) : (
+        <>
+          <h2 style={{ fontFamily: FONT.heading, fontSize: 20, fontWeight: 600, margin: 0 }}>Drop your floor plan here</h2>
+          <p style={{ color: C.textMuted, fontStyle: "italic", margin: 0, maxWidth: 420 }}>
+            PDF or PNG. Claude Vision will detect electrical symbols, map them to your rate library, and draft a quote.
+          </p>
+          {errorMsg && (
+            <p style={{ color: C.red, fontSize: 13, margin: 0, maxWidth: 420 }}>{errorMsg}</p>
+          )}
+          <PrimaryButton onClick={e => { e.stopPropagation(); fileRef.current?.click(); }}>
+            Choose file
+          </PrimaryButton>
+          <span style={{ fontSize: 12, color: C.textSubtle }}>or drag and drop</span>
+        </>
+      )}
     </div>
   );
 }

@@ -42,6 +42,7 @@ export const C = {
   blue:       "#6a9bcc", blueSoft:  "#e2ecf5",  // Sent / informational
   green:      "#788c5d", greenSoft: "#e4ead9",  // Approved / Aries online / materials
   amber:      "#c89450", amberSoft: "#f3e6cf",  // Needs review / warning
+  red:        "#c1666b", redSoft:   "#f3e0e0",  // Error / destructive
 } as const;
 
 // Font stacks — loaded via Google Fonts <link> in index.html (no npm dep).

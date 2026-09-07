@@ -31,3 +31,4 @@ target
 
 # Tooling
 .gstack/
+.env*.local

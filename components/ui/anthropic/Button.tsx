@@ -15,7 +15,7 @@ import { C, FONT, RADIUS } from "../../desktop/tokens";
 interface ButtonProps {
   children: React.ReactNode;
   icon?: React.ReactNode;
-  onClick?: () => void;
+  onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
   disabled?: boolean;
   type?: "button" | "submit";
 }
