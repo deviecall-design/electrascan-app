@@ -19,13 +19,21 @@ interface SymbolBadgeProps {
 }
 
 const SYMBOL_COLOURS: Record<string, string> = {
-  GPO: C.orange,
-  LT:  C.amber,
-  SW:  C.blue,
-  DB:  C.green,
-  SA:  C.orange,
-  FN:  C.blue,
-  DC:  C.green,
+  GPO:  C.orange,
+  LT:   C.amber,
+  SW:   C.blue,
+  DB:   C.green,
+  EDB:  C.green,
+  MSB:  C.green,
+  SA:   C.orange,
+  FN:   C.blue,
+  DC:   C.green,
+  EX:   C.amber,
+  EV:   C.blue,
+  CCTV: C.orange,
+  AU:   C.blue,
+  IC:   C.orange,
+  EL:   C.textSubtle,
 };
 
 export default function SymbolBadge({ symbol, small }: SymbolBadgeProps) {
