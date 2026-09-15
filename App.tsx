@@ -18,7 +18,14 @@ import ProjectsScreen from "./components/ProjectsScreen";
 import ProjectDetail from "./components/ProjectDetail";
 import AppShell from "./components/AppShell";
 import LandingPage from "./components/LandingPage";
+import EstimatesIndexScreen from "./components/EstimatesIndexScreen";
+import ScansIndexScreen from "./components/ScansIndexScreen";
+import PdfPreviewModal from "./components/shared/PdfPreviewModal";
+import EmptyState from "./components/shared/EmptyState";
 import { useTenant } from "./contexts/TenantContext";
+import { useToast } from "./contexts/ToastContext";
+import { generateQuotePdf } from "./utils/generateQuotePdf";
+import { triggerDownload, type QuoteDocument } from "./utils/quoteExport";
 import { useAppRouter } from "./components/Router";
 import { useProjects, type Project as CtxProject } from "./contexts/ProjectContext";
 import type { RiskFlag as DetectionRiskFlag } from "./analyze_pdf";
@@ -734,11 +741,18 @@ function ResultsScreen({ result, fileName, onBack, onBuildEstimate }: {
 function EstimateEditor({ result, fileName, onBack }: {
   result: DetectionResult; fileName: string; onBack: () => void;
 }) {
+  const { tenant } = useTenant();
+  const { addToast } = useToast();
   const [items, setItems] = useState<LineItem[]>(() => toLineItems(result.components));
   const [margin, setMargin] = useState(15);
   const [locked, setLocked] = useState(false);
   const [showLock, setShowLock] = useState(false);
   const [estNumber] = useState(() => `EST-${new Date().getFullYear()}-${String(Math.floor(Math.random()*900)+100)}-001`);
+  const [pdfOpen, setPdfOpen] = useState(false);
+  const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
+  const [pdfName, setPdfName] = useState("estimate.pdf");
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
 
   const subtotal = items.reduce((s, i) => s + i.qty * i.unitPrice, 0);
   const marginAmt = subtotal * (margin / 100);
@@ -751,9 +765,49 @@ function EstimateEditor({ result, fileName, onBack }: {
   const deleteItem = (id: string) => !locked && setItems(prev => prev.filter(i => i.id !== id));
   const addItem = () => { if (locked) return; const n: LineItem = { id: `m-${Date.now()}`, description: "New item", room: "General", qty: 1, unitPrice: 0, lineTotal: 0, locked: false, fromDetection: false }; setItems(prev => [...prev, n]); };
 
-  const exportEst = () => {
-    const lines = [`ELECTRICAL ESTIMATE\n${estNumber}\n\nVesh Electrical Services Pty Ltd\n7/108 Old Pittwater Road, Brookvale NSW 2100\n\nDate: ${new Date().toLocaleDateString("en-AU")}\nDrawing: ${fileName}\n\n${"─".repeat(60)}\nITEM                                    QTY    RATE      TOTAL\n${"─".repeat(60)}`, ...items.map(i => `${i.description.padEnd(40)} ${String(i.qty).padStart(3)}  $${String(i.unitPrice).padStart(7)}  $${String(i.qty * i.unitPrice).padStart(8)}`), `${"─".repeat(60)}\n\nSubtotal ex GST:      ${fmt(subtotal).padStart(12)}\nMargin (${margin}%):          ${fmt(marginAmt).padStart(12)}\nSubtotal with margin: ${fmt(subtotalM).padStart(12)}\nGST (10%):            ${fmt(gst).padStart(12)}\nTOTAL INC GST:        ${fmt(total).padStart(12)}\n\nValid for 30 days.`].join("\n");
-    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([lines], { type: "text/plain" })); a.download = `${estNumber}.txt`; a.click();
+  const quoteDoc = (): QuoteDocument => ({
+    tenant,
+    reference: estNumber,
+    projectName: fileName.replace(".pdf", "").replace(/[_-]/g, " "),
+    drawingFile: fileName,
+    date: new Date().toLocaleDateString("en-AU", { day: "2-digit", month: "long", year: "numeric" }),
+    status: locked ? "LOCKED / FINALISED" : "DRAFT — Subject to change",
+    marginPct: margin,
+    gstRate: 10,
+    lineItems: items.map(i => ({
+      description: i.description,
+      category: i.room || "General",
+      room: i.room,
+      qty: i.qty,
+      unit: "EA",
+      unitPrice: i.unitPrice,
+    })),
+    totals: {
+      subtotal,
+      marginAmount: marginAmt,
+      subtotalWithMargin: subtotalM,
+      gst,
+      total,
+    },
+  });
+
+  const runQuotePdf = async (mode: "preview" | "download") => {
+    setPdfError(null);
+    setPdfLoading(true);
+    if (mode === "preview") setPdfOpen(true);
+    try {
+      const { blob, filename } = await generateQuotePdf(quoteDoc());
+      setPdfBlob(blob);
+      setPdfName(filename);
+      if (mode === "download") triggerDownload(blob, filename);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not generate PDF.";
+      setPdfError(message);
+      addToast(message, "error");
+      if (mode === "download") setPdfOpen(false);
+    } finally {
+      setPdfLoading(false);
+    }
   };
 
   return (
@@ -854,7 +908,20 @@ function EstimateEditor({ result, fileName, onBack }: {
           shown only while the estimate is still a draft. */}
       <div style={{ position: "fixed" as const, bottom: 0, left: 0, right: 0, background: C.navy, borderTop: `1px solid ${C.border}`, padding: "10px 14px", display: "flex", gap: 10 }}>
         <button
-          onClick={exportEst}
+          onClick={() => void runQuotePdf("preview")}
+          disabled={items.length === 0}
+          style={{
+            flex: 1,
+            background: items.length === 0 ? C.card : "transparent",
+            border: `1px solid ${items.length === 0 ? C.border : C.blue}`,
+            color: items.length === 0 ? C.muted : C.blue,
+            fontSize: 14, fontWeight: 700, padding: "12px", borderRadius: 12,
+            cursor: items.length === 0 ? "not-allowed" : "pointer",
+            opacity: items.length === 0 ? 0.6 : 1,
+          }}
+        >👁 Preview PDF</button>
+        <button
+          onClick={() => void runQuotePdf("download")}
           disabled={items.length === 0}
           style={{
             flex: locked ? 1 : 2,
@@ -865,7 +932,7 @@ function EstimateEditor({ result, fileName, onBack }: {
             cursor: items.length === 0 ? "not-allowed" : "pointer",
             opacity: items.length === 0 ? 0.6 : 1,
           }}
-        >📤 Export Quote</button>
+        >📄 Download PDF</button>
         {!locked && (
           <button
             onClick={() => setShowLock(true)}
@@ -882,6 +949,15 @@ function EstimateEditor({ result, fileName, onBack }: {
           >🔒 Lock & Finalise</button>
         )}
       </div>
+      <PdfPreviewModal
+        open={pdfOpen}
+        title="Quote PDF preview"
+        blob={pdfBlob}
+        filename={pdfName}
+        loading={pdfLoading}
+        error={pdfError}
+        onClose={() => { setPdfOpen(false); setPdfError(null); }}
+      />
     </div>
   );
 }
@@ -890,21 +966,21 @@ function EstimateEditor({ result, fileName, onBack }: {
 // Lists projects that have estimates so the user can drill into a
 // project's Approvals tab. Keeps the top-level Approvals nav useful
 // without duplicating the full approval workflow screen.
-function ApprovalsIndex({ projects, onOpenProject }: {
+function ApprovalsIndex({ projects, onOpenProject, onNewScan }: {
   projects: CtxProject[];
   onOpenProject: (id: string) => void;
+  onNewScan: () => void;
 }) {
   const withEstimates = projects.filter(p => p.estimates.length > 0);
   if (withEstimates.length === 0) {
     return (
-      <div style={{
-        background: "#FFFFFF", border: "1px dashed #E2E8F0", borderRadius: 12,
-        padding: "48px 20px", textAlign: "center", color: "#64748B",
-      }}>
-        <div style={{ fontSize: 40, marginBottom: 10 }}>✅</div>
-        <div style={{ fontSize: 15, fontWeight: 700, color: "#1E293B", marginBottom: 4 }}>No approvals yet</div>
-        <div style={{ fontSize: 12 }}>Create an estimate inside a project to start the approval workflow.</div>
-      </div>
+      <EmptyState
+        title="No approvals yet"
+        description="Create an estimate inside a project to start the sign-off workflow. Approvals appear here once a quote exists."
+        actions={[
+          { label: "Start a scan", onClick: onNewScan },
+        ]}
+      />
     );
   }
   const statusLabel = (s?: string) => {
@@ -1301,6 +1377,8 @@ export default function App() {
           <ProjectDetail
             projectId={route.id}
             onBack={() => navigate({ name: "projects" })}
+            initialTab={route.tab as "overview" | "upload" | "estimate" | "schedule" | "approvals" | "variations" | undefined}
+            initialEstimateId={route.estimateId}
           />
         </AppShell>
       )}
@@ -1316,7 +1394,63 @@ export default function App() {
         >
           <ApprovalsIndex
             projects={ctxProjects}
-            onOpenProject={id => navigate({ name: "project-detail", id })}
+            onOpenProject={id => navigate({ name: "project-detail", id, tab: "approvals" })}
+            onNewScan={goToScan}
+          />
+        </AppShell>
+      )}
+      {!legacyActive && route.name === "scans" && (
+        <AppShell
+          activeRoute="scans"
+          pageTitle="Scans"
+          pageSubtitle="Every drawing ElectraScan has detected for this workspace"
+          onNavigate={navigate}
+          onOpenSettings={() => setScreen("settings")}
+          onSignOut={signOut}
+          onNewScan={goToScan}
+          topbarActions={
+            <button
+              onClick={goToScan}
+              style={{
+                background: "#1D6EFD",
+                color: "#fff",
+                border: "none",
+                padding: "7px 14px",
+                fontSize: 12,
+                fontWeight: 600,
+                borderRadius: 7,
+                cursor: "pointer",
+              }}
+            >
+              ＋ New scan
+            </button>
+          }
+        >
+          <ScansIndexScreen
+            onOpenProject={id => navigate({ name: "project-detail", id, tab: "upload" })}
+            onNewScan={goToScan}
+          />
+        </AppShell>
+      )}
+      {!legacyActive && route.name === "estimates" && (
+        <AppShell
+          activeRoute="estimates"
+          pageTitle="Estimates"
+          pageSubtitle="Open any quote without waiting on a list that hydrates away"
+          onNavigate={navigate}
+          onOpenSettings={() => setScreen("settings")}
+          onSignOut={signOut}
+          onNewScan={goToScan}
+        >
+          <EstimatesIndexScreen
+            onOpenEstimate={(projectId, estimateId) =>
+              navigate({ name: "project-detail", id: projectId, estimateId, tab: "estimate" })
+            }
+            onNewScan={goToScan}
+            onNewProject={() => {
+              navigate({ name: "projects" });
+              setShowCreateProject(true);
+            }}
           />
         </AppShell>
       )}

@@ -7,7 +7,9 @@ export type AppRoute =
   | { name: 'landing' }
   | { name: 'dashboard' }
   | { name: 'projects' }
-  | { name: 'project-detail'; id: string }
+  | { name: 'project-detail'; id: string; estimateId?: string; tab?: string }
+  | { name: 'scans' }
+  | { name: 'estimates' }
   | { name: 'approvals' }
   | { name: 'rate-library' }
   | { name: 'reports' }
@@ -32,25 +34,42 @@ function routeToHash(r: AppRoute): string {
   if (r.name === 'landing') return '#/welcome';
   if (r.name === 'dashboard') return '#/';
   if (r.name === 'projects') return '#/projects';
+  if (r.name === 'scans') return '#/scans';
+  if (r.name === 'estimates') return '#/estimates';
   if (r.name === 'approvals') return '#/approvals';
   if (r.name === 'rate-library') return '#/rate-library';
   if (r.name === 'reports') return '#/reports';
   if (r.name === 'email-inbox') return '#/email-inbox';
-  return `#/projects/${r.id}`;
+  const params = new URLSearchParams();
+  if (r.estimateId) params.set('e', r.estimateId);
+  if (r.tab) params.set('tab', r.tab);
+  const qs = params.toString();
+  return `#/projects/${r.id}${qs ? `?${qs}` : ''}`;
 }
 
 function hashToRoute(hash: string): AppRoute {
-  const h = hash.replace(/^#\/?/, '');
+  const raw = hash.replace(/^#\/?/, '');
+  const [path, qs] = raw.split('?');
+  const params = new URLSearchParams(qs || '');
   // No auth gate exists yet (see PRODUCT.md follow-ups), so the root path
   // still opens straight into the dashboard. The marketing page lives at
   // its own address until real logged-out routing is wired up.
-  if (h === '' || h === '/') return { name: 'dashboard' };
-  const parts = h.split('/').filter(Boolean);
+  if (path === '' || path === '/') return { name: 'dashboard' };
+  const parts = path.split('/').filter(Boolean);
   if (parts[0] === 'welcome') return { name: 'landing' };
   if (parts[0] === 'projects') {
-    if (parts[1]) return { name: 'project-detail', id: parts[1] };
+    if (parts[1]) {
+      return {
+        name: 'project-detail',
+        id: parts[1],
+        estimateId: params.get('e') || undefined,
+        tab: params.get('tab') || undefined,
+      };
+    }
     return { name: 'projects' };
   }
+  if (parts[0] === 'scans') return { name: 'scans' };
+  if (parts[0] === 'estimates') return { name: 'estimates' };
   if (parts[0] === 'approvals') return { name: 'approvals' };
   if (parts[0] === 'rate-library') return { name: 'rate-library' };
   if (parts[0] === 'reports') return { name: 'reports' };

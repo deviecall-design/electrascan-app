@@ -225,7 +225,7 @@ function TopBar({ onCommand, go }) {
 function Footer() {
   return (
     <div style={{ marginTop: 48, paddingTop: 18, borderTop: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', color: C.textSubtle, fontSize: 13 }}>
-      <span style={{ fontStyle: 'italic' }}>Groundplan measures your plans. ElectraScan reads them — and writes your quote.</span>
+      <span style={{ fontStyle: 'italic' }}>ElectraScan reads your plans — and writes your quote.</span>
       <span style={{ fontFamily: fontMono, fontSize: 12 }}>v0.4.2 · Sydney</span>
     </div>
   );

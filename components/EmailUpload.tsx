@@ -98,6 +98,7 @@ export default function EmailUpload({
 
   const [inbox, setInbox] = useState<IncomingEmail[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [sampleInbox, setSampleInbox] = useState(false);
   const [autoScan, setAutoScan] = useState(true);
   const [copied, setCopied] = useState(false);
   const [syncStatus, setSyncStatus] = useState<"idle" | "ok" | "local">("idle");
@@ -116,10 +117,13 @@ export default function EmailUpload({
       if (!alive) return;
       if (emailsRes.ok && emailsRes.emails.length > 0) {
         setInbox(emailsRes.emails);
+        setSampleInbox(false);
       } else if (devMode) {
         setInbox(SEED_INBOX);
+        setSampleInbox(true);
       } else {
         setInbox([]);
+        setSampleInbox(false);
       }
       if (prefRes.ok) setAutoScan(prefRes.autoScan);
       setLoaded(true);
@@ -356,14 +360,37 @@ export default function EmailUpload({
           <div style={{ textAlign: "center" as const, padding: "48px 20px", color: C.muted }}>
             <div style={{ fontSize: 40, marginBottom: 10 }}>📭</div>
             <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>No drawings received yet</div>
-            <div style={{ fontSize: 12, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
-              Forward a drawing email to <strong style={{ color: C.blueLt }}>{inboxAddress}</strong> to see it here.
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 4, lineHeight: 1.5, marginBottom: 16 }}>
+              Forward a drawing email to <strong style={{ color: C.blueLt }}>{inboxAddress}</strong> or upload a PDF directly.
             </div>
+            {onUploadManual && (
+              <button
+                onClick={onUploadManual}
+                style={{
+                  background: C.blue, color: "#fff", border: "none",
+                  padding: "10px 18px", fontSize: 13, fontWeight: 700, borderRadius: 8, cursor: "pointer",
+                }}
+              >
+                Start a scan
+              </button>
+            )}
           </div>
         ) : (
-          inbox.map(e => (
-            <InboxRow key={e.id} email={e} onScan={() => triggerScan(e.id)} />
-          ))
+          <>
+            {sampleInbox && (
+              <div style={{
+                display: "inline-flex", alignItems: "center", gap: 6, marginBottom: 10,
+                padding: "6px 12px", borderRadius: 20,
+                background: `${C.amber}18`, color: C.amber, border: `1px solid ${C.amber}55`,
+                fontSize: 12, fontWeight: 600,
+              }}>
+                Sample inbox — localStorage flag electrascan_dev_mode
+              </div>
+            )}
+            {inbox.map(e => (
+              <InboxRow key={e.id} email={e} onScan={() => triggerScan(e.id)} />
+            ))}
+          </>
         )}
 
         {devMode && (

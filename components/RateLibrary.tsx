@@ -101,7 +101,8 @@ export default function RateLibrary({ onBack }: RateLibraryProps) {
   const [syncToastMsg, setSyncToastMsg] = useState<string>("");
   const [showCustom, setShowCustom] = useState(false);
 
-  // Hydrate sync log from Supabase if available; always fall back to a seed entry.
+  // Hydrate sync log from Supabase if available. Do not invent a live history
+  // when the table is empty — the History tab already has an empty state.
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -111,13 +112,7 @@ export default function RateLibrary({ onBack }: RateLibraryProps) {
         setHistory(logRes.entries);
         setLastSync(logRes.entries[0].ts);
       } else {
-        const nowIso = new Date().toISOString();
-        setHistory([{
-          id: "seed-1", ts: nowIso, source: "Simpro",
-          productsCount: WHOLESALER_CATALOGUE.length, status: "success",
-          note: "Catalogue synced (seed data · Simpro connector pending).",
-        }]);
-        setLastSync(nowIso);
+        setHistory([]);
       }
     })();
     return () => { alive = false; };

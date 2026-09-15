@@ -2,9 +2,10 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useProjects, estimateTotals, statusPalette, type Project } from "../contexts/ProjectContext";
 import {
   fetchDashboardKpis,
-  formatScanToQuote,
   type DashboardKpis,
 } from "../services/dashboardKpiService";
+import { resolveDashboardKpis } from "../utils/resolveDashboardKpis";
+import DataStatusBanner from "./shared/DataStatusBanner";
 
 /**
  * DashboardScreen — premium dark-blue SaaS upgrade.
@@ -157,14 +158,7 @@ const DashboardScreen: React.FC<Props> = ({
     return () => { cancelled = true; };
   }, []);
 
-  const useLive = live !== null;
-  const stats = {
-    estimatesThisMonth: useLive ? live!.estimatesThisMonth : localStats.estimatesThisMonth,
-    pendingValue:       useLive ? live!.pendingValue       : localStats.pendingValue,
-    winRate:            useLive ? live!.winRate            : localStats.winRate,
-    avgScanToQuote:     useLive ? formatScanToQuote(live!.avgScanToQuoteHours)
-                                : (localStats.avgDays === null ? "—" : `${localStats.avgDays}d`),
-  };
+  const stats = resolveDashboardKpis(kpiState, live, localStats);
 
   const recent = useMemo(() => {
     return [...projects]
@@ -184,38 +178,48 @@ const DashboardScreen: React.FC<Props> = ({
             value={String(stats.estimatesThisMonth)}
             color={C.amber}
             icon={KPI_ICONS.estimates}
-            loading={kpiState === "loading"}
+            loading={stats.source === "loading"}
           />
           <KpiCard
             label="Pending Value"
             value={stats.pendingValue > 0 ? `$${(stats.pendingValue / 1000).toFixed(0)}k` : "$0"}
             color={C.green}
             icon={KPI_ICONS.pending}
-            loading={kpiState === "loading"}
+            loading={stats.source === "loading"}
           />
           <KpiCard
             label="Win Rate"
             value={stats.winRate === null ? "—" : `${stats.winRate}%`}
             color={C.blue}
             icon={KPI_ICONS.winrate}
-            loading={kpiState === "loading"}
+            loading={stats.source === "loading"}
           />
           <KpiCard
             label="Avg Scan-to-Quote"
             value={stats.avgScanToQuote}
             color={C.purple}
             icon={KPI_ICONS.speed}
-            loading={kpiState === "loading"}
+            loading={stats.source === "loading"}
           />
         </div>
 
-        {kpiState === "error" && kpiError && (
-          <div className="es-kpi-error">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-            </svg>
-            KPI sync failed — showing local data. ({kpiError})
-          </div>
+        {stats.source === "error" && kpiError && (
+          <DataStatusBanner
+            kind="error"
+            message={`KPI sync failed — showing local drafts. (${kpiError})`}
+          />
+        )}
+        {stats.source === "local" && (
+          <DataStatusBanner
+            kind="local"
+            message="Showing local drafts — no cloud estimates yet."
+          />
+        )}
+        {stats.source === "empty" && (
+          <DataStatusBanner
+            kind="empty"
+            message="No estimates yet — start a scan or create a project to populate these figures."
+          />
         )}
 
         {/* ── Recent projects ───────────────────────────────────── */}

@@ -1,6 +1,7 @@
+/// <reference types="vitest/config" />
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
@@ -31,6 +32,11 @@ export default defineConfig({
       target: "esnext",
     },
     exclude: ['mupdf'] // Don't pre-bundle mupdf (WASM module)
+  },
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: './vitest.setup.ts',
   },
   worker: {
     format: 'es', // Use ES modules for workers
