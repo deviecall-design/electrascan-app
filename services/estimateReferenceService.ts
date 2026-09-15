@@ -24,6 +24,15 @@ export function nextReference(prefix: string, latest: string | null | undefined)
   return `${prefix}${String(n + 1).padStart(4, '0')}`;
 }
 
+/**
+ * Canonical live format: EST-YYMM-XXXX (e.g. EST-2609-0001).
+ * Rejects Bondi mock EST-2026-0142, AppShell EST-2026-497-001, and
+ * Approvals theatre EST-26-001-v3.
+ */
+export function isCanonicalEstimateRef(ref: string): boolean {
+  return /^EST-\d{2}(0[1-9]|1[0-2])-\d{4}$/.test(ref);
+}
+
 // Best-effort client-side allocation. Returns the next reference for
 // display ahead of persistence. Callers that persist via /api/estimates/create
 // should overwrite with the server-returned reference.

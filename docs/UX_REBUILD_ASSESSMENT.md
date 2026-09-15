@@ -1,124 +1,123 @@
-# ElectraScan — UI/UX health and rebuild-vs-iterate assessment
+# ElectraScan — UI/UX revision plan (rebuild vs iterate)
 
-**Audience:** Damien  
-**Scope:** Live app at electrascan-app.vercel.app (production is GitHub `main`, which already contains `feat/electrascan-desktop-v2`).  
+**Audience:** Damien (Vesh Electrical)  
+**Live production:** https://electrascan-app.vercel.app — GitHub `main` @ `c3f1664` (7 Sep 2026). `feat/electrascan-desktop-v2` is an ancestor, not what Vercel Production tracks.  
 **Date:** 15 Sep 2026  
 
-This is an engineering recommendation after auditing the live Quote + Detect path (Sirius scan screenshots), not a full rewrite spec.
+This is the product/engineering recommendation after the live signed-in walk plus the Sirius Quote/Detect screenshots. It is not a greenfield rewrite spec.
 
 ---
 
-## 1. Current architecture health
+## 0. Live production walk (signed in as Damien C. / Vesh Electrical)
 
-ElectraScan is **three products in one repo**, only one of which is mounted:
+| Observation | What it actually is |
+|---|---|
+| Dashboard/Estimates flash Bondi (`EST-2026-0142` · $28,450 · Sent) and scan `Switchboard_LV2_rev3.pdf` at 72%, then clear to **zero** | `useSupabaseQuery` **starts on mock arrays**, then a successful empty fetch replaces them. Empty is the real Vesh pipeline. |
+| Chip: “Demo data — Supabase tables not yet created” | **Wrong diagnosis.** Damien is authenticated. Tables exist. The chip fired because `isLive` is false **during the mock flash** (and on fetch error). Empty ≠ missing schema. |
+| `/estimate/new` dumps you on Dashboard | Catch-all `path="*"` → `/dashboard`. There is no new-estimate route. Creating a quote is `/detection/new`. |
+| Variation arithmetic consistent; Approvals GST consistent | Those screens are **self-contained mocks**. Maths can be right while identity is still theatre. |
+| Three reference formats: `EST-2026-0142`, `EST-2026-497-001`, `EST-26-001-v3` | Three leftover generators. Canonical allocator is **`EST-YYMM-XXXX`** (`EST-2609-0001`) via `/api/estimates/create`. |
 
-| Surface | Entry | Status |
-|---|---|---|
-| **Live desktop** | `index.tsx` → `DesktopApp.tsx` → `screens/*` | What Vercel serves |
-| **AppShell / projects** | `components/AppShell.tsx` + `ProjectEstimateEditor` + `ProjectContext` (localStorage) | **Not mounted.** Richer estimate maths (category margins, cable BOM, TLE) never reach the live Quote step |
-| **Legacy mobile App.tsx** | Original scan → room schedule → estimate editor | **Explicitly unmounted** (“reference archive”) |
+### Prior Sirius evidence (still the Quote/Detect trust problem)
 
-**Detection pipeline** (`analyze_pdf.ts`): two Claude Vision passes (legend, then room count) × Vesh catalogue. It does **not** return symbol x/y on the drawing. Quantities and prices are list data.
-
-**Estimate / pricing:** the live Quote step (`screens/ScanDetailScreen.tsx` StepQuote) is a **separate calculator** from `estimateTotals()` in `ProjectContext`. Dashboard KPIs read Supabase `estimates.value` when live, otherwise **Bondi Tower mock rows**. New scans live in React state for that tab session; they are not the same records as the dashboard mock list.
-
-**Persistence:** mixed. Scans/estimates *can* hit Supabase; the 4-step wizard mostly does not persist a quote with a real sequential reference. `peekNextReference()` / `/api/estimates/create` (`EST-YYMM-XXXX`) exist but were not used on the Quote letterhead.
-
-**Verdict:** architecture is iterable, but the live UX is a **desktop mockup that later had real detection piped into it**. That mismatch is the root of “it used to work” vs “Bondi / fake office plan / $71k GPOs”.
+- Quote Aries named **Bondi Towers** on the Sirius job; letterhead **EST-2026-0143** (next to mock Bondi `EST-2026-0142`).
+- Power outlets **$70,980** vs ~6 GPO visible on one sheet. Vesh standard double GPO is **$260 ex GST**. 6 × 5 pages × $260 ≈ **$7,800**. $71k is qty × SKU (Zetr/specials typed as GPO, legend qty repeated per room), **not GST twice**. Screenshot totals were internally consistent at 18% then 10% GST.
+- Detect overlay “Level 2 · Page 3/5 / OFFICE A / BOARDROOM” is the **April mock SVG**, not the uploaded PDF. Vision never returns x/y. May “worked” on `BlueprintCanvas`, which **DesktopApp does not mount**.
 
 ---
 
-## 2. Detection overlay regression (May → now) — localized vs systemic
+## 1. UI/UX revision plan (Detection overlay + Quote trust first)
 
-**What Damien saw:** Detect complete overlay labelled “Level 2 · Page 3/5”, rooms OFFICE A / WORKSTATIONS / BOARDROOM / BREAKOUT / KITCHEN, footer `analysed by Claude Vision · 0.4.2`. That is **not** the Sirius PDF.
+Work the live `DesktopApp` → `screens/*` shell. Do not start a fourth app.
 
-**Evidence in git (not a pdf.js Y-flip):**
+### P0 — Stop lying about the job (this sprint)
 
-1. `984c68b` (23 Apr 2026) — *feat(desktop): Phase 5 — scan detail 4-step flow*  
-   Introduced `ScanDetailScreen` with a **hand-drawn FloorPlan SVG** (grid, five named rooms, pulsing markers). Commit message says real drag-and-drop is a follow-up.
+1. **Detect overlay honesty**  
+   Show the **uploaded PDF/PNG**. Do not draw OFFICE A / BOARDROOM. Caption: counts are in the list; pins are not registered to the drawing.  
+   *Follow-up (not P0):* vision emits x/y **or** remount `BlueprintCanvas` in step 2.
 
-2. `30ce55a` (24 Apr 2026) — *wire Steps 2–4 to real detection output*  
-   Explicitly: **“real detection has no x/y”** → `gridPosition()` scatters badges on that SVG (`x = 60 + (i * 73) % 420`). Markers were never registered to the PDF.
+2. **Quote identity**  
+   - Reference from `EST-YYMM-XXXX`, never `EST-2026-0143`.  
+   - Aries never names another project unless that is the client on screen.  
+   - Margin = company default **15%** (18% was Bondi copy).  
+   - Category totals = summed lines, not fake 12/22/30% splits.
 
-3. `9462e05` (9 May 2026) — *wire real upload + Claude Vision to ScanDetailScreen*  
-   Real files flow into the **same mock plan**. May “working” behaviour on this screen was never plan-aligned overlay; the original takeoff canvas (`components/BlueprintCanvas.tsx`, Konva + PDF, initial commit 2 Apr) is unused by `DesktopApp`.
+3. **Quote pricing sanity**  
+   Generic “double power point” → **$260**, not Zetr $525. Cooktops / towel rails / heaters are not `GPO_STANDARD`. Room counts cannot exceed legend totals.
 
-4. Hardcoded chrome still in Detect: `"Level 2 · Page 3/5"` — matches the screenshot exactly.
+4. **Dashboard / Estimates empty state**  
+   Signed-in empty must stay empty. **No Bondi flash.** No “tables not created” when the fetch succeeded with `[]`. `/estimate/new` must not 404 into Dashboard.
 
-**Severity:** High for trust (the map **claims** to be the drawing).  
-**Class:** **Systemic to the desktop rewrite**, not a broken matrix on an otherwise-correct overlay. Restoring May App.tsx/BlueprintCanvas would be a product choice (bring the real canvas back into the Detect step), not a one-line transform fix.
+5. **Persist the quote**  
+   Send writes `value` = GST-inclusive total so a Sirius (or any) quote can appear on Dashboard.
 
-**This PR:** Detect step shows the **uploaded PDF/PNG** instead of the fake office plan, and states that counts live in the list (pins are not on-drawing). Full pin registration needs vision to emit coordinates **or** reuse BlueprintCanvas — that is a follow-up, not a weekend coordinate tweak.
+### P1 — One number, one reference, one route
 
----
+6. **One estimate brain on the live path:** `computeQuoteTotals` (margin on ex-GST, then 10% GST) for Quote, PDF, Dashboard `value`, Approvals GST. Variation/Approvals already matched GST; keep them on the helper when those screens leave mock data.
 
-## 3. UI/UX debt from the live audit
+7. **One reference format:** `EST-YYMM-XXXX`. Retire UI copy of `EST-2026-0142`, `EST-2026-497-001`, `EST-26-001-v3`. Legacy `incrementEstimateNumber` (AppShell) stays unmounted.
 
-| Issue | Evidence | Trust impact |
-|---|---|---|
-| **Bondi Towers on Sirius** | Aries copy hardcoded: “Bondi Tower's last 3 quotes…” | Looks like the wrong job’s estimate |
-| **EST-2026-0143 on every new quote** | Hardcoded; sits next to mock Bondi `EST-2026-0142` | New job looks like Bondi’s next revision |
-| **Power outlets $70,980** | Category rollup of GPO-typed lines × catalogue $ | Unbelievable vs ~6 GPO on one sheet; mix of (a) greedy catalogue match (Zetr $525 vs standard $260), (b) cooktops/towel rails typed as `GPO_STANDARD`, (c) Pass 2 repeating legend qty per room / legend+room double count |
-| **18% margin invented** | Hardcoded to match Bondi Aries copy; Vesh profile default is **15%** | Quote ≠ company default |
-| **Demo DETECTED_ITEMS fallback** | Empty/failed detection still quoted the 10-row mock | Wrong job, wrong qty |
-| **Dashboard Bondi rows** | `useSupabaseQuery` fallback arrays | Empty accounts look like Bondi pipeline |
-| **Dead Quote CTAs** | Download PDF / Send to client not wired on StepQuote | Preview is theatre |
-| **Dual estimate maths** | Live Quote ≠ `estimateTotals` / PDF util | Totals will diverge if AppShell is remounted |
-| **Empty / branding** | “Client not set”, mock scans, hardcoded licence line | Unfinished white-label |
+8. **Wire dead CTAs / routes:** `/estimate/new` → `/detection/new`. Download PDF. Detection nav badge must not be a fake `3`.
 
-Pricing sanity: Vesh **standard double GPO is $260 ex GST installed** (legitimate AU per-point). 6 GPOs × 5 pages × $260 ≈ **$7,800**, not $70k. $70,980 implies ~273 points at $260 or ~135 at Zetr $525 — detection qty and/or SKU selection, not “GST applied twice” on the screenshot (116,985 + 18% + 10% GST is internally consistent).
+### P2 — Collapse the dual product
 
----
+9. Either mount AppShell’s editor as the estimate of record **or** stop treating it as current. Do not keep `estimateTotals()` and Quote as peers.
 
-## 4. Recommendation: iterate, do not rebuild from scratch
+10. White-label: client name, licence, Aries copy from this tenant/job only.
 
-**Do not greenfield-rebuild** while `analyze_pdf.ts`, `vesh_catalogue.ts`, `lib/symbol_map.ts`, TLE matching, and Supabase tenant/auth still encode the domain. A rewrite would re-litigate detection prompts and AU pricing from zero and would not ship faster than fixing the mockup-shaped shell.
+### P3 — Pin overlay (feature, not a rewrite gate)
 
-**Iterate on this codebase**, with a hard rule: **one estimate brain, one shell.**
+11. Register symbols to the PDF (vision coordinates or Konva canvas). Until then, never imply the map is the drawing.
 
-### Criteria that would justify a rebuild (none are fully true today)
-
-- Detection engine is unsalvageable (it is not; overlay was never wired)
-- Catalogue / GST model is wrong (GST path on Quote is consistent; SKU/qty/category are fixable)
-- Auth/tenant/Supabase must be thrown away (they should stay)
-
-### Pragmatic middle path (recommended)
-
-1. **Keep:** Claude legend+count pipeline, Vesh catalogue, symbol map, `/api/detect`, EST-YYMM-XXXX allocator, TLE/Xero work already on `main`.
-2. **Replace / finish the live shell’s Detect + Quote:** real drawing preview (this PR), sequential reference, Aries scoped to this job, category/SKU/qty guards, wire PDF export to `generateEstimatePDF` using the same totals helper.
-3. **Collapse dual apps:** either mount AppShell’s editor as the estimate of record, or delete it from the mental model. Do not keep two GST/margin implementations.
-4. **Optional later:** pin overlay = BlueprintCanvas (or vision x/y). That is a feature, not a precondition for quoting.
-
-### What this PR already changes (small, proven)
-
-- Aries never names Bondi on a non-Bondi job  
-- Quote reference uses `EST-YYMM-XXXX`, not `EST-2026-0143`  
-- Detect preview is the uploaded plan, not OFFICE A  
-- Catalogue: cooktops/specials are not `GPO_STANDARD`; generic “double power point” stays $260  
-- Room counts cannot exceed legend totals for the same type  
-- Shared AU totals helper + tests  
-- **Dashboard / Estimates list:** greeting pending and KPI pending use the same GST-inclusive `value`; win rate is closed jobs only; fabricated “GPO 14% / $3,200” copy removed; Quote **Send** persists via `/api/estimates/create` so a scan quote can land on the live Dashboard; PDF totals use `computeQuoteTotals`
-
-### Live Dashboard maths (production URL, GitHub `main` @ `c3f1664`)
-
-Vercel Production tracks **`main`** (`c3f1664`, 7 Sep 2026), not `feat/electrascan-desktop-v2`. Damien’s `/dashboard` is `screens/DashboardScreen.tsx`.
-
-Bugs this PR closes on that path:
-
-1. Greeting summed mock/live `value` while the KPI strip ran a **second** query (`fetchPendingValue`) that returned `null` when unauthenticated → `$110,390` next to `—`.
-2. `value` vs `subtotal` were the same demo number (inc-GST amount stored as if it were ex-GST).
-3. Win rate treated sent/viewed as lost.
-4. Aries invented a regional GPO gap with no calculation.
-5. Quote never wrote an estimate row, so a Sirius total could not appear in pending value.
-
-Contract now: **`value` = GST-inclusive quoted total** (`computeQuoteTotals`). Pending = sent + viewed. Win rate = approved / closed.
-
-### Needs Damien’s numbers before more pricing work
-
-- Expected Sirius GPO count and whether rates are supply-and-install $260  
-- Whether Zetr in the legend should auto-upgrade from standard GPO  
-- Whether quote margin should be 15% (profile) or estimator-editable (18% was fake Bondi context)
+**Default pricing rules (do not block on a questionnaire):** $260 standard GPO unless the legend names Zetr; 15% margin unless the estimator edits it later; Quote persist is how Dashboard fills.
 
 ---
 
-**Bottom line:** The product did not “forget how to align to a PDF.” The desktop Detect step **never used the PDF**. Fix that honesty and the quote identity bugs first; rebuild only if you want a new UX on top of the same engine.
+## 2. Rebuild vs iterate
+
+**Iterate. Do not greenfield-rebuild.**
+
+The live UX is a **desktop mockup that later had real detection piped in**. That is a shell problem. The domain (Claude legend+count, Vesh catalogue, symbol map, `/api/detect`, tenant/auth, TLE/Xero, EST-YYMM-XXXX) is salvageable and is what makes a rewrite slow.
+
+### Criteria that would justify a rebuild
+
+Rebuild only if **all three** are true:
+
+| Criterion | Today |
+|---|---|
+| Detection engine cannot be made honest (overlay or list) | **False.** Overlay was never wired; list takeoff works. |
+| Catalogue / GST model is the wrong product | **False.** GST path is consistent. SKU/qty/category are fixable. Variation + Approvals GST already checked out on the walk. |
+| Auth/tenant/Supabase must be thrown away | **False.** Damien signed in as Vesh; empty pipeline is a real empty table, not a missing backend. |
+
+A new UI on the same engine is allowed later. A new engine is not the faster path to “the map matches the PDF” or “Power outlets aren’t $71k”.
+
+### What to keep vs replace
+
+| Keep | Replace / finish |
+|---|---|
+| `analyze_pdf.ts`, `vesh_catalogue.ts`, `lib/symbol_map.ts` | Mock Detect SVG, Bondi Dashboard fallback, hardcoded Aries |
+| `/api/detect`, `/api/estimates/create` | Catch-all swallowing `/estimate/new` |
+| Vesh tenant + RLS | “Tables not created” copy |
+| EST-YYMM-XXXX allocator | `EST-2026-*` / `EST-26-*-v3` chrome |
+
+---
+
+## 3. High-confidence small fixes (proven / in this PR)
+
+Already landed or landing with this document:
+
+- Aries scoped to the current job (no Bondi on Sirius).
+- Quote letterhead `EST-YYMM-XXXX`; Send persists GST-inclusive `value`.
+- Detect preview = uploaded plan, not OFFICE A.
+- GPO $260 default; specials out of Power outlets; legend qty cap.
+- Shared `computeQuoteTotals` + Dashboard pending/win from the same helper.
+- **No Bondi sample rows while loading**; empty live list stays empty.
+- Banner copy: load / fetch error / empty — never “tables not created” for a signed-in empty account.
+- `/estimate/new` → `/detection/new`.
+- Canonical ref check `EST-YYMM-XXXX`; Approvals/Variation sample chrome uses that shape and is labelled sample.
+
+**Not claimed as done:** pin-accurate overlay, collapsing AppShell, estimator-editable margin UI, filling Damien’s empty estimates table with historical jobs.
+
+---
+
+**Bottom line:** Production did not lose PDF alignment or invent GST twice. The desktop Detect step **never used the PDF**, and the Dashboard **dressed an empty Vesh account as Bondi Towers for one paint**. Fix honesty and Quote identity on this codebase. Rebuild only if you want a new shell on the same engine.

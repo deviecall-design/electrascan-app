@@ -74,9 +74,12 @@ export default function VariationReportScreen() {
           Variation Report
         </h1>
         <span style={{ fontFamily: FONT.mono, fontSize: 13, color: C.textSubtle }}>
-          EST-2026-497-001 → EST-2026-497-002
+          EST-2609-0001 → EST-2609-0002
         </span>
       </div>
+      <p style={{ color: C.textMuted, fontStyle: "italic", margin: "0 0 8px 0", fontSize: 13 }}>
+        Sample variation (not a saved Vesh job). References use EST-YYMM-XXXX.
+      </p>
       <p style={{ color: C.textMuted, fontStyle: "italic", margin: "0 0 24px 0" }}>
         Mark Arnesen · 8/110 North Steyne, Manly · Rev FG → Rev B
       </p>
@@ -151,7 +154,7 @@ export default function VariationReportScreen() {
             <div style={{ fontFamily: FONT.heading, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: C.textSubtle, marginBottom: 16 }}>Estimate Comparison</div>
 
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-              <span style={{ fontSize: 14, color: C.textMuted }}>EST-2026-497-001 (base)</span>
+              <span style={{ fontSize: 14, color: C.textMuted }}>EST-2609-0001 (base)</span>
               <span style={{ fontFamily: FONT.mono, fontSize: 15, fontWeight: 500 }}>{fmt(BASE_TOTAL)}</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", paddingBottom: 14, borderBottom: `1px solid ${C.border}`, marginBottom: 14 }}>

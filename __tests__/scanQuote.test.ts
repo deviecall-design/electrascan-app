@@ -6,7 +6,7 @@ vi.mock("../services/supabaseClient", () => ({
   supabase: { from: () => ({}) },
 }));
 
-import { nextReference, currentReferencePrefix } from "../services/estimateReferenceService";
+import { nextReference, currentReferencePrefix, isCanonicalEstimateRef } from "../services/estimateReferenceService";
 
 describe("GPO catalogue matching", () => {
   it("prices a generic double power point at the standard $260 SKU, not Zetr $525", () => {
@@ -74,5 +74,17 @@ describe("estimate references EST-YYMM-XXXX", () => {
     const prefix = currentReferencePrefix(new Date("2026-09-15T00:00:00Z"));
     expect(prefix).toBe("EST-2609-");
     expect(prefix).not.toContain("2026-014");
+  });
+});
+
+describe("isCanonicalEstimateRef", () => {
+  it("accepts EST-YYMM-XXXX", () => {
+    expect(isCanonicalEstimateRef("EST-2609-0001")).toBe(true);
+  });
+
+  it("rejects the three live-walk formats that are not the allocator", () => {
+    expect(isCanonicalEstimateRef("EST-2026-0142")).toBe(false);
+    expect(isCanonicalEstimateRef("EST-2026-497-001")).toBe(false);
+    expect(isCanonicalEstimateRef("EST-26-001-v3")).toBe(false);
   });
 });

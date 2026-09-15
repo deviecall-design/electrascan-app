@@ -51,7 +51,7 @@ interface NavEntry {
 
 const PRIMARY_NAV: NavEntry[] = [
   { path: "/dashboard",         label: "Dashboard",        icon: <LayoutDashboard size={16} /> },
-  { path: "/detection",         label: "Detection",        icon: <Scan size={16} />,      badge: 3 },
+  { path: "/detection",         label: "Detection",        icon: <Scan size={16} /> },
   { path: "/estimate",          label: "Estimate",         icon: <FileText size={16} /> },
   { path: "/pricing-schedule",  label: "Pricing Schedule", icon: <BookOpen size={16} /> },
   { path: "/variation-report",  label: "Variation Report", icon: <FileEdit size={16} /> },

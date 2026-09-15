@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
-import { MoreHorizontal } from "lucide-react";
-import { C, FONT } from "../components/desktop/tokens";
+import { useNavigate } from "react-router-dom";
+import { MoreHorizontal, Plus } from "lucide-react";
+import { C } from "../components/desktop/tokens";
 import {
   PageHeader,
   Card,
@@ -10,56 +11,21 @@ import {
   Th,
   Td,
 } from "../components/ui/anthropic";
+import { PrimaryButton } from "../components/ui/anthropic/Button";
 import useSupabaseQuery from "../hooks/useSupabaseQuery";
-import { fetchEstimates, type EstimateRow } from "../services/supabaseData";
-import { DEFAULT_MARGIN_PCT } from "../lib/quoteTotals";
+import { fetchEstimates } from "../services/supabaseData";
 import {
   computeDashboardMoneyStats,
   quotedTotalIncGst,
   formatQuotedValue,
   estimateDisplayRef,
   daysSinceSent,
-  impliedSubtotalFromIncGst,
 } from "../lib/estimateMoney";
-
-const ESTIMATES = [
-  { r: "EST-2026-0142", client: "Bondi Tower Residences",   value: 28450, status: "sent",     days: 2  },
-  { r: "EST-2026-0141", client: "Martin Place Partners",    value: 14900, status: "approved", days: 5  },
-  { r: "EST-2026-0140", client: "Northern Beaches Council", value: 62300, status: "viewed",   days: 6  },
-  { r: "EST-2026-0139", client: "Chatswood Dental Group",   value: 8120,  status: "draft",    days: 8  },
-  { r: "EST-2026-0138", client: "Parramatta Logistics Hub", value: 41780, status: "approved", days: 11 },
-  { r: "EST-2026-0137", client: "Surry Hills Hospitality",  value: 19640, status: "sent",     days: 13 },
-  { r: "EST-2026-0136", client: "Mosman Heritage Build",    value: 33200, status: "approved", days: 16 },
-  { r: "EST-2026-0135", client: "Manly Beach Apartments",   value: 47100, status: "sent",     days: 18 },
-  { r: "EST-2026-0134", client: "Crows Nest Medical",       value: 12850, status: "viewed",   days: 20 },
-  { r: "EST-2026-0133", client: "Neutral Bay Studio",       value: 6900,  status: "draft",    days: 22 },
-  { r: "EST-2026-0132", client: "Lane Cove Grammar School", value: 58400, status: "approved", days: 25 },
-  { r: "EST-2026-0131", client: "Willoughby Council Depot", value: 22350, status: "approved", days: 27 },
-];
-
-function toDemoEstimate(e: (typeof ESTIMATES)[number]): EstimateRow {
-  return {
-    id: e.r,
-    ref: e.r,
-    reference: e.r,
-    client: e.client,
-    value: e.value,
-    status: e.status as EstimateRow["status"],
-    days_since_sent: e.days,
-    project_name: null,
-    drawing_file: null,
-    margin_pct: DEFAULT_MARGIN_PCT,
-    subtotal: impliedSubtotalFromIncGst(e.value, DEFAULT_MARGIN_PCT),
-    line_items: [],
-    created_at: new Date(Date.now() - e.days * 24 * 60 * 60 * 1000).toISOString(),
-  };
-}
+import QueryBanner from "../components/QueryBanner";
 
 export default function EstimateScreen() {
-  const { data: liveEstimates, isLive } = useSupabaseQuery(
-    fetchEstimates,
-    ESTIMATES.map(toDemoEstimate),
-  );
+  const navigate = useNavigate();
+  const { data: liveEstimates, loading, error } = useSupabaseQuery(fetchEstimates);
 
   const stats = useMemo(
     () => computeDashboardMoneyStats(liveEstimates),
@@ -73,19 +39,20 @@ export default function EstimateScreen() {
     <div className="anim-in">
       <PageHeader
         title="Estimates"
-        sub="Every quote ElectraScan has drafted for Vesh Electrical this quarter. Value is GST-inclusive."
+        sub="Every quote saved for Vesh Electrical. Value is GST-inclusive. New estimates start from a scan."
+        cta={
+          <PrimaryButton icon={<Plus size={15} />} onClick={() => navigate("/estimate/new")}>
+            New estimate
+          </PrimaryButton>
+        }
       />
 
-      {!isLive && (
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 12px", borderRadius: 20, backgroundColor: C.amberSoft, color: C.amber, fontFamily: FONT.heading, fontSize: 11, fontWeight: 500, marginBottom: 12 }}>
-          Demo data — sample rows, not Vesh jobs
-        </div>
-      )}
+      <QueryBanner loading={loading} error={error} noun="estimates" />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 18 }}>
-        <MiniStat label="Drafted"   v={String(drafted)} />
-        <MiniStat label="Sent"      v={String(sentCount)}     tint={C.blue} />
-        <MiniStat label="Approved"  v={String(approvedCount)} tint={C.green} />
-        <MiniStat label="Win value" v={formatQuotedValue(stats.wonValue)} tint={C.green} />
+        <MiniStat label="Drafted"   v={loading ? "—" : String(drafted)} />
+        <MiniStat label="Sent"      v={loading ? "—" : String(sentCount)}     tint={C.blue} />
+        <MiniStat label="Approved"  v={loading ? "—" : String(approvedCount)} tint={C.green} />
+        <MiniStat label="Win value" v={loading ? "—" : formatQuotedValue(stats.wonValue)} tint={C.green} />
       </div>
 
       <Card>
@@ -101,7 +68,18 @@ export default function EstimateScreen() {
             </tr>
           </thead>
           <tbody>
-            {liveEstimates.length === 0 ? (
+            {loading ? (
+              <tr>
+                <Td>
+                  <span style={{ fontStyle: "italic", color: C.textMuted }}>Loading estimates…</span>
+                </Td>
+                <Td>{""}</Td>
+                <Td align="right">{""}</Td>
+                <Td>{""}</Td>
+                <Td align="right">{""}</Td>
+                <Td>{""}</Td>
+              </tr>
+            ) : liveEstimates.length === 0 ? (
               <tr>
                 <Td>
                   <span style={{ fontStyle: "italic", color: C.textMuted }}>

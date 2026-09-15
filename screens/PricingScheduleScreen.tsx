@@ -89,7 +89,7 @@ export default function PricingScheduleScreen() {
   const [query, setQuery] = useState("");
 
   // Local rates state — driven by Supabase, falls back to seed data
-  const { data: fetchedRates, isLive } = useSupabaseQuery(
+  const { data: fetchedRates, isLive, loading, error } = useSupabaseQuery(
     fetchRateLibrary,
     RATE_LIBRARY_FALLBACK,
   );
@@ -100,11 +100,12 @@ export default function PricingScheduleScreen() {
   // Keep local rates in sync when fetchedRates resolves (only on first load)
   const fetchedOnce = useRef(false);
   React.useEffect(() => {
+    if (loading) return;
     if (!fetchedOnce.current) {
       fetchedOnce.current = true;
       setRates(fetchedRates as RateRow[]);
     }
-  }, [fetchedRates]);
+  }, [fetchedRates, loading]);
 
   // ─── Modal state ────────────────────────────────────────────────────
   type ModalMode = "add" | "edit" | null;
@@ -263,12 +264,27 @@ export default function PricingScheduleScreen() {
 
   return (
     <div className="anim-in">
-      {!isLive && (
+      {loading && (
         <div
           style={{
             display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
+            padding: "4px 12px",
+            borderRadius: 20,
+            backgroundColor: C.bgSoft,
+            color: C.textMuted,
+            fontFamily: FONT.heading,
+            fontSize: 11,
+            fontWeight: 500,
+            marginBottom: 12,
+          }}
+        >
+          Loading rate library…
+        </div>
+      )}
+      {error && !loading && (
+        <div
+          style={{
+            display: "inline-flex",
             padding: "4px 12px",
             borderRadius: 20,
             backgroundColor: C.amberSoft,
@@ -279,7 +295,7 @@ export default function PricingScheduleScreen() {
             marginBottom: 12,
           }}
         >
-          Demo data — Supabase tables not yet created
+          Could not load saved rates — showing the Vesh catalogue seed
         </div>
       )}
       <PageHeader

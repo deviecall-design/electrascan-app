@@ -22,9 +22,7 @@ import {
   fetchEstimates,
   fetchScans,
   formatScanToQuote,
-  type EstimateRow,
 } from "../services/supabaseData";
-import { DEFAULT_MARGIN_PCT } from "../lib/quoteTotals";
 import {
   computeDashboardMoneyStats,
   quotedTotalIncGst,
@@ -32,64 +30,27 @@ import {
   formatPipelineKpi,
   estimateDisplayRef,
   daysSinceSent,
-  impliedSubtotalFromIncGst,
 } from "../lib/estimateMoney";
 import { ariesPipelineInsight } from "../lib/ariesSuggestion";
-
-// Demo rows are labelled in the UI. `value` is the GST-inclusive quoted total
-// (what the table always showed). Subtotal is implied so we do not store the
-// same number as both ex-GST and inc-GST.
-const ESTIMATES = [
-  { r: "EST-2026-0142", client: "Bondi Tower Residences",   value: 28450, status: "sent",     days: 2  },
-  { r: "EST-2026-0141", client: "Martin Place Partners",    value: 14900, status: "approved", days: 5  },
-  { r: "EST-2026-0140", client: "Northern Beaches Council", value: 62300, status: "viewed",   days: 6  },
-  { r: "EST-2026-0139", client: "Chatswood Dental Group",   value: 8120,  status: "draft",    days: 8  },
-  { r: "EST-2026-0138", client: "Parramatta Logistics Hub", value: 41780, status: "approved", days: 11 },
-  { r: "EST-2026-0137", client: "Surry Hills Hospitality",  value: 19640, status: "sent",     days: 13 },
-];
-
-const ACTIVE_SCANS = [
-  { file: "Switchboard_LV2_rev3.pdf",  client: "Bondi Tower Residences",   progress: 72, stage: "Enriching rates" },
-  { file: "Warehouse_ground_floor.pdf", client: "Parramatta Logistics Hub", progress: 34, stage: "Detecting symbols" },
-  { file: "Office_fitout_L8.pdf",       client: "Martin Place Partners",    progress: 96, stage: "Finalising" },
-];
-
-function toDemoEstimate(e: (typeof ESTIMATES)[number]): EstimateRow {
-  return {
-    id: e.r,
-    ref: e.r,
-    reference: e.r,
-    client: e.client,
-    value: e.value,
-    status: e.status as EstimateRow["status"],
-    days_since_sent: e.days,
-    project_name: null,
-    drawing_file: null,
-    margin_pct: DEFAULT_MARGIN_PCT,
-    subtotal: impliedSubtotalFromIncGst(e.value, DEFAULT_MARGIN_PCT),
-    line_items: [],
-    created_at: new Date(Date.now() - e.days * 24 * 60 * 60 * 1000).toISOString(),
-  };
-}
+import QueryBanner from "../components/QueryBanner";
 
 export default function DashboardScreen() {
   const navigate = useNavigate();
 
-  const { data: liveEstimates, isLive: estimatesLive } = useSupabaseQuery(
-    fetchEstimates,
-    ESTIMATES.map(toDemoEstimate),
-  );
-  const { data: liveScans, isLive: scansLive } = useSupabaseQuery(
-    fetchScans,
-    ACTIVE_SCANS.map((s, i) => ({
-      id: `scan-${i + 1}`, file_name: s.file, client: s.client,
-      stage: s.stage, items_detected: 0, progress: s.progress,
-      estimate_ref: null, detected_items: [], risk_flags: [],
-      started_at: new Date().toISOString(), completed_at: null,
-    })),
-  );
+  const {
+    data: liveEstimates,
+    isLive: estimatesLive,
+    loading: estimatesLoading,
+    error: estimatesError,
+  } = useSupabaseQuery(fetchEstimates);
+  const {
+    data: liveScans,
+    loading: scansLoading,
+    error: scansError,
+  } = useSupabaseQuery(fetchScans);
 
-  const isLive = estimatesLive || scansLive;
+  const loading = estimatesLoading || scansLoading;
+  const loadError = estimatesError || scansError;
   const displayEstimates = liveEstimates.slice(0, 6);
   const displayScans = liveScans.filter((s: any) => (s.progress ?? 0) < 100).slice(0, 3);
 
@@ -98,22 +59,22 @@ export default function DashboardScreen() {
     [liveEstimates, liveScans],
   );
 
-  const ariesCopy = ariesPipelineInsight({
-    isLive: estimatesLive,
-    pendingValue: stats.pendingValue,
-    estimateCount: liveEstimates.length,
-  });
+  const ariesCopy = loading
+    ? "Loading pipeline figures."
+    : estimatesError
+      ? "Could not load estimates. Pending value stays at zero until a quote is saved from a scan."
+      : ariesPipelineInsight({
+          isLive: estimatesLive,
+          pendingValue: stats.pendingValue,
+          estimateCount: liveEstimates.length,
+        });
 
   const fmtCount = (n: number) => String(n);
   const fmtPct = (n: number | null) => (n == null ? "—" : `${n}%`);
 
   return (
     <div className="anim-in">
-      {!isLive && (
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 12px", borderRadius: 20, backgroundColor: C.amberSoft, color: C.amber, fontFamily: FONT.heading, fontSize: 11, fontWeight: 500, marginBottom: 16 }}>
-          Demo data — sample rows, not Vesh jobs
-        </div>
-      )}
+      <QueryBanner loading={loading} error={loadError} noun="estimates and scans" />
 
       <div style={{ marginBottom: 32 }}>
         <h1
@@ -129,22 +90,28 @@ export default function DashboardScreen() {
           Good morning, Damien.
         </h1>
         <p style={{ color: C.textMuted, fontStyle: "italic", margin: 0, fontSize: 16 }}>
-          You have <B>{displayScans.length} scans</B> in queue and <B>{formatQuotedValue(stats.pendingValue)}</B> in pending estimates.
+          {loading
+            ? "Loading your pipeline…"
+            : <>You have <B>{displayScans.length} scans</B> in queue and <B>{formatQuotedValue(stats.pendingValue)}</B> in pending estimates.</>}
         </p>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 32 }}>
-        <Kpi label="Estimates this month" value={fmtCount(stats.estimatesThisMonth)} delta=""    sub="MTD"                 up />
-        <Kpi label="Pending value"        value={formatPipelineKpi(stats.pendingValue)} delta="" sub="sent + viewed inc GST" up />
-        <Kpi label="Win rate"             value={fmtPct(stats.winRate)}          delta=""    sub="closed last 90 days"  up />
-        <Kpi label="Avg scan-to-quote"    value={formatScanToQuote(stats.avgScanToQuoteMs)} delta="" sub="linked scans" up />
+        <Kpi label="Estimates this month" value={loading ? "—" : fmtCount(stats.estimatesThisMonth)} delta=""    sub="MTD"                 up />
+        <Kpi label="Pending value"        value={loading ? "—" : formatPipelineKpi(stats.pendingValue)} delta="" sub="sent + viewed inc GST" up />
+        <Kpi label="Win rate"             value={loading ? "—" : fmtPct(stats.winRate)}          delta=""    sub="closed last 90 days"  up />
+        <Kpi label="Avg scan-to-quote"    value={loading ? "—" : formatScanToQuote(stats.avgScanToQuoteMs)} delta="" sub="linked scans" up />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "2fr 3fr", gap: 24 }}>
         <section>
           <SectionHead title="Active scans" cta="View all" onCta={() => navigate("/detection")} />
           <Card>
-            {displayScans.length === 0 ? (
+            {loading ? (
+              <div style={{ padding: 18, color: C.textMuted, fontStyle: "italic", fontSize: 14 }}>
+                Loading scans…
+              </div>
+            ) : displayScans.length === 0 ? (
               <div style={{ padding: 18, color: C.textMuted, fontStyle: "italic", fontSize: 14 }}>
                 No scans in progress.
               </div>
@@ -222,7 +189,18 @@ export default function DashboardScreen() {
                 </tr>
               </thead>
               <tbody>
-                {displayEstimates.length === 0 ? (
+                {loading ? (
+                  <tr>
+                    <Td>
+                      <span style={{ fontStyle: "italic", color: C.textMuted }}>Loading estimates…</span>
+                    </Td>
+                    <Td>{""}</Td>
+                    <Td align="right">{""}</Td>
+                    <Td>{""}</Td>
+                    <Td align="right">{""}</Td>
+                    <Td>{""}</Td>
+                  </tr>
+                ) : displayEstimates.length === 0 ? (
                   <tr>
                     <Td>
                       <span style={{ fontStyle: "italic", color: C.textMuted }}>
