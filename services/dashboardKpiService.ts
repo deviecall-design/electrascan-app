@@ -1,49 +1,23 @@
 import { supabase } from './supabaseClient';
+import { computeDashboardMoneyStats, type EstimateMoneyRow } from '../lib/estimateMoney';
 
-// Dashboard KPI strip — live Supabase queries.
+// Dashboard KPI strip — same money rules as screens/DashboardScreen.
 //
-// Tables read:
-//   - estimates (created_at, updated_at, status, value, owner_id)
-//
-// Owner scoping: the spec asks for `owner_id = auth.uid()`. If the user is not
-// authenticated (anon access), we fall back to the unscoped query, which will
-// only return rows that RLS lets the anon role see — typically nothing, in
-// which case the dashboard shows zeros and the caller can degrade to the
-// local-only ProjectContext numbers.
-//
-// Status semantics used here:
-//   - Pending value:  status IN ('draft', 'submitted')
-//   - Win rate num:   status = 'approved'
-//   - Win rate denom: status IN ('approved', 'rejected', 'lost')
-//   - Avg scan-to-quote: time between created_at and updated_at on submitted
+// Pending value: GST-inclusive quoted total of status IN ('sent', 'viewed')
+// Win rate:      approved / (approved + rejected + lost), 90-day lookback
+//                (pending jobs are not losses)
 
 export interface DashboardKpis {
   estimatesThisMonth: number;
   pendingValue: number;
   winRate: number | null;             // percentage 0..100, null until first closed deal
-  avgScanToQuoteHours: number | null; // null when no submitted estimates
+  avgScanToQuoteHours: number | null; // null when no linked scans
   source: 'supabase' | 'empty';
 }
-
-const PENDING_STATUSES = ['draft', 'submitted'];
-const WIN_NUMERATOR    = ['approved'];
-const WIN_DENOMINATOR  = ['approved', 'rejected', 'lost'];
 
 function startOfMonthIso(now: Date): string {
   const d = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
   return d.toISOString();
-}
-
-interface EstimateRow {
-  created_at?: string | null;
-  updated_at?: string | null;
-  status?: string | null;
-  value?: number | null;
-}
-
-function rowTotal(r: EstimateRow): number {
-  const v = r.value ?? 0;
-  return typeof v === 'number' ? v : Number(v) || 0;
 }
 
 export async function fetchDashboardKpis(): Promise<
@@ -64,7 +38,7 @@ export async function fetchDashboardKpis(): Promise<
     ownerId = null;
   }
 
-  const baseColumns = 'created_at, updated_at, status, value';
+  const baseColumns = 'created_at, updated_at, status, value, subtotal, margin_pct, ref, reference';
 
   try {
     let q = supabase.from('estimates').select(baseColumns).limit(2000);
@@ -73,13 +47,13 @@ export async function fetchDashboardKpis(): Promise<
     if (error) {
       return { ok: false, error: error.message };
     }
-    return { ok: true, kpis: computeKpis(data as EstimateRow[], monthStart) };
+    return { ok: true, kpis: computeKpis((data ?? []) as EstimateMoneyRow[], monthStart) };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'unknown' };
   }
 }
 
-function computeKpis(rows: EstimateRow[], monthStartIso: string): DashboardKpis {
+function computeKpis(rows: EstimateMoneyRow[], _monthStartIso: string): DashboardKpis {
   if (!rows || rows.length === 0) {
     return {
       estimatesThisMonth: 0,
@@ -90,40 +64,15 @@ function computeKpis(rows: EstimateRow[], monthStartIso: string): DashboardKpis 
     };
   }
 
-  const monthStart = new Date(monthStartIso).getTime();
-
-  const estimatesThisMonth = rows.filter(r => {
-    if (!r.created_at) return false;
-    return new Date(r.created_at).getTime() >= monthStart;
-  }).length;
-
-  const pendingValue = rows
-    .filter(r => r.status && PENDING_STATUSES.includes(r.status))
-    .reduce((s, r) => s + rowTotal(r), 0);
-
-  const denom = rows.filter(r => r.status && WIN_DENOMINATOR.includes(r.status)).length;
-  const numer = rows.filter(r => r.status && WIN_NUMERATOR.includes(r.status)).length;
-  const winRate = denom === 0 ? null : Math.round((numer / denom) * 100);
-
-  const submitted = rows.filter(r => r.status === 'submitted' && r.created_at && r.updated_at);
-  const avgScanToQuoteHours =
-    submitted.length === 0
-      ? null
-      : Math.round(
-          (submitted.reduce((s, r) => {
-            const ms = new Date(r.updated_at!).getTime() - new Date(r.created_at!).getTime();
-            return s + Math.max(ms, 0);
-          }, 0) /
-            submitted.length /
-            (1000 * 60 * 60)) *
-            10,
-        ) / 10;
-
+  const stats = computeDashboardMoneyStats(rows);
   return {
-    estimatesThisMonth,
-    pendingValue,
-    winRate,
-    avgScanToQuoteHours,
+    estimatesThisMonth: stats.estimatesThisMonth,
+    pendingValue: stats.pendingValue,
+    winRate: stats.winRate,
+    avgScanToQuoteHours:
+      stats.avgScanToQuoteMs == null
+        ? null
+        : Math.round((stats.avgScanToQuoteMs / (1000 * 60 * 60)) * 10) / 10,
     source: 'supabase',
   };
 }

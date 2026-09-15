@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { ariesMarginSuggestion, suggestionLeaksOtherProject } from "../lib/ariesSuggestion";
+import {
+  ariesMarginSuggestion,
+  ariesPipelineInsight,
+  suggestionLeaksOtherProject,
+} from "../lib/ariesSuggestion";
 
 describe("ariesMarginSuggestion", () => {
   it("does not mention Bondi Towers on an unrelated job", () => {
@@ -29,5 +33,29 @@ describe("ariesMarginSuggestion", () => {
   it("includes the current margin percent", () => {
     const text = ariesMarginSuggestion({ clientName: "Sirius", marginPct: 15 });
     expect(text).toContain("15%");
+  });
+});
+
+describe("ariesPipelineInsight", () => {
+  it("does not invent a GPO regional-average dollar figure", () => {
+    const text = ariesPipelineInsight({
+      isLive: true,
+      pendingValue: 110390,
+      estimateCount: 6,
+    });
+    expect(text.toLowerCase()).not.toContain("14%");
+    expect(text).not.toContain("3,200");
+    expect(text.toLowerCase()).not.toContain("bondi");
+    expect(text).toContain("110,390");
+  });
+
+  it("says sample rows when the Dashboard is on demo data", () => {
+    const text = ariesPipelineInsight({
+      isLive: false,
+      pendingValue: 110390,
+      estimateCount: 6,
+    });
+    expect(text.toLowerCase()).toContain("sample");
+    expect(text.toLowerCase()).not.toContain("bondi");
   });
 });

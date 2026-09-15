@@ -10,6 +10,10 @@
 
 import { supabase } from "./supabaseClient";
 import { getCurrentTenantId } from "../lib/tenants";
+import {
+  quotedTotalIncGst,
+  WIN_RATE_LOOKBACK_DAYS,
+} from "../lib/estimateMoney";
 
 // ─── Row types (mirror the SQL schema) ──────────────────────────────────
 export interface EstimateRow {
@@ -188,10 +192,8 @@ export async function upsertCompanyProfile(input: CompanyProfileInput) {
 // resolves to null (renders "—") rather than erroring.
 //
 // The schema uses status values: 'draft' | 'sent' | 'viewed' | 'approved'.
-// Mapping for win-rate: "won" = approved, "lost" = future 'rejected' status
-// (not yet in schema — handled gracefully via IN clause). Until rejected
-// rows exist, win rate is approved / (approved + sent + viewed) over the
-// last 90 days, treating "pending decision" estimates as not-yet-decided.
+// Win rate is approved / (approved + rejected + lost) over the last 90 days.
+// Sent and viewed jobs are still pending — they are not counted as losses.
 
 export interface KpiResult<T> {
   value: T | null;
@@ -223,26 +225,25 @@ export async function fetchPendingValue(): Promise<KpiResult<number>> {
   if (!uid) return { value: null, error: "not_authenticated" };
   const { data, error } = await supabase
     .from("estimates")
-    .select("value")
+    .select("value, subtotal, margin_pct, status")
     .eq("owner_id", uid)
     .in("status", ["sent", "viewed"]);
   if (error || !data) return { value: null, error };
-  const total = data.reduce((s, r: any) => s + Number(r.value ?? 0), 0);
+  const total = data.reduce((s, r: any) => s + quotedTotalIncGst(r), 0);
   return { value: total, error: null };
 }
 
 export async function fetchWinRate(): Promise<KpiResult<number>> {
   const uid = await getAuthUserId();
   if (!uid) return { value: null, error: "not_authenticated" };
-  const WIN_RATE_LOOKBACK_DAYS = 90;
   const since = new Date();
   since.setDate(since.getDate() - WIN_RATE_LOOKBACK_DAYS);
   const { data, error } = await supabase
     .from("estimates")
-    .select("status")
+    .select("status, created_at")
     .eq("owner_id", uid)
     .gte("created_at", since.toISOString())
-    .in("status", ["approved", "sent", "viewed", "rejected"]);
+    .in("status", ["approved", "rejected", "lost"]);
   if (error || !data || data.length === 0) return { value: null, error };
   const won = data.filter((r: any) => r.status === "approved").length;
   const decided = data.length;
@@ -269,14 +270,21 @@ export async function fetchAvgScanToQuote(): Promise<KpiResult<number>> {
 
   const { data: estimates, error: estErr } = await supabase
     .from("estimates")
-    .select("ref, created_at")
+    .select("ref, reference, created_at")
     .eq("owner_id", uid)
     .in("ref", refs);
-  if (estErr || !estimates || estimates.length === 0) return { value: null, error: estErr };
+  const { data: byReference } = await supabase
+    .from("estimates")
+    .select("ref, reference, created_at")
+    .eq("owner_id", uid)
+    .in("reference", refs);
+  const rows = [...(estimates ?? []), ...(byReference ?? [])];
+  if (estErr || rows.length === 0) return { value: null, error: estErr };
 
   const refToEstCreated = new Map<string, string>();
-  estimates.forEach((e: any) => {
-    if (e.ref && e.created_at) refToEstCreated.set(e.ref, e.created_at);
+  rows.forEach((e: any) => {
+    if (e.created_at && e.ref) refToEstCreated.set(e.ref, e.created_at);
+    if (e.created_at && e.reference) refToEstCreated.set(e.reference, e.created_at);
   });
 
   const deltas: number[] = [];

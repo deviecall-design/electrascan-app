@@ -65,9 +65,11 @@ import {
   suggestReviewItem,
 } from "../lib/reviewClassification";
 import { peekNextReference } from "../services/estimateReferenceService";
+import { persistQuoteFromScan } from "../services/persistQuote";
+import { downloadEstimatePDF } from "../utils/estimatePdf";
 import SourcePlanPreview from "../components/SourcePlanPreview";
 import { ariesMarginSuggestion } from "../lib/ariesSuggestion";
-import { computeQuoteTotals, DEFAULT_MARGIN_PCT, formatAud } from "../lib/quoteTotals";
+import { computeQuoteTotals, DEFAULT_MARGIN_PCT, formatAud, lineTotal as qtyRateTotal, roundCents } from "../lib/quoteTotals";
 import { mapDetectionToQuoteItems, type ScanQuoteItem } from "../lib/scanQuote";
 
 interface DetectedItem extends ScanQuoteItem {
@@ -79,9 +81,13 @@ interface DetectedItem extends ScanQuoteItem {
 
 /** Line total for an item: catalogue price when known, demo rates otherwise. */
 function lineTotal(it: DetectedItem): number {
-  if (typeof it.unitPrice === "number" && it.unitPrice > 0) return it.unitPrice * it.qty;
+  return qtyRateTotal(it.qty, unitPriceOf(it));
+}
+
+function unitPriceOf(it: DetectedItem): number {
+  if (typeof it.unitPrice === "number" && it.unitPrice > 0) return it.unitPrice;
   const r = RATE_LOOKUP[it.rateCode];
-  return r ? (r.rate + r.labour) * it.qty : 0;
+  return r ? r.rate + r.labour : 0;
 }
 
 /** True when we have no price at all — surfaced as "Price required" in Review. */
@@ -225,6 +231,7 @@ export default function ScanDetailScreen() {
           items={detectedItems}
           clientName={clientLabel}
           sourceFileName={uploadedName || liveScan?.file_name}
+          scanId={id}
         />
       )}
 
@@ -1180,16 +1187,22 @@ function StepQuote({
   items: propItems,
   clientName,
   sourceFileName,
+  scanId,
 }: {
   onBack: () => void;
   items?: DetectedItem[];
   clientName?: string;
   sourceFileName?: string;
+  scanId?: string;
 }) {
   const navigate = useNavigate();
   const source = propItems ?? [];
   const company = getActiveCompanyProfile();
   const [estimateRef, setEstimateRef] = useState<string>("…");
+  const [saving, setSaving] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1201,7 +1214,7 @@ function StepQuote({
 
   const marginPct = company.defaultMargin ?? DEFAULT_MARGIN_PCT;
   const subtotal = useMemo(
-    () => source.reduce((sum, it) => sum + lineTotal(it), 0),
+    () => roundCents(source.reduce((sum, it) => sum + lineTotal(it), 0)),
     [source],
   );
   const totals = computeQuoteTotals(subtotal, marginPct);
@@ -1230,6 +1243,67 @@ function StepQuote({
   // Items detection found but could not price. They are excluded from the
   // subtotal above, so the quote must say so rather than reading as complete.
   const unpricedCount = useMemo(() => source.filter(isUnpriced).length, [source]);
+
+  const persistItems = useMemo(
+    () => source.map(it => ({
+      description: it.desc,
+      qty: it.qty,
+      unitPrice: unitPriceOf(it),
+      category: it.category,
+      symbol: it.symbol,
+    })),
+    [source],
+  );
+
+  async function handleSend() {
+    setSaving(true);
+    setSaveError(null);
+    setSaveMessage(null);
+    const result = await persistQuoteFromScan({
+      client: clientName || "",
+      projectName: clientName || sourceFileName || null,
+      drawingFile: sourceFileName || null,
+      subtotal: totals.subtotal,
+      marginPct: totals.marginPct,
+      lineItems: persistItems,
+      status: "sent",
+      scanId,
+    });
+    setSaving(false);
+    if (result.ok === false) {
+      setSaveError(result.error);
+      return;
+    }
+    setEstimateRef(result.reference);
+    setSaveMessage(`Saved as ${result.reference}. Dashboard pending value uses this GST-inclusive total.`);
+  }
+
+  async function handleDownloadPdf() {
+    setPdfBusy(true);
+    setSaveError(null);
+    try {
+      await downloadEstimatePDF({
+        company,
+        estimateNumber: estimateRef === "…" ? "EST-DRAFT" : estimateRef,
+        date: new Date().toLocaleDateString("en-AU"),
+        drawingFile: sourceFileName,
+        projectName: clientName || sourceFileName || "Electrical estimate",
+        clientName,
+        items: source
+          .filter(it => !isUnpriced(it))
+          .map(it => ({
+            description: it.desc,
+            qty: it.qty,
+            unitPrice: unitPriceOf(it),
+          })),
+        marginPercent: marginPct,
+      });
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Could not generate the PDF.");
+    } finally {
+      setPdfBusy(false);
+    }
+  }
 
   return (
     <div className="anim-in" style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: 24 }}>
@@ -1359,9 +1433,29 @@ function StepQuote({
 
         {/* Actions */}
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <PrimaryButton icon={<Send size={15} />}>Send to client</PrimaryButton>
-          <GhostButton icon={<FileDown size={14} />}>Download PDF</GhostButton>
-          <GhostButton icon={<Copy size={14} />}>Duplicate as template</GhostButton>
+          <PrimaryButton
+            icon={<Send size={15} />}
+            onClick={handleSend}
+            disabled={saving || source.length === 0}
+          >
+            {saving ? "Saving…" : "Send to client"}
+          </PrimaryButton>
+          <GhostButton
+            icon={<FileDown size={14} />}
+            onClick={handleDownloadPdf}
+            disabled={pdfBusy || source.length === 0}
+          >
+            {pdfBusy ? "Preparing PDF…" : "Download PDF"}
+          </GhostButton>
+          {saveMessage && (
+            <p style={{ margin: 0, fontSize: 13, color: C.green, fontStyle: "italic" }}>{saveMessage}</p>
+          )}
+          {saveError && (
+            <p style={{ margin: 0, fontSize: 13, color: "#B91C1C", fontStyle: "italic" }}>{saveError}</p>
+          )}
+          <GhostButton icon={<Copy size={14} />} disabled>
+            Duplicate as template
+          </GhostButton>
         </div>
 
         <GhostButton onClick={onBack} icon={<ArrowLeft size={14} />}>Back to review</GhostButton>

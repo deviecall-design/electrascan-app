@@ -97,6 +97,21 @@ Pricing sanity: Vesh **standard double GPO is $260 ex GST installed** (legitimat
 - Catalogue: cooktops/specials are not `GPO_STANDARD`; generic “double power point” stays $260  
 - Room counts cannot exceed legend totals for the same type  
 - Shared AU totals helper + tests  
+- **Dashboard / Estimates list:** greeting pending and KPI pending use the same GST-inclusive `value`; win rate is closed jobs only; fabricated “GPO 14% / $3,200” copy removed; Quote **Send** persists via `/api/estimates/create` so a scan quote can land on the live Dashboard; PDF totals use `computeQuoteTotals`
+
+### Live Dashboard maths (production URL, GitHub `main` @ `c3f1664`)
+
+Vercel Production tracks **`main`** (`c3f1664`, 7 Sep 2026), not `feat/electrascan-desktop-v2`. Damien’s `/dashboard` is `screens/DashboardScreen.tsx`.
+
+Bugs this PR closes on that path:
+
+1. Greeting summed mock/live `value` while the KPI strip ran a **second** query (`fetchPendingValue`) that returned `null` when unauthenticated → `$110,390` next to `—`.
+2. `value` vs `subtotal` were the same demo number (inc-GST amount stored as if it were ex-GST).
+3. Win rate treated sent/viewed as lost.
+4. Aries invented a regional GPO gap with no calculation.
+5. Quote never wrote an estimate row, so a Sirius total could not appear in pending value.
+
+Contract now: **`value` = GST-inclusive quoted total** (`computeQuoteTotals`). Pending = sent + viewed. Win rate = approved / closed.
 
 ### Needs Damien’s numbers before more pricing work
 

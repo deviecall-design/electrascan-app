@@ -53,3 +53,27 @@ export function suggestionLeaksOtherProject(text: string, clientName?: string): 
   if (client && BONDI_RE.test(client)) return false;
   return true;
 }
+
+export interface AriesPipelineContext {
+  isLive: boolean;
+  pendingValue: number;
+  estimateCount: number;
+}
+
+/**
+ * Dashboard insight. Live production previously claimed "GPO rates are 14%
+ * below regional average… ~$3,200" with no calculation behind it.
+ */
+export function ariesPipelineInsight(ctx: AriesPipelineContext): string {
+  if (!ctx.isLive) {
+    return "These pipeline figures are sample rows, not Vesh jobs. A live quote only appears here after it is saved from the Quote step.";
+  }
+  if (ctx.estimateCount === 0) {
+    return "No estimates saved yet. Send a quote from a scan and this card will use that GST-inclusive total.";
+  }
+  if (ctx.pendingValue > 0) {
+    const amount = Math.round(ctx.pendingValue).toLocaleString("en-AU");
+    return `Pending value is the GST-inclusive quoted total of sent and viewed estimates ($${amount}). Drafts are excluded.`;
+  }
+  return "No sent or viewed estimates are waiting on a client decision.";
+}
