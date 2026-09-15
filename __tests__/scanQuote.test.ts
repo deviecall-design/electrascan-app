@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { mapLegendItem } from "../vesh_catalogue";
-import { categoryFor, capQuantitiesToLegend, sumCategory } from "../lib/scanQuote";
+import { categoryFor, capQuantitiesToLegend, sumCategory, formatQtyRate, quoteVisibleLines } from "../lib/scanQuote";
 
 vi.mock("../services/supabaseClient", () => ({
   supabase: { from: () => ({}) },
@@ -45,6 +45,20 @@ describe("Power outlets sanity", () => {
     ];
     expect(sumCategory(items, "Power outlets")).toBe(7800);
     expect(sumCategory(items, "Power outlets")).toBeLessThan(20000);
+  });
+});
+
+describe("quote qty × rate visibility", () => {
+  it("shows 6 × $260 rather than a lumped $70k category", () => {
+    expect(formatQtyRate(6, 260)).toBe("6 × $260");
+    const groups = quoteVisibleLines([
+      { category: "Power outlets", desc: "Double GPO", qty: 6, unitPrice: 260 },
+      { category: "Power outlets", desc: "Zetr 13 GPO", qty: 2, unitPrice: 525 },
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].total).toBe(6 * 260 + 2 * 525);
+    expect(groups[0].lines[0].qty).toBe(6);
+    expect(groups[0].total).toBeLessThan(20000);
   });
 });
 

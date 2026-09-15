@@ -70,7 +70,7 @@ import { downloadEstimatePDF } from "../utils/estimatePdf";
 import SourcePlanPreview from "../components/SourcePlanPreview";
 import { ariesMarginSuggestion } from "../lib/ariesSuggestion";
 import { computeQuoteTotals, DEFAULT_MARGIN_PCT, formatAud, lineTotal as qtyRateTotal, roundCents } from "../lib/quoteTotals";
-import { mapDetectionToQuoteItems, type ScanQuoteItem } from "../lib/scanQuote";
+import { mapDetectionToQuoteItems, quoteVisibleLines, formatQtyRate, type ScanQuoteItem } from "../lib/scanQuote";
 
 interface DetectedItem extends ScanQuoteItem {
   /** Room / location from the detector — never a hardcoded "Level 2". */
@@ -607,7 +607,10 @@ function StepDetecting({
                   <span style={{ color: C.textSubtle, fontWeight: 400 }}>× {it.qty}</span>
                 </div>
                 <div style={{ fontSize: 12, color: C.textMuted, fontStyle: "italic" }}>
-                  matched {it.rateCode}
+                  {it.room ? `${it.room} · ` : ""}
+                  {typeof it.unitPrice === "number" && it.unitPrice > 0
+                    ? formatQtyRate(it.qty, it.unitPrice)
+                    : (it.rateCode ? `matched ${it.rateCode}` : "price required")}
                 </div>
               </div>
               <ConfPill c={it.conf} />
@@ -1228,17 +1231,15 @@ function StepQuote({
   // which produced a plausible-looking quote with no relationship to the
   // drawing — including a "Cabling & conduit" line worth 30% of every job
   // whether or not any cable was detected.
-  const rows = useMemo(() => {
-    const byCategory = new Map<string, number>();
-    for (const it of source) {
-      const key = it.category ?? "Other";
-      byCategory.set(key, (byCategory.get(key) ?? 0) + lineTotal(it));
-    }
-    return [...byCategory.entries()]
-      .filter(([, t]) => t > 0)
-      .sort((a, b) => b[1] - a[1])
-      .map(([d, t]) => ({ d, t }));
-  }, [source]);
+  const groups = useMemo(
+    () => quoteVisibleLines(source.map(it => ({
+      category: it.category,
+      desc: it.desc,
+      qty: it.qty,
+      unitPrice: unitPriceOf(it),
+    }))),
+    [source],
+  );
 
   // Items detection found but could not price. They are excluded from the
   // subtotal above, so the quote must say so rather than reading as complete.
@@ -1366,12 +1367,26 @@ function StepQuote({
 
             {/* Line items summary */}
             <div style={{ fontSize: 11, fontFamily: FONT.mono, color: C.textSubtle, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-              Line items · summary
+              Line items · qty × rate
             </div>
-            {rows.map((row, i) => (
-              <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${C.border}`, fontSize: 12 }}>
-                <span>{row.d}</span>
-                <span style={{ fontFamily: FONT.mono }}>${Math.round(row.t).toLocaleString()}</span>
+            {groups.length === 0 ? (
+              <div style={{ fontSize: 12, color: C.textMuted, fontStyle: "italic", padding: "8px 0" }}>
+                No priced lines yet.
+              </div>
+            ) : groups.map(group => (
+              <div key={group.category} style={{ marginBottom: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 12, fontWeight: 600 }}>
+                  <span>{group.category}</span>
+                  <span style={{ fontFamily: FONT.mono }}>${Math.round(group.total).toLocaleString()}</span>
+                </div>
+                {group.lines.map((line, i) => (
+                  <div key={`${line.desc}-${i}`} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0 3px 12px", borderBottom: `1px solid ${C.border}`, fontSize: 11, color: C.textMuted }}>
+                    <span>{line.desc}</span>
+                    <span style={{ fontFamily: FONT.mono }}>
+                      {formatQtyRate(line.qty, line.unitPrice)} = ${Math.round(line.lineTotal).toLocaleString()}
+                    </span>
+                  </div>
+                ))}
               </div>
             ))}
 

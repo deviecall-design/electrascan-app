@@ -22,7 +22,7 @@ This is the product/engineering recommendation after the live signed-in walk plu
 
 - Quote Aries named **Bondi Towers** on the Sirius job; letterhead **EST-2026-0143** (next to mock Bondi `EST-2026-0142`).
 - Power outlets **$70,980** vs ~6 GPO visible on one sheet. Vesh standard double GPO is **$260 ex GST**. 6 × 5 pages × $260 ≈ **$7,800**. $71k is qty × SKU (Zetr/specials typed as GPO, legend qty repeated per room), **not GST twice**. Screenshot totals were internally consistent at 18% then 10% GST.
-- Detect overlay “Level 2 · Page 3/5 / OFFICE A / BOARDROOM” is the **April mock SVG**, not the uploaded PDF. Vision never returns x/y. May “worked” on `BlueprintCanvas`, which **DesktopApp does not mount**.
+- Detect overlay “Level 2 · Page 3/5 / OFFICE A / BOARDROOM” is the **April mock SVG**. Bisect: 13 May prod `fc11733` still mounted `App.tsx`; 27 May `576d75e` switched to DesktopApp. Vision never returns x/y.
 
 ---
 
@@ -32,9 +32,8 @@ Work the live `DesktopApp` → `screens/*` shell. Do not start a fourth app.
 
 ### P0 — Stop lying about the job (this sprint)
 
-1. **Detect overlay honesty**  
-   Show the **uploaded PDF/PNG**. Do not draw OFFICE A / BOARDROOM. Caption: counts are in the list; pins are not registered to the drawing.  
-   *Follow-up (not P0):* vision emits x/y **or** remount `BlueprintCanvas` in step 2.
+1. **Detect overlay (P0-1)**  
+   MuPDF page view of the **uploaded PDF** (same engine as May/BlueprintCanvas). Page chrome from the file. No OFFICE A SVG. Pins are still list-only until vision emits x/y.
 
 2. **Quote identity**  
    - Reference from `EST-YYMM-XXXX`, never `EST-2026-0143`.  
@@ -73,7 +72,21 @@ Work the live `DesktopApp` → `screens/*` shell. Do not start a fourth app.
 
 ---
 
-## 2. Rebuild vs iterate
+## 2. Overlay regression (bisect)
+
+| SHA | Date | What production mounted | Drawing pane |
+|---|---|---|---|
+| `fc11733` | 13 May 2026 | `index.tsx` → **App.tsx** | Real filename + rooms from the scan. No fake office SVG. |
+| `576d75e` | 27 May 2026 | merge desktop-v2 → **DesktopApp** | `ScanDetailScreen` FloorPlan SVG. Hardcoded “Level 2 · Page 3/5”. |
+| `c3f1664` | 7 Sep 2026 | DesktopApp (current prod) | Same mock overlay until this PR. |
+
+`gridPosition()` exists because **“real detection has no x/y”** (`30ce55a`). Pins were never on the PDF. May alignment was the **real file**, not a symbol map.
+
+This PR restores MuPDF pages of the upload (BlueprintCanvas engine) with Page n/N from the PDF.
+
+---
+
+## 3. Rebuild vs iterate
 
 **Iterate. Do not greenfield-rebuild.**
 
@@ -102,13 +115,13 @@ A new UI on the same engine is allowed later. A new engine is not the faster pat
 
 ---
 
-## 3. High-confidence small fixes (proven / in this PR)
+## 4. High-confidence small fixes (proven / in this PR)
 
 Already landed or landing with this document:
 
 - Aries scoped to the current job (no Bondi on Sirius).
 - Quote letterhead `EST-YYMM-XXXX`; Send persists GST-inclusive `value`.
-- Detect preview = uploaded plan, not OFFICE A.
+- Detect preview = **MuPDF pages of the uploaded PDF** (bisect: `fc11733` App.tsx → `576d75e` DesktopApp mock SVG). Quote letterhead shows **qty × rate** per line.
 - GPO $260 default; specials out of Power outlets; legend qty cap.
 - Shared `computeQuoteTotals` + Dashboard pending/win from the same helper.
 - **No Bondi sample rows while loading**; empty live list stays empty.

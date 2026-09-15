@@ -18,6 +18,7 @@ export interface ScanQuoteItem {
   y: number;
   unitPrice?: number;
   category?: string;
+  room?: string;
 }
 
 export interface DetectionComponentLike {
@@ -151,8 +152,51 @@ export function mapDetectionToQuoteItems(
       y: pos.y,
       unitPrice: typeof c.unit_price === "number" ? c.unit_price : undefined,
       category: categoryFor(c.type),
+      room: c.room,
     };
   });
+}
+
+export function formatQtyRate(qty: number, unitPrice: number): string {
+  const q = Math.max(0, qty);
+  const p = Math.max(0, unitPrice);
+  return `${q} × $${Math.round(p).toLocaleString("en-AU")}`;
+}
+
+export interface QuoteVisibleLine {
+  category: string;
+  desc: string;
+  qty: number;
+  unitPrice: number;
+  lineTotal: number;
+}
+
+/** Category groups with qty × rate so a $71k GPO bucket can be inspected. */
+export function quoteVisibleLines(
+  items: Array<{ category?: string; desc: string; qty: number; unitPrice?: number }>,
+): { category: string; total: number; lines: QuoteVisibleLine[] }[] {
+  const groups = new Map<string, QuoteVisibleLine[]>();
+  for (const it of items) {
+    if (typeof it.unitPrice !== "number" || it.unitPrice <= 0 || it.qty <= 0) continue;
+    const category = it.category ?? "Other";
+    const line: QuoteVisibleLine = {
+      category,
+      desc: it.desc,
+      qty: it.qty,
+      unitPrice: it.unitPrice,
+      lineTotal: it.qty * it.unitPrice,
+    };
+    const list = groups.get(category) ?? [];
+    list.push(line);
+    groups.set(category, list);
+  }
+  return [...groups.entries()]
+    .map(([category, lines]) => ({
+      category,
+      total: lines.reduce((s, l) => s + l.lineTotal, 0),
+      lines,
+    }))
+    .sort((a, b) => b.total - a.total);
 }
 
 export function sumCategory(
