@@ -16,6 +16,8 @@ import * as pdfjsLib from "pdfjs-dist";
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 import { mapLegendItem, type CatalogueItem } from "./vesh_catalogue";
 import { inferAnalyzeType } from "./lib/reviewClassification";
+import { resolveLegendEntry } from "./lib/symbol_map";
+import { capQuantitiesToLegend } from "./lib/scanQuote";
 import { supabase } from "./services/supabaseClient";
 
 // Model used for both detection passes. Kept in one place because model IDs get
@@ -124,7 +126,9 @@ export type ComponentType =
   | "DATA_CAT6" | "DATA_TV"
   | "SECURITY_CCTV" | "SECURITY_INTERCOM" | "SECURITY_ALARM"
   | "EV_CHARGER" | "POOL_OUTDOOR" | "GATE_ACCESS"
-  | "AUTOMATION_HUB";
+  | "AUTOMATION_HUB"
+  | "COOKTOP_20A" | "COOKTOP_25A" | "COOKTOP_32A" | "COOKTOP_3PHASE"
+  | "HEATED_TOWEL_RAIL" | "EXTERNAL_HEATER" | "TOILET_CIRCUIT" | "UNDERFLOOR_HEAT";
 
 export type DetectionFlag =
   | "HEIGHT_RISK" | "AUTOMATION_DEPENDENCY" | "MISSING_CIRCUIT"
@@ -197,6 +201,8 @@ const FALLBACK_PRICING: Record<ComponentType, number> = {
   SECURITY_CCTV: 300, SECURITY_INTERCOM: 250, SECURITY_ALARM: 360,
   EV_CHARGER: 1000, POOL_OUTDOOR: 380, GATE_ACCESS: 400,
   AUTOMATION_HUB: 1200,
+  COOKTOP_20A: 450, COOKTOP_25A: 600, COOKTOP_32A: 750, COOKTOP_3PHASE: 1000,
+  HEATED_TOWEL_RAIL: 450, EXTERNAL_HEATER: 850, TOILET_CIRCUIT: 450, UNDERFLOOR_HEAT: 450,
 };
 
 const FLAG_RISK_LEVELS: Record<DetectionFlag, RiskFlag["level"]> = {
@@ -394,6 +400,12 @@ function extractJSON(raw: string): string {
 // CATALOGUE MATCHING
 // ─────────────────────────────────────────────
 
+function coerceComponentType(raw: string | null | undefined): ComponentType | null {
+  if (!raw) return null;
+  if (raw in FALLBACK_PRICING) return raw as ComponentType;
+  return null;
+}
+
 function matchToVesh(description: string): {
   catalogueItem: CatalogueItem | null;
   price: number;
@@ -415,13 +427,26 @@ function matchToVesh(description: string): {
     };
   }
 
-  const match = mapLegendItem(description);
-  if (match) {
+  // Prefer the symbol map (legend patterns → default SKU) so a generic
+  // "double power point" prices at the standard $260 GPO, not Zetr $525.
+  // If the legend explicitly names a variant that is a valid SKU for that
+  // type (e.g. Zetr 13), use that catalogue row.
+  const resolved = resolveLegendEntry(description);
+  const catalogue = mapLegendItem(description);
+  const defaultSku = resolved.items[0] ?? null;
+  const variant =
+    catalogue && resolved.items.some(i => i.id === catalogue.id) ? catalogue : null;
+  const chosen = variant ?? defaultSku ?? catalogue;
+  const mappedType =
+    coerceComponentType(resolved.componentType) ??
+    coerceComponentType(chosen?.componentType);
+
+  if (chosen && mappedType) {
     return {
-      catalogueItem: match,
-      price: match.price,
-      componentType: match.componentType as ComponentType,
-      automationFlag: match.automationFlag ?? false,
+      catalogueItem: chosen,
+      price: chosen.price,
+      componentType: mappedType,
+      automationFlag: chosen.automationFlag ?? false,
     };
   }
 
@@ -453,8 +478,8 @@ function matchToVesh(description: string): {
   if (d.includes("dynalite") || d.includes("dali switch")) return { catalogueItem: null, price: 180, componentType: "SWITCHING_STANDARD", automationFlag: true };
   if (d.includes("switch")) return { catalogueItem: null, price: 120, componentType: "SWITCHING_STANDARD", automationFlag: false };
   if (d.includes("sensor") || d.includes("light sensor")) return { catalogueItem: null, price: 380, componentType: "SWITCHING_STANDARD", automationFlag: false };
-  if (d.includes("towel rail")) return { catalogueItem: null, price: 450, componentType: "GPO_STANDARD", automationFlag: false };
-  if (d.includes("underfloor")) return { catalogueItem: null, price: 450, componentType: "GPO_STANDARD", automationFlag: false };
+  if (d.includes("towel rail")) return { catalogueItem: null, price: 450, componentType: "HEATED_TOWEL_RAIL", automationFlag: false };
+  if (d.includes("underfloor")) return { catalogueItem: null, price: 450, componentType: "UNDERFLOOR_HEAT", automationFlag: false };
   if (d.includes("intercom") || d.includes("door bell")) return { catalogueItem: null, price: 250, componentType: "SECURITY_INTERCOM", automationFlag: false };
   if (d.includes("dual tv") || d.includes("tv/data") || d.includes("data outlet")) return { catalogueItem: null, price: 550, componentType: "DATA_TV", automationFlag: false };
   if (d.includes("automation touchscreen")) return { catalogueItem: null, price: 1200, componentType: "AUTOMATION_HUB", automationFlag: true };
@@ -548,7 +573,10 @@ function buildComponents(legendItems: LegendItem[], roomComponents: any[]): Dete
     if (!l.in_electrical_scope || !l.catalogue_price || l.quantity === 0) continue;
     const desc = l.symbol_description.toLowerCase();
     const covered = [...coveredDescs].some(d => d.includes(desc) || desc.includes(d));
-    if (!covered) {
+    const coveredByType = l.mapped_type
+      ? components.some(c => c.type === l.mapped_type)
+      : false;
+    if (!covered && !coveredByType) {
       console.log(`[ElectraScan v4] Adding missed legend item: ${l.symbol_description} ×${l.quantity} @ $${l.catalogue_price}`);
       const flags: DetectionFlag[] = ["FROM_LEGEND"];
       if (l.automation_flag) flags.push("AUTOMATION_DEPENDENCY");
@@ -571,7 +599,23 @@ function buildComponents(legendItems: LegendItem[], roomComponents: any[]): Dete
     }
   }
 
-  return components;
+  // Legend quantity is the takeoff source of truth. Pass 2 sometimes repeats
+  // the legend total on every room, which is what pushes Power outlets into
+  // the tens of thousands of dollars.
+  const legendQtyByType: Record<string, number> = {};
+  for (const l of legendItems) {
+    if (!l.in_electrical_scope || !l.mapped_type) continue;
+    const k = l.mapped_type.toLowerCase();
+    legendQtyByType[k] = (legendQtyByType[k] ?? 0) + l.quantity;
+  }
+  const capped = capQuantitiesToLegend(
+    components.map(c => ({ ...c, legendKey: c.type })),
+    legendQtyByType,
+  );
+  return capped.map(({ legendKey: _key, ...c }) => ({
+    ...c,
+    line_total: c.unit_price * c.quantity,
+  }));
 }
 
 function generateRiskFlags(components: DetectedComponent[]): RiskFlag[] {

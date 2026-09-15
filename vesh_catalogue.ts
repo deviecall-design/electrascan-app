@@ -198,7 +198,7 @@ export const VESH_CATALOGUE: CatalogueItem[] = [
     name: "20amp cooktop/oven connection",
     price: 450,
     unit: "EA",
-    componentType: "GPO_STANDARD",
+    componentType: "COOKTOP_20A",
     aliases: [
       "20amp cooktop", "20a oven", "cooktop 20amp", "oven 20a",
       "20 amp cooktop", "cooktop connection 20a",
@@ -210,7 +210,7 @@ export const VESH_CATALOGUE: CatalogueItem[] = [
     name: "25amp cooktop/oven connection",
     price: 600,
     unit: "EA",
-    componentType: "GPO_STANDARD",
+    componentType: "COOKTOP_25A",
     aliases: [
       "25amp cooktop", "25a oven", "cooktop 25amp", "oven 25a",
       "25 amp cooktop",
@@ -222,7 +222,7 @@ export const VESH_CATALOGUE: CatalogueItem[] = [
     name: "32amp cooktop/oven connection",
     price: 750,
     unit: "EA",
-    componentType: "GPO_STANDARD",
+    componentType: "COOKTOP_32A",
     aliases: [
       "32amp cooktop", "32a oven", "cooktop 32amp", "oven 32a",
       "32 amp cooktop",
@@ -234,7 +234,7 @@ export const VESH_CATALOGUE: CatalogueItem[] = [
     name: "3-phase cooktop/oven connection",
     price: 1000,
     unit: "EA",
-    componentType: "GPO_STANDARD",
+    componentType: "COOKTOP_3PHASE",
     aliases: [
       "3 phase cooktop", "three phase cooktop", "3phase oven",
       "commercial cooktop", "3 phase oven",
@@ -687,7 +687,7 @@ export const VESH_CATALOGUE: CatalogueItem[] = [
     name: "Under floor heat circuit inc. remote sensor location",
     price: 450,
     unit: "EA",
-    componentType: "GPO_STANDARD",
+    componentType: "UNDERFLOOR_HEAT",
     aliases: [
       "underfloor heating", "under floor heat", "floor heating",
       "radiant floor heat", "in floor heating", "heated floor",
@@ -716,7 +716,7 @@ export const VESH_CATALOGUE: CatalogueItem[] = [
     name: "Heated towel rail point – wire & connect",
     price: 450,
     unit: "EA",
-    componentType: "GPO_STANDARD",
+    componentType: "HEATED_TOWEL_RAIL",
     aliases: [
       "heated towel rail", "towel rail", "towel warmer",
       "electric towel rail", "heated towel rail point",
@@ -744,7 +744,7 @@ export const VESH_CATALOGUE: CatalogueItem[] = [
     name: "External Heater",
     price: 850,
     unit: "EA",
-    componentType: "GPO_STANDARD",
+    componentType: "EXTERNAL_HEATER",
     aliases: [
       "external heater", "outdoor heater", "alfresco heater",
       "patio heater", "infrared heater", "radiant heater",
@@ -756,7 +756,7 @@ export const VESH_CATALOGUE: CatalogueItem[] = [
     name: "Toilet",
     price: 450,
     unit: "EA",
-    componentType: "GPO_STANDARD",
+    componentType: "TOILET_CIRCUIT",
     aliases: [
       "toilet", "toilet circuit", "toilet power point",
       "bidet", "smart toilet", "washlet",
@@ -784,6 +784,14 @@ export interface SearchResult {
  *   searchCatalogue("track light")                  → Track light point $1,000
  *   searchCatalogue("dynalite switch")              → Dynalite switch $180
  */
+/** Words that must not uniquely identify a catalogue SKU. */
+const GENERIC_WORDS = new Set([
+  "the", "and", "with", "for", "from", "inc", "including",
+  "point", "points", "double", "single", "light", "lights",
+  "outlet", "outlets", "switch", "standard", "series", "white",
+  "item", "type", "electrical", "power", "pair", "of",
+]);
+
 export function searchCatalogue(
   query: string,
   limit: number = 10
@@ -793,6 +801,7 @@ export function searchCatalogue(
   const q = query.toLowerCase().trim();
   const results: SearchResult[] = [];
   const seen = new Set<string>();
+  const words = q.split(/\s+/).filter(Boolean);
 
   for (const item of VESH_CATALOGUE) {
     if (seen.has(item.id)) continue;
@@ -812,7 +821,7 @@ export function searchCatalogue(
       continue;
     }
 
-    // Layer 2b: Alias contains query
+    // Layer 2b: Alias contains the full query (e.g. "double power point")
     const aliasContains = item.aliases.find(a => a.toLowerCase().includes(q));
     if (aliasContains) {
       results.push({ item, score: 85, matchType: "alias" });
@@ -820,23 +829,30 @@ export function searchCatalogue(
       continue;
     }
 
-    // Layer 2c: Query contains alias word
-    const words = q.split(/\s+/);
-    const aliasWordMatch = item.aliases.find(a => {
-      const aliasWords = a.toLowerCase().split(/\s+/);
-      return aliasWords.some(aw => words.includes(aw) && aw.length > 2);
-    });
+    // Layer 2c: Distinctive (non-generic) query words appear in an alias.
+    // Matching on "double" or "point" alone previously ranked Zetr $525
+    // GPOs above the standard $260 double GPO for generic legend text.
+    const distinctive = words.filter(w => w.length > 2 && !GENERIC_WORDS.has(w));
+    const aliasWordMatch =
+      distinctive.length > 0 &&
+      item.aliases.find(a => {
+        const aliasWords = a.toLowerCase().split(/\s+/);
+        return distinctive.every(w => aliasWords.includes(w) || a.toLowerCase().includes(w));
+      });
     if (aliasWordMatch) {
       results.push({ item, score: 75, matchType: "alias" });
       seen.add(item.id);
       continue;
     }
 
-    // Layer 3: Fuzzy — name contains query words
+    // Layer 3: Fuzzy — distinctive query words vs name words.
+    // Do not treat "downlight".includes("light") as a Track Light match.
     const nameWords = item.name.toLowerCase().split(/\s+/);
-    const matchingWords = words.filter(w => w.length > 2 && nameWords.some(nw => nw.includes(w) || w.includes(nw)));
+    const matchingWords = distinctive.filter(w =>
+      nameWords.some(nw => nw === w || (w.length >= 5 && nw.includes(w))),
+    );
     if (matchingWords.length > 0) {
-      const score = 40 + (matchingWords.length / words.length) * 30;
+      const score = 40 + (matchingWords.length / Math.max(distinctive.length, 1)) * 30;
       results.push({ item, score, matchType: "fuzzy" });
       seen.add(item.id);
     }

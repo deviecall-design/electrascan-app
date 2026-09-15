@@ -7,10 +7,9 @@
  *   3. Review   — editable line items table w/ confidence bars
  *   4. Quote    — letterhead PDF preview + totals + CTAs
  *
- * All four step views + the StepBar + FloorPlan SVG live in this file. It's
- * long but keeping them colocated makes the mockup-to-code diff reviewable.
- * In Phase 5 follow-ups the Upload handler will wire to analyze_pdf.ts and
- * the Detect list will stream from Claude Vision via Supabase Edge Functions.
+ * All four step views + the StepBar live in this file. Detect previews the
+ * uploaded drawing (not a mock office plan). Quote identity is allocated
+ * as EST-YYMM-XXXX and Aries copy is scoped to the current job.
  */
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
@@ -65,30 +64,13 @@ import {
   shouldQueueForReview,
   suggestReviewItem,
 } from "../lib/reviewClassification";
+import { peekNextReference } from "../services/estimateReferenceService";
+import SourcePlanPreview from "../components/SourcePlanPreview";
+import { ariesMarginSuggestion } from "../lib/ariesSuggestion";
+import { computeQuoteTotals, DEFAULT_MARGIN_PCT, formatAud } from "../lib/quoteTotals";
+import { mapDetectionToQuoteItems, type ScanQuoteItem } from "../lib/scanQuote";
 
-// ─── Mock data ──────────────────────────────────────────────────────────
-// TODO: Replace DETECTED_ITEMS with streamed output from analyze_pdf.ts /
-// Claude Vision. The shape is intentionally stable so the swap is a
-// one-line useEffect that accumulates items onto state.
-interface DetectedItem {
-  id: number;
-  symbol: string;
-  qty: number;
-  desc: string;
-  rateCode: string;
-  conf: number;
-  x: number;
-  y: number;
-  /**
-   * Unit price carried straight through from detection, which matched the
-   * symbol against the Vesh catalogue. When present this is the price of
-   * record and RATE_LOOKUP is not consulted — the lookup below only covers
-   * ten demo rate codes, so pricing real drawings from it silently produced
-   * $0 lines and mis-priced anything it did not recognise.
-   */
-  unitPrice?: number;
-  /** Real category from the detected component type, for the quote breakdown. */
-  category?: string;
+interface DetectedItem extends ScanQuoteItem {
   /** Room / location from the detector — never a hardcoded "Level 2". */
   room?: string;
   /** Raw analyze_pdf ComponentType, when we have one. */
@@ -120,6 +102,7 @@ const DETECTED_ITEMS: DetectedItem[] = [
   { id: 10, symbol: "LT",  qty: 2,  desc: "Pendant light (kitchen)",    rateCode: "LT-005",  conf: 0.65, x: 240, y: 120 },
 ];
 
+
 const RATE_LOOKUP: Record<string, { description: string; rate: number; labour: number }> = {
   "GPO-001": { description: "Double GPO install (flush)",      rate: 85,  labour: 45 },
   "GPO-003": { description: "Weatherproof GPO IP56",           rate: 145, labour: 60 },
@@ -134,40 +117,19 @@ const RATE_LOOKUP: Record<string, { description: string; rate: number; labour: n
 };
 
 // ─── mapDetectionToItems ─────────────────────────────────────────────────
-// Converts a DetectionResult.components array (from analyze_pdf.ts
-// detectElectricalComponents) into the DetectedItem shape used by this screen.
-// Returns an empty array when detection is null/undefined so the caller can
-// decide whether to fall back to the hardcoded DETECTED_ITEMS constant.
 function mapDetectionToItems(detection: DetectionResult | null | undefined): DetectedItem[] {
   if (!detection || !Array.isArray(detection.components) || detection.components.length === 0) {
     return [];
   }
-  const rateMap: Record<string, string> = {
-    GPO_STANDARD: "GPO-004", GPO_DOUBLE: "GPO-001", GPO_WEATHERPROOF: "GPO-003", GPO_USB: "GPO-002",
-    DOWNLIGHT_RECESSED: "LT-001", PENDANT_FEATURE: "LT-005", EXHAUST_FAN: "FN-001",
-    SWITCHING_STANDARD: "SW-001", SWITCHING_DIMMER: "SW-003", SWITCHING_2WAY: "SW-002",
-    SWITCHBOARD_MAIN: "SB-001", SWITCHBOARD_SUB: "SB-002",
-    DATA_CAT6: "DC-001", DATA_TV: "DC-002",
-    AC_SPLIT: "FN-002", AC_DUCTED: "FN-002",
-    SECURITY_CCTV: "SA-002", SECURITY_INTERCOM: "SA-002", SECURITY_ALARM: "SA-001",
-    EV_CHARGER: "EX-003", POOL_OUTDOOR: "EX-001", GATE_ACCESS: "EX-001",
-    AUTOMATION_HUB: "DC-003",
-  };
-  return detection.components.map((c, i) => {
+  // Quote mapping from #9 (qty×rate, no fabricated GPO codes), then #10 Review
+  // classification so an EDB does not inherit the lighting LT badge/label.
+  return mapDetectionToQuoteItems(detection.components).map((item, i) => {
+    const c = detection.components[i];
     const fields = mapComponentToReviewFields(c);
     return {
-      id: i + 1,
+      ...item,
       symbol: fields.symbol,
-      qty: c.quantity,
       desc: fields.desc,
-      // No rateMap entry means we genuinely do not know the rate code. Leaving
-      // it blank marks the line "price required"; defaulting to GPO-001 (as
-      // this did) silently priced switchboards and EV chargers as double GPOs.
-      rateCode: rateMap[c.type] ?? "",
-      conf: Math.min(1, Math.max(0, (c.confidence ?? 90) / 100)),
-      x: 60 + ((i * 73) % 420),
-      y: 60 + ((i * 61) % 280),
-      unitPrice: typeof c.unit_price === "number" ? c.unit_price : undefined,
       category: fields.quoteCategory,
       room: c.room,
       detectedType: c.type,
@@ -181,8 +143,9 @@ export default function ScanDetailScreen() {
   const { id } = useParams();
   const [liveScan, setLiveScan] = useState<ScanRow | null>(null);
   const [step, setStep] = useState(id === "new" ? 1 : 2);
-  const [detectedItems, setDetectedItems] = useState<DetectedItem[]>(DETECTED_ITEMS);
+  const [detectedItems, setDetectedItems] = useState<DetectedItem[]>([]);
   const [uploadedName, setUploadedName] = useState<string>("");
+  const [sourceFile, setSourceFile] = useState<File | null>(null);
 
   useEffect(() => {
     if (!id || id === "new") return;
@@ -223,7 +186,7 @@ export default function ScanDetailScreen() {
           {fileName}
         </h1>
         <span style={{ fontFamily: FONT.mono, fontSize: 13, color: C.textSubtle }}>
-          {id ?? "EST-2026-0143"}
+          {isNew ? "new" : (id ?? "")}
         </span>
       </div>
       <p style={{ color: C.textMuted, fontStyle: "italic", margin: "0 0 28px 0" }}>
@@ -237,14 +200,24 @@ export default function ScanDetailScreen() {
 
       {step === 1 && (
         <StepUpload
-          onNext={(items?: DetectedItem[], name?: string) => {
-            if (items && items.length > 0) setDetectedItems(items);
-            if (name) setUploadedName(name);
+          onNext={(items, file) => {
+            setDetectedItems(items ?? []);
+            if (file) {
+              setSourceFile(file);
+              setUploadedName(file.name);
+            }
             setStep(2);
           }}
         />
       )}
-      {step === 2 && <StepDetecting onNext={() => setStep(3)} items={detectedItems} />}
+      {step === 2 && (
+        <StepDetecting
+          onNext={() => setStep(3)}
+          items={detectedItems}
+          sourceFile={sourceFile}
+          sourceFileName={uploadedName || liveScan?.file_name}
+        />
+      )}
       {step === 3 && <StepReview onNext={() => setStep(4)} onBack={() => setStep(2)} items={detectedItems} />}
       {step === 4 && (
         <StepQuote
@@ -321,7 +294,7 @@ function StepBar({ step, onStep }: StepBarProps) {
 // ─── Step 1: Upload ─────────────────────────────────────────────────────
 type UploadState = "idle" | "detecting" | "error";
 
-function StepUpload({ onNext }: { onNext: (items?: DetectedItem[], fileName?: string) => void }) {
+function StepUpload({ onNext }: { onNext: (items: DetectedItem[], file: File) => void }) {
   const [uploadState, setUploadState] = useState<UploadState>("idle");
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [fileName, setFileName] = useState<string>("");
@@ -353,8 +326,7 @@ function StepUpload({ onNext }: { onNext: (items?: DetectedItem[], fileName?: st
         setPhaseMsg(p.message);
       });
       const mapped = mapDetectionToItems(result);
-      // Fall back to DETECTED_ITEMS if the model returned nothing
-      onNext(mapped.length > 0 ? mapped : undefined, file.name);
+      onNext(mapped, file);
     } catch (err: any) {
       console.error("[ElectraScan] Detection failed:", err);
       setErrorMsg(err?.message ?? "Unknown error during detection.");
@@ -500,9 +472,6 @@ function StepUpload({ onNext }: { onNext: (items?: DetectedItem[], fileName?: st
           >
             Try again
           </PrimaryButton>
-          <GhostButton onClick={() => onNext(undefined)}>
-            Use sample data →
-          </GhostButton>
         </div>
       </div>
     );
@@ -553,10 +522,19 @@ function StepUpload({ onNext }: { onNext: (items?: DetectedItem[], fileName?: st
 }
 
 // ─── Step 2: Detecting ──────────────────────────────────────────────────
-function StepDetecting({ onNext, items: propItems }: { onNext: () => void; items?: DetectedItem[] }) {
-  const source = propItems && propItems.length > 0 ? propItems : DETECTED_ITEMS;
-  // If items came from real detection they are already complete — skip animation
-  const isRealDetection = propItems && propItems !== DETECTED_ITEMS && propItems.length > 0;
+function StepDetecting({
+  onNext,
+  items: propItems,
+  sourceFile,
+  sourceFileName,
+}: {
+  onNext: () => void;
+  items?: DetectedItem[];
+  sourceFile: File | null;
+  sourceFileName?: string;
+}) {
+  const source = propItems ?? [];
+  const isRealDetection = source.length > 0;
   const [revealed, setRevealed] = useState(isRealDetection ? source.length : 0);
 
   useEffect(() => {
@@ -586,9 +564,11 @@ function StepDetecting({ onNext, items: propItems }: { onNext: () => void; items
               {!ready && <Dots />}
             </span>
           </div>
-          <span style={{ fontFamily: FONT.mono, fontSize: 11, color: C.textSubtle }}>Level 2 · Page 3/5</span>
+          <span style={{ fontFamily: FONT.mono, fontSize: 11, color: C.textSubtle }}>
+            {sourceFileName || "Source drawing"}
+          </span>
         </div>
-        <FloorPlan items={items} />
+        <SourcePlanPreview file={sourceFile} fileName={sourceFileName} />
       </div>
 
       {/* Detection list */}
@@ -1067,7 +1047,7 @@ function buildQueueItem(it: DetectedItem): ReviewQueueItem {
 }
 
 function StepReview({ onNext, onBack, items: propItems }: { onNext: () => void; onBack: () => void; items?: DetectedItem[] }) {
-  const source = propItems && propItems.length > 0 ? propItems : DETECTED_ITEMS;
+  const source = propItems ?? [];
   const [items, setItems] = useState(
     source.map(it => ({ ...it, ok: false })),
   );
@@ -1207,17 +1187,28 @@ function StepQuote({
   sourceFileName?: string;
 }) {
   const navigate = useNavigate();
-  // Fall back to sample data only when detection produced nothing — an empty
-  // live array must not render an empty quote.
-  const source = propItems && propItems.length > 0 ? propItems : DETECTED_ITEMS;
+  const source = propItems ?? [];
   const company = getActiveCompanyProfile();
+  const [estimateRef, setEstimateRef] = useState<string>("…");
+
+  useEffect(() => {
+    let cancelled = false;
+    peekNextReference().then(ref => {
+      if (!cancelled) setEstimateRef(ref);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const marginPct = company.defaultMargin ?? DEFAULT_MARGIN_PCT;
   const subtotal = useMemo(
     () => source.reduce((sum, it) => sum + lineTotal(it), 0),
     [source],
   );
-  const margin = Math.round(subtotal * 0.18);
-  const gst = Math.round((subtotal + margin) * 0.1);
-  const total = subtotal + margin + gst;
+  const totals = computeQuoteTotals(subtotal, marginPct);
+  const ariesCopy = ariesMarginSuggestion({
+    clientName,
+    marginPct,
+  });
 
   // Breakdown built by summing the detected lines in each category. This used
   // to be fixed percentages of the subtotal (12% power, 22% lighting, ...),
@@ -1245,8 +1236,8 @@ function StepQuote({
       {/* Letterhead preview */}
       <div style={{ backgroundColor: C.bgCard, border: `1px solid ${C.border}`, borderRadius: RADIUS.xl, overflow: "hidden" }}>
         <div style={{ padding: "10px 16px", borderBottom: `1px solid ${C.border}`, backgroundColor: C.bg, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontFamily: FONT.heading, fontSize: 12, fontWeight: 500, color: C.textMuted }}>Preview · page 1 of 3</span>
-          <span style={{ fontFamily: FONT.mono, fontSize: 11, color: C.textSubtle }}>EST-2026-0143.pdf</span>
+          <span style={{ fontFamily: FONT.heading, fontSize: 12, fontWeight: 500, color: C.textMuted }}>Preview</span>
+          <span style={{ fontFamily: FONT.mono, fontSize: 11, color: C.textSubtle }}>{estimateRef}.pdf</span>
         </div>
         {/* The quote preview is a document, so it stays on light paper even in
             the navy theme. Pin the text colour here: the inherited `C.text` is
@@ -1272,7 +1263,7 @@ function StepQuote({
               </div>
               <div style={{ textAlign: "right" }}>
                 <div style={{ fontFamily: FONT.heading, fontSize: 11, color: C.textSubtle, textTransform: "uppercase", letterSpacing: "0.1em" }}>Estimate</div>
-                <div style={{ fontFamily: FONT.mono, fontSize: 14, fontWeight: 500 }}>EST-2026-0143</div>
+                <div style={{ fontFamily: FONT.mono, fontSize: 14, fontWeight: 500 }}>{estimateRef}</div>
               </div>
             </div>
 
@@ -1313,12 +1304,12 @@ function StepQuote({
             {/* Totals */}
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 18 }}>
               <div style={{ width: 220, fontSize: 12 }}>
-                <LetterRow l="Subtotal"     v={`$${subtotal.toLocaleString()}`} />
-                <LetterRow l="Margin (18%)" v={`$${margin.toLocaleString()}`} />
-                <LetterRow l="GST (10%)"    v={`$${gst.toLocaleString()}`} />
+                <LetterRow l="Subtotal"     v={`$${formatAud(totals.subtotal)}`} />
+                <LetterRow l={`Margin (${totals.marginPct}%)`} v={`$${formatAud(totals.marginAmount)}`} />
+                <LetterRow l={`GST (${totals.gstRatePct}%)`}    v={`$${formatAud(totals.gst)}`} />
                 <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0 0 0", marginTop: 6, borderTop: `2px solid ${C.text}`, fontFamily: FONT.heading, fontWeight: 600, fontSize: 14 }}>
                   <span>Total</span>
-                  <span>${total.toLocaleString()}</span>
+                  <span>${formatAud(totals.total)}</span>
                 </div>
               </div>
             </div>
@@ -1332,19 +1323,19 @@ function StepQuote({
         <Card style={{ padding: 20 }}>
           <div style={{ fontFamily: FONT.heading, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textSubtle, marginBottom: 6 }}>Quoted total</div>
           <div style={{ fontFamily: FONT.heading, fontSize: 36, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1 }}>
-            ${total.toLocaleString()}
+            ${formatAud(totals.total, true)}
           </div>
           <div style={{ fontSize: 13, color: C.textMuted, fontStyle: "italic", marginTop: 8 }}>
-            incl. GST · {source.length} {source.length === 1 ? "item" : "items"} · 18% margin
+            incl. GST · {source.length} {source.length === 1 ? "item" : "items"} · {totals.marginPct}% margin
           </div>
 
           {/* Materials/Labour used to be a fixed 55/45 split of the subtotal.
               The catalogue gives a single supply-and-install rate per item, so
               that split was invented. These four are values we actually hold. */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 20 }}>
-            <MiniStat label="Subtotal ex GST" v={`$${subtotal.toLocaleString()}`} />
-            <MiniStat label="GST"             v={`$${gst.toLocaleString()}`} />
-            <MiniStat label="Margin"          v={`$${margin.toLocaleString()}`} tint={C.green} />
+            <MiniStat label="Subtotal ex GST" v={`$${formatAud(totals.subtotal, true)}`} />
+            <MiniStat label="GST"             v={`$${formatAud(totals.gst, true)}`} />
+            <MiniStat label="Margin"          v={`$${formatAud(totals.marginAmount, true)}`} tint={C.green} />
             <MiniStat
               label="Price required"
               v={String(unpricedCount)}
@@ -1362,7 +1353,7 @@ function StepQuote({
             </span>
           </div>
           <p style={{ margin: 0, fontSize: 14, lineHeight: 1.65 }}>
-            Bondi Tower's last 3 quotes closed at <B>15–22%</B> margin. Your current <B>18%</B> sits in the sweet spot — I wouldn't push it.
+            {ariesCopy}
           </p>
         </Card>
 
@@ -1386,62 +1377,5 @@ function LetterRow({ l, v }: { l: string; v: string }) {
       <span>{l}</span>
       <span style={{ fontFamily: FONT.mono, color: C.text }}>{v}</span>
     </div>
-  );
-}
-
-// ─── FloorPlan SVG ──────────────────────────────────────────────────────
-function FloorPlan({ items }: { items: DetectedItem[] }) {
-  return (
-    <svg viewBox="0 0 520 380" style={{ display: "block", width: "100%", height: "auto", backgroundColor: C.bgPaper }}>
-      <defs>
-        <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
-          <path d="M 20 0 L 0 0 0 20" fill="none" stroke={C.border} strokeWidth="0.5" opacity="0.6" />
-        </pattern>
-      </defs>
-      <rect width="520" height="380" fill="url(#grid)" />
-      {/* Outer walls */}
-      <rect x="30" y="40" width="460" height="310" fill="none" stroke={C.text} strokeWidth="2.5" />
-      {/* Inner partitions */}
-      <line x1="30"  y1="170" x2="260" y2="170" stroke={C.text} strokeWidth="2" />
-      <line x1="260" y1="40"  x2="260" y2="260" stroke={C.text} strokeWidth="2" />
-      <line x1="260" y1="260" x2="490" y2="260" stroke={C.text} strokeWidth="2" />
-      <line x1="160" y1="170" x2="160" y2="350" stroke={C.text} strokeWidth="2" />
-      <line x1="380" y1="40"  x2="380" y2="150" stroke={C.text} strokeWidth="2" />
-      {/* Door gaps */}
-      <line x1="110" y1="170" x2="140" y2="170" stroke={C.bgPaper} strokeWidth="3" />
-      <line x1="260" y1="200" x2="260" y2="230" stroke={C.bgPaper} strokeWidth="3" />
-      <line x1="200" y1="260" x2="230" y2="260" stroke={C.bgPaper} strokeWidth="3" />
-
-      {/* Room labels */}
-      {[
-        { x: 95,  y: 100, t: "OFFICE A" },
-        { x: 320, y: 150, t: "BOARDROOM" },
-        { x: 95,  y: 260, t: "WORKSTATIONS" },
-        { x: 210, y: 310, t: "BREAKOUT" },
-        { x: 425, y: 310, t: "KITCHEN" },
-      ].map((r, i) => (
-        <text key={i} x={r.x} y={r.y} fontFamily={FONT.heading} fontSize="8" fill={C.textSubtle} letterSpacing="1.5">
-          {r.t}
-        </text>
-      ))}
-
-      {/* Detected markers */}
-      {items.map(it => (
-        <g key={it.id} className="anim-in">
-          <circle cx={it.x} cy={it.y} r="14" fill={C.orangeSoft} opacity="0.7" />
-          <circle cx={it.x} cy={it.y} r="8" fill={C.orange} />
-          <text x={it.x} y={it.y + 2.5} fontFamily={FONT.heading} fontSize="7" fontWeight="600" fill="#fff" textAnchor="middle">
-            {it.symbol}
-          </text>
-          <circle cx={it.x} cy={it.y} r="14" fill="none" stroke={C.orange} strokeWidth="1" opacity="0.5">
-            <animate attributeName="r" from="8" to="22" dur="1.6s" repeatCount="indefinite" />
-            <animate attributeName="opacity" from="0.5" to="0" dur="1.6s" repeatCount="indefinite" />
-          </circle>
-        </g>
-      ))}
-      <text x="490" y="368" fontFamily={FONT.mono} fontSize="8" fill={C.textSubtle} textAnchor="end" opacity="0.7">
-        analysed by Claude Vision · 0.4.2
-      </text>
-    </svg>
   );
 }
