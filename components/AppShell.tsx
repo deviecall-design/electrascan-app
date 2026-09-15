@@ -13,6 +13,8 @@ export type ShellRoute =
   | "dashboard"
   | "projects"
   | "project-detail"
+  | "scans"
+  | "estimates"
   | "approvals"
   | "reports"
   | "rate-library"
@@ -103,6 +105,8 @@ const AppShell: React.FC<AppShellProps> = ({
       items: [
         { route: "dashboard", label: "Dashboard", icon: "🏠", appRoute: { name: "dashboard" } },
         { route: "projects",  label: "Projects",  icon: "📁", appRoute: { name: "projects" } },
+        { route: "scans",     label: "Scans",     icon: "🔬", appRoute: { name: "scans" } },
+        { route: "estimates", label: "Estimates", icon: "📄", appRoute: { name: "estimates" } },
       ],
     },
     {

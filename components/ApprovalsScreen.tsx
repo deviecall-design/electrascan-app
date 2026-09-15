@@ -148,6 +148,7 @@ export default function ApprovalsScreen({
   const [status, setStatus] = useState<"pending" | "approved">(initialStatus);
   const [audit, setAudit] = useState<ApprovalAuditEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [auditIsSample, setAuditIsSample] = useState(false);
   const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "synced" | "local">("idle");
   const [tab, setTab] = useState<"audit" | "estimates" | "parties">("audit");
   const [showApprove, setShowApprove] = useState(false);
@@ -171,6 +172,7 @@ export default function ApprovalsScreen({
             if (Array.isArray(parsed) && parsed.length > 0) {
               if (alive) {
                 setAudit(parsed);
+                setAuditIsSample(false);
                 setLoaded(true);
               }
               return;
@@ -184,8 +186,10 @@ export default function ApprovalsScreen({
       if (!alive) return;
       if (res.ok && res.entries.length > 0) {
         setAudit(res.entries);
+        setAuditIsSample(false);
       } else {
         setAudit(seedAudit(currentEstimate));
+        setAuditIsSample(true);
       }
       setLoaded(true);
     })();
@@ -490,7 +494,19 @@ export default function ApprovalsScreen({
             {!loaded ? (
               <div style={{ textAlign: "center" as const, padding: "40px 0", color: C.muted, fontSize: 13 }}>Loading audit trail…</div>
             ) : (
-              <AuditTimeline entries={audit} />
+              <>
+                {auditIsSample && (
+                  <div style={{
+                    display: "inline-flex", alignItems: "center", gap: 6,
+                    padding: "6px 12px", borderRadius: 20, marginBottom: 10,
+                    background: `${C.amber}18`, color: C.amber, border: `1px solid ${C.amber}55`,
+                    fontSize: 12, fontWeight: 600,
+                  }}>
+                    Sample audit trail — no stored activity yet
+                  </div>
+                )}
+                <AuditTimeline entries={audit} />
+              </>
             )}
             <button
               onClick={handleSendForApproval}

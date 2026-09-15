@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   useProjects,
   statusPalette,
@@ -48,6 +48,8 @@ type Tab = "overview" | "upload" | "estimate" | "schedule" | "approvals" | "vari
 interface Props {
   projectId: string;
   onBack: () => void;
+  initialTab?: Tab;
+  initialEstimateId?: string;
 }
 
 const fmtMoney = (n: number) =>
@@ -87,12 +89,27 @@ const LABELS: Record<string, string> = {
   EV_CHARGER: "EV Charger",
 };
 
-const ProjectDetail: React.FC<Props> = ({ projectId, onBack }) => {
+const ProjectDetail: React.FC<Props> = ({ projectId, onBack, initialTab, initialEstimateId }) => {
   const { projects, updateProject, addScanToProject, saveEstimate, newEstimateId } = useProjects();
   const project = projects.find(p => p.id === projectId);
-  const [tab, setTab] = useState<Tab>("overview");
+  const [tab, setTab] = useState<Tab>(() =>
+    initialTab && ["overview", "upload", "estimate", "schedule", "approvals", "variations"].includes(initialTab)
+      ? initialTab
+      : "overview",
+  );
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(project?.name ?? "");
+  const [selectedEstimateId, setSelectedEstimateId] = useState<string | undefined>(initialEstimateId);
+
+  useEffect(() => {
+    if (initialTab && ["overview", "upload", "estimate", "schedule", "approvals", "variations"].includes(initialTab)) {
+      setTab(initialTab);
+    }
+    if (initialEstimateId) {
+      setSelectedEstimateId(initialEstimateId);
+      setTab("estimate");
+    }
+  }, [initialTab, initialEstimateId]);
 
   if (!project) {
     return (
@@ -329,6 +346,8 @@ const ProjectDetail: React.FC<Props> = ({ projectId, onBack }) => {
         {tab === "estimate" && (
           <EstimateTab
             project={project}
+            selectedEstimateId={selectedEstimateId}
+            onSelectEstimate={setSelectedEstimateId}
             onCreateEstimate={() => {
               const id = newEstimateId();
               const est: ProjectEstimate = {
@@ -347,6 +366,7 @@ const ProjectDetail: React.FC<Props> = ({ projectId, onBack }) => {
                 versions: [],
               };
               saveEstimate(project.id, est);
+              setSelectedEstimateId(id);
               void peekNextReference().then(reference => {
                 saveEstimate(project.id, { ...est, reference });
               });
@@ -1196,9 +1216,14 @@ const UploadTab: React.FC<{
 const EstimateTab: React.FC<{
   project: Project;
   onCreateEstimate: () => void;
-}> = ({ project, onCreateEstimate }) => {
+  selectedEstimateId?: string;
+  onSelectEstimate: (id: string) => void;
+}> = ({ project, onCreateEstimate, selectedEstimateId, onSelectEstimate }) => {
+  const { saveEstimate } = useProjects();
   const latest = project.estimates[project.estimates.length - 1];
-  if (!latest) {
+  const active =
+    project.estimates.find(e => e.id === selectedEstimateId) ?? latest;
+  if (!latest || !active) {
     return (
       <div
         style={{
@@ -1263,7 +1288,7 @@ const EstimateTab: React.FC<{
       >
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            {latest.reference && (
+            {active.reference && (
               <span
                 title="Tenant reference (EST-YYMM-XXXX)"
                 style={{
@@ -1277,18 +1302,18 @@ const EstimateTab: React.FC<{
                   letterSpacing: 0.5,
                 }}
               >
-                {latest.reference}
+                {active.reference}
               </span>
             )}
-            <div style={{ fontSize: 15, fontWeight: 700 }}>{latest.number}</div>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>{active.number}</div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
             <div style={{ fontSize: 12, color: C.muted }}>
-              Updated {fmtDateTime(latest.updatedAt)}
+              Updated {fmtDateTime(active.updatedAt)}
             </div>
-            {latest.wholesaleQuoteSentAt && (() => {
-              const status = latest.wholesaleQuoteStatus ?? "sent";
-              const supplier = latest.wholesaleQuoteSentTo ?? "Wholesaler";
+            {active.wholesaleQuoteSentAt && (() => {
+              const status = active.wholesaleQuoteStatus ?? "sent";
+              const supplier = active.wholesaleQuoteSentTo ?? "Wholesaler";
               const STATES: Array<{
                 key: "sent" | "received" | "ordered";
                 icon: string;
@@ -1306,18 +1331,18 @@ const EstimateTab: React.FC<{
               const next = STATES[idx + 1];
               const timestamp =
                 status === "ordered"
-                  ? latest.wholesaleQuoteOrderedAt
+                  ? active.wholesaleQuoteOrderedAt
                   : status === "received"
-                  ? latest.wholesaleQuoteReceivedAt
-                  : latest.wholesaleQuoteSentAt;
+                  ? active.wholesaleQuoteReceivedAt
+                  : active.wholesaleQuoteSentAt;
               const advanceStatus = () => {
                 if (!next) return;
                 const now = new Date().toISOString();
                 saveEstimate(project.id, {
-                  ...latest,
+                  ...active,
                   wholesaleQuoteStatus: next.key,
-                  wholesaleQuoteReceivedAt: next.key === "received" ? now : latest.wholesaleQuoteReceivedAt,
-                  wholesaleQuoteOrderedAt: next.key === "ordered" ? now : latest.wholesaleQuoteOrderedAt,
+                  wholesaleQuoteReceivedAt: next.key === "received" ? now : active.wholesaleQuoteReceivedAt,
+                  wholesaleQuoteOrderedAt: next.key === "ordered" ? now : active.wholesaleQuoteOrderedAt,
                   updatedAt: now,
                 });
               };
@@ -1338,85 +1363,107 @@ const EstimateTab: React.FC<{
                     userSelect: "none",
                   }}
                 >
-                  {current.icon} {current.label} · {supplier} · {fmtDateTime(timestamp ?? latest.wholesaleQuoteSentAt ?? "")}
+                  {current.icon} {current.label} · {supplier} · {fmtDateTime(timestamp ?? active.wholesaleQuoteSentAt ?? "")}
                   {next && <span style={{ opacity: 0.65, marginLeft: 4 }}>›</span>}
                 </span>
               );
             })()}
           </div>
         </div>
-      </div>
-
-      {project.estimates.length > 1 && (
-        <div
+        <button
+          onClick={onCreateEstimate}
           style={{
-            background: C.card,
-            border: `1px solid ${C.border}`,
-            borderRadius: 12,
-            overflow: "hidden",
-            marginBottom: 14,
+            background: `${C.blue}22`,
+            color: C.blue,
+            border: `1px solid ${C.blue}`,
+            padding: "8px 12px",
+            fontSize: 12,
+            fontWeight: 700,
+            borderRadius: 8,
+            cursor: "pointer",
           }}
         >
-          <div
-            style={{
-              padding: "10px 14px",
-              borderBottom: `1px solid ${C.border}`,
-              fontSize: 10,
-              fontWeight: 700,
-              color: C.dim,
-              letterSpacing: 0.8,
-              textTransform: "uppercase",
-            }}
-          >
-            All estimates ({project.estimates.length})
-          </div>
-          <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ background: C.bg }}>
-                <th style={{ textAlign: "left", padding: "8px 14px", fontSize: 10, fontWeight: 700, letterSpacing: 0.8, color: C.dim, textTransform: "uppercase" }}>Reference</th>
-                <th style={{ textAlign: "left", padding: "8px 14px", fontSize: 10, fontWeight: 700, letterSpacing: 0.8, color: C.dim, textTransform: "uppercase" }}>Number</th>
-                <th style={{ textAlign: "left", padding: "8px 14px", fontSize: 10, fontWeight: 700, letterSpacing: 0.8, color: C.dim, textTransform: "uppercase" }}>Created</th>
-                <th style={{ textAlign: "left", padding: "8px 14px", fontSize: 10, fontWeight: 700, letterSpacing: 0.8, color: C.dim, textTransform: "uppercase" }}>Status</th>
-                <th style={{ textAlign: "right", padding: "8px 14px", fontSize: 10, fontWeight: 700, letterSpacing: 0.8, color: C.dim, textTransform: "uppercase" }}>Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {project.estimates.map(e => {
-                const t = estimateTotals(e);
-                return (
-                  <tr key={e.id} style={{ borderTop: `1px solid ${C.border}` }}>
-                    <td style={{ padding: "9px 14px", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontWeight: 700, color: e.reference ? C.blue : C.muted }}>
-                      {e.reference ?? "—"}
-                    </td>
-                    <td style={{ padding: "9px 14px", color: C.muted, fontSize: 12 }}>{e.number}</td>
-                    <td style={{ padding: "9px 14px", color: C.muted, fontSize: 12 }}>{fmtDate(e.createdAt)}</td>
-                    <td style={{ padding: "9px 14px" }}>
-                      <span
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 700,
-                          padding: "2px 8px",
-                          borderRadius: 12,
-                          background: e.locked ? `${C.green}18` : `${C.amber}18`,
-                          color: e.locked ? C.green : C.amber,
-                          border: `1px solid ${e.locked ? C.green + "33" : C.amber + "33"}`,
-                        }}
-                      >
-                        {e.locked ? "Locked" : "Draft"}
-                      </span>
-                    </td>
-                    <td style={{ padding: "9px 14px", textAlign: "right", fontWeight: 700, color: C.text }}>
-                      {fmtMoney(t.total)}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+          ＋ New estimate
+        </button>
+      </div>
 
-      <ProjectEstimateEditor projectId={project.id} estimateId={latest.id} />
+      <div
+        style={{
+          background: C.card,
+          border: `1px solid ${C.border}`,
+          borderRadius: 12,
+          overflow: "hidden",
+          marginBottom: 14,
+        }}
+      >
+        <div
+          style={{
+            padding: "10px 14px",
+            borderBottom: `1px solid ${C.border}`,
+            fontSize: 10,
+            fontWeight: 700,
+            color: C.dim,
+            letterSpacing: 0.8,
+            textTransform: "uppercase",
+          }}
+        >
+          All estimates ({project.estimates.length}) — click a row to open
+        </div>
+        <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ background: C.bg }}>
+              <th style={{ textAlign: "left", padding: "8px 14px", fontSize: 10, fontWeight: 700, letterSpacing: 0.8, color: C.dim, textTransform: "uppercase" }}>Reference</th>
+              <th style={{ textAlign: "left", padding: "8px 14px", fontSize: 10, fontWeight: 700, letterSpacing: 0.8, color: C.dim, textTransform: "uppercase" }}>Number</th>
+              <th style={{ textAlign: "left", padding: "8px 14px", fontSize: 10, fontWeight: 700, letterSpacing: 0.8, color: C.dim, textTransform: "uppercase" }}>Created</th>
+              <th style={{ textAlign: "left", padding: "8px 14px", fontSize: 10, fontWeight: 700, letterSpacing: 0.8, color: C.dim, textTransform: "uppercase" }}>Status</th>
+              <th style={{ textAlign: "right", padding: "8px 14px", fontSize: 10, fontWeight: 700, letterSpacing: 0.8, color: C.dim, textTransform: "uppercase" }}>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {project.estimates.map(e => {
+              const t = estimateTotals(e);
+              const isActive = e.id === active.id;
+              return (
+                <tr
+                  key={e.id}
+                  onClick={() => onSelectEstimate(e.id)}
+                  style={{
+                    borderTop: `1px solid ${C.border}`,
+                    cursor: "pointer",
+                    background: isActive ? `${C.blue}18` : "transparent",
+                  }}
+                >
+                  <td style={{ padding: "9px 14px", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontWeight: 700, color: e.reference ? C.blue : C.muted }}>
+                    {e.reference ?? "—"}
+                  </td>
+                  <td style={{ padding: "9px 14px", color: C.muted, fontSize: 12 }}>{e.number}</td>
+                  <td style={{ padding: "9px 14px", color: C.muted, fontSize: 12 }}>{fmtDate(e.createdAt)}</td>
+                  <td style={{ padding: "9px 14px" }}>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 700,
+                        padding: "2px 8px",
+                        borderRadius: 12,
+                        background: e.locked ? `${C.green}18` : `${C.amber}18`,
+                        color: e.locked ? C.green : C.amber,
+                        border: `1px solid ${e.locked ? C.green + "33" : C.amber + "33"}`,
+                      }}
+                    >
+                      {e.locked ? "Locked" : "Draft"}
+                    </span>
+                  </td>
+                  <td style={{ padding: "9px 14px", textAlign: "right", fontWeight: 700, color: C.text }}>
+                    {fmtMoney(t.total)}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <ProjectEstimateEditor projectId={project.id} estimateId={active.id} />
     </div>
   );
 };
