@@ -56,7 +56,7 @@ export const C = {
 
   // Semantic — tuned for contrast on the navy surface
   blue:       "#4B8FFF", blueSoft:  "#16294a",  // Sent / informational
-  green:      "#00C48C", greenSoft: "#0d3a30",  // Approved / Aries online / materials
+  green:      "#00C48C", greenSoft: "#0d3a30",  // Approved / materials
   amber:      "#FFB020", amberSoft: "#3a2c10",  // Needs review / warning
 } as const;
 
