@@ -3,8 +3,7 @@
  *
  * Anthropic design-system layout:
  *   ┌───────────┬────────────────────────────────────────┐
- *   │           │ TopBar (search ⌘K, Aries pill, bell,   │
- *   │           │  New scan CTA)                         │
+ *   │           │ TopBar (search ⌘K, bell, New scan CTA) │
  *   │  Sidebar  ├────────────────────────────────────────┤
  *   │  (240)    │                                        │
  *   │           │  <Outlet /> — the routed screen        │
@@ -292,33 +291,6 @@ function TopBar() {
 
       {/* Right-side cluster */}
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        {/* Aries online pill — pulse animation signals live AI agent */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 7,
-            padding: "6px 12px",
-            borderRadius: 20,
-            backgroundColor: C.greenSoft,
-            color: C.green,
-            fontFamily: FONT.heading,
-            fontSize: 12,
-            fontWeight: 500,
-          }}
-        >
-          <span
-            className="pulse"
-            style={{
-              width: 6,
-              height: 6,
-              borderRadius: "50%",
-              backgroundColor: C.green,
-            }}
-          />
-          Aries online
-        </div>
-
         {/* Notifications */}
         <button
           className="es-btn-ghost"

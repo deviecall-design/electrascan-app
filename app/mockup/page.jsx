@@ -282,10 +282,6 @@ function TopBar({ onCommand, go }) {
       </button>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 12px', borderRadius: 20, backgroundColor: C.greenSoft, color: C.green, fontFamily: fontHeading, fontSize: 12, fontWeight: 500 }}>
-          <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: C.green }} className="pulse" />
-          Aries online
-        </div>
         <button className="es-btn-ghost" style={{ position: 'relative', padding: 8, borderRadius: 6 }}>
           <Bell size={16} />
           <span style={{ position: 'absolute', top: 6, right: 6, width: 6, height: 6, borderRadius: '50%', backgroundColor: C.orange }} />
