@@ -15,6 +15,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import * as pdfjsLib from "pdfjs-dist";
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 import { mapLegendItem, type CatalogueItem } from "./vesh_catalogue";
+import { inferAnalyzeType } from "./lib/reviewClassification";
 import { supabase } from "./services/supabaseClient";
 
 // Model used for both detection passes. Kept in one place because model IDs get
@@ -399,6 +400,21 @@ function matchToVesh(description: string): {
   componentType: ComponentType;
   automationFlag: boolean;
 } {
+  // Distribution boards must win before catalogue search: "board" fuzzy-matches
+  // "plasterboard downlight" and used to type every EDB as lighting (badge LT).
+  const inferred = inferAnalyzeType(description);
+  if (
+    inferred?.componentType === "SWITCHBOARD_MAIN" ||
+    inferred?.componentType === "SWITCHBOARD_SUB"
+  ) {
+    return {
+      catalogueItem: null,
+      price: inferred.price,
+      componentType: inferred.componentType as ComponentType,
+      automationFlag: false,
+    };
+  }
+
   const match = mapLegendItem(description);
   if (match) {
     return {
@@ -406,6 +422,15 @@ function matchToVesh(description: string): {
       price: match.price,
       componentType: match.componentType as ComponentType,
       automationFlag: match.automationFlag ?? false,
+    };
+  }
+
+  if (inferred) {
+    return {
+      catalogueItem: null,
+      price: inferred.price,
+      componentType: inferred.componentType as ComponentType,
+      automationFlag: inferred.componentType === "AUTOMATION_HUB",
     };
   }
 
@@ -490,7 +515,8 @@ function buildComponents(legendItems: LegendItem[], roomComponents: any[]): Dete
       legendItem = legendItems.find(l => l.mapped_type === c.type && l.in_electrical_scope);
     }
 
-    const price = legendItem?.catalogue_price ?? FALLBACK_PRICING[c.type as ComponentType] ?? 200;
+    const resolvedType = (legendItem?.mapped_type ?? c.type ?? "DOWNLIGHT_RECESSED") as ComponentType;
+    const price = legendItem?.catalogue_price ?? FALLBACK_PRICING[resolvedType] ?? 200;
     const qty = c.quantity ?? 1;
     const flags: DetectionFlag[] = [...(c.flags ?? [])];
     if (legendItem?.automation_flag && !flags.includes("AUTOMATION_DEPENDENCY")) {
@@ -498,7 +524,7 @@ function buildComponents(legendItems: LegendItem[], roomComponents: any[]): Dete
     }
 
     components.push({
-      type: (c.type ?? "DOWNLIGHT_RECESSED") as ComponentType,
+      type: resolvedType,
       quantity: qty,
       room: c.room ?? "General",
       drawing_ref: c.drawing_ref ?? "",

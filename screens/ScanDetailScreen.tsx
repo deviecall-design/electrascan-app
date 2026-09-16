@@ -29,7 +29,6 @@ import {
   AlertCircle,
   AlertTriangle,
   HelpCircle,
-  XCircle,
   ChevronDown,
   ChevronUp,
   Lock,
@@ -55,6 +54,17 @@ import {
 } from "../components/ui/anthropic";
 import { PrimaryButton, GhostButton } from "../components/ui/anthropic/Button";
 import { getActiveCompanyProfile } from "../services/companyProfile";
+import {
+  REVIEW_CATEGORIES,
+  type ReviewSuggestion,
+  displayRoom,
+  getConfidenceMeta,
+  getConfidenceState,
+  groupSuggestionsByCategory,
+  mapComponentToReviewFields,
+  shouldQueueForReview,
+  suggestReviewItem,
+} from "../lib/reviewClassification";
 
 // ─── Mock data ──────────────────────────────────────────────────────────
 // TODO: Replace DETECTED_ITEMS with streamed output from analyze_pdf.ts /
@@ -79,21 +89,10 @@ interface DetectedItem {
   unitPrice?: number;
   /** Real category from the detected component type, for the quote breakdown. */
   category?: string;
-}
-
-// Groups a raw ComponentType into the buckets shown on the quote. Derived from
-// what was actually detected rather than from fixed ratios of the subtotal.
-function categoryFor(type: string): string {
-  const t = (type || "").toUpperCase();
-  if (t.startsWith("GPO")) return "Power outlets";
-  if (t.startsWith("DOWNLIGHT") || t.startsWith("PENDANT") || t.startsWith("LIGHT")) return "Lighting";
-  if (t.startsWith("SWITCHING")) return "Switching & dimming";
-  if (t.startsWith("DATA")) return "Data & comms";
-  if (t.startsWith("SWITCHBOARD")) return "Distribution board";
-  if (t.startsWith("SECURITY") || t.startsWith("SMOKE")) return "Safety & compliance";
-  if (t.startsWith("EXHAUST") || t.startsWith("AC_")) return "Ventilation & climate";
-  if (t.startsWith("EV_") || t.startsWith("POOL") || t.startsWith("GATE") || t.startsWith("AUTOMATION")) return "Specialist & automation";
-  return "Other";
+  /** Room / location from the detector — never a hardcoded "Level 2". */
+  room?: string;
+  /** Raw analyze_pdf ComponentType, when we have one. */
+  detectedType?: string;
 }
 
 /** Line total for an item: catalogue price when known, demo rates otherwise. */
@@ -114,7 +113,7 @@ const DETECTED_ITEMS: DetectedItem[] = [
   { id: 3,  symbol: "LT",  qty: 22, desc: "LED downlight",              rateCode: "LT-001",  conf: 0.96, x: 210, y: 210 },
   { id: 4,  symbol: "SW",  qty: 9,  desc: "2-way light switch",         rateCode: "SW-002",  conf: 0.91, x: 85,  y: 280 },
   { id: 5,  symbol: "SW",  qty: 3,  desc: "Dimmer switch",              rateCode: "SW-003",  conf: 0.72, x: 340, y: 260 },
-  { id: 6,  symbol: "DB",  qty: 1,  desc: "12-way distribution board",  rateCode: "SB-002",  conf: 0.99, x: 60,  y: 70  },
+  { id: 6,  symbol: "EDB", qty: 1,  desc: "Electrical distribution board", rateCode: "SB-002", conf: 0.85, x: 60,  y: 70, detectedType: "SWITCHBOARD_MAIN", category: "Distribution board" },
   { id: 7,  symbol: "SA",  qty: 5,  desc: "Smoke alarm",                rateCode: "SA-001",  conf: 0.95, x: 290, y: 180 },
   { id: 8,  symbol: "FN",  qty: 3,  desc: "Bathroom exhaust fan",       rateCode: "FN-001",  conf: 0.88, x: 440, y: 220 },
   { id: 9,  symbol: "DC",  qty: 6,  desc: "Cat6A data point",           rateCode: "DC-001",  conf: 0.93, x: 180, y: 320 },
@@ -143,17 +142,6 @@ function mapDetectionToItems(detection: DetectionResult | null | undefined): Det
   if (!detection || !Array.isArray(detection.components) || detection.components.length === 0) {
     return [];
   }
-  const symbolMap: Record<string, string> = {
-    GPO_STANDARD: "GPO", GPO_DOUBLE: "GPO", GPO_WEATHERPROOF: "GPO", GPO_USB: "GPO",
-    DOWNLIGHT_RECESSED: "LT", PENDANT_FEATURE: "LT", EXHAUST_FAN: "FN",
-    SWITCHING_STANDARD: "SW", SWITCHING_DIMMER: "SW", SWITCHING_2WAY: "SW",
-    SWITCHBOARD_MAIN: "DB", SWITCHBOARD_SUB: "DB",
-    DATA_CAT6: "DC", DATA_TV: "DC",
-    AC_SPLIT: "FN", AC_DUCTED: "FN",
-    SECURITY_CCTV: "SA", SECURITY_INTERCOM: "SA", SECURITY_ALARM: "SA",
-    EV_CHARGER: "EX", POOL_OUTDOOR: "EX", GATE_ACCESS: "EX",
-    AUTOMATION_HUB: "DC",
-  };
   const rateMap: Record<string, string> = {
     GPO_STANDARD: "GPO-004", GPO_DOUBLE: "GPO-001", GPO_WEATHERPROOF: "GPO-003", GPO_USB: "GPO-002",
     DOWNLIGHT_RECESSED: "LT-001", PENDANT_FEATURE: "LT-005", EXHAUST_FAN: "FN-001",
@@ -166,15 +154,12 @@ function mapDetectionToItems(detection: DetectionResult | null | undefined): Det
     AUTOMATION_HUB: "DC-003",
   };
   return detection.components.map((c, i) => {
-    const label = (c.catalogue_item_name || c.type || "Unknown item")
-      .replace(/_/g, " ")
-      .toLowerCase()
-      .replace(/^\w/, (ch: string) => ch.toUpperCase());
+    const fields = mapComponentToReviewFields(c);
     return {
       id: i + 1,
-      symbol: symbolMap[c.type] ?? "EL",
+      symbol: fields.symbol,
       qty: c.quantity,
-      desc: label,
+      desc: fields.desc,
       // No rateMap entry means we genuinely do not know the rate code. Leaving
       // it blank marks the line "price required"; defaulting to GPO-001 (as
       // this did) silently priced switchboards and EV chargers as double GPOs.
@@ -183,7 +168,9 @@ function mapDetectionToItems(detection: DetectionResult | null | undefined): Det
       x: 60 + ((i * 73) % 420),
       y: 60 + ((i * 61) % 280),
       unitPrice: typeof c.unit_price === "number" ? c.unit_price : undefined,
-      category: categoryFor(c.type),
+      category: fields.quoteCategory,
+      room: c.room,
+      detectedType: c.type,
     };
   });
 }
@@ -662,63 +649,49 @@ function StepDetecting({ onNext, items: propItems }: { onNext: () => void; items
 
 type ConfidenceState = "recognised" | "low_confidence" | "unrecognised" | "unclear";
 
-const CONF_STATE_CONFIG: Record<ConfidenceState, {
-  label: string;
-  icon: React.ReactNode;
-  color: string;
-  bg: string;
-  border: string;
-}> = {
-  recognised: {
-    label: "Recognised",
+const CONF_TONE: Record<string, { icon: React.ReactNode; color: string; bg: string; border: string }> = {
+  green: {
     icon: <Check size={11} strokeWidth={3} />,
     color: "#10B981",
     bg: "#F0FDF4",
     border: "#10B981",
   },
-  low_confidence: {
-    label: "Low Confidence",
+  amber: {
     icon: <AlertTriangle size={11} />,
-    color: "#F59E0B",
+    color: "#B45309",
     bg: "#FFFBEB",
     border: "#F59E0B",
   },
-  unrecognised: {
-    label: "Unrecognised",
-    icon: <HelpCircle size={11} />,
-    color: "#EF4444",
-    bg: "#FEF2F2",
-    border: "#EF4444",
+  orange: {
+    icon: <AlertTriangle size={11} />,
+    color: "#C2410C",
+    bg: "#FFF7ED",
+    border: "#FB923C",
   },
-  unclear: {
-    label: "Unclear",
-    icon: <XCircle size={11} />,
+  red: {
+    icon: <HelpCircle size={11} />,
     color: "#EF4444",
     bg: "#FEF2F2",
     border: "#EF4444",
   },
 };
 
-function getConfidenceState(conf: number): ConfidenceState {
-  if (conf >= 0.90) return "recognised";
-  if (conf >= 0.60) return "low_confidence";
-  if (conf > 0.0)   return "unrecognised";
-  return "unclear";
-}
-
 function ConfStateBadge({ conf }: { conf: number }) {
-  const state = getConfidenceState(conf);
-  const cfg = CONF_STATE_CONFIG[state];
+  const meta = getConfidenceMeta(conf);
+  const cfg = CONF_TONE[meta.tone];
   return (
-    <span style={{
-      display: "inline-flex", alignItems: "center", gap: 4,
-      fontSize: 11, fontFamily: FONT.heading, fontWeight: 500,
-      padding: "3px 8px", borderRadius: RADIUS.sm,
-      color: cfg.color, backgroundColor: cfg.bg,
-      border: `1px solid ${cfg.border}`,
-    }}>
+    <span
+      title={meta.hint}
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 4,
+        fontSize: 11, fontFamily: FONT.heading, fontWeight: 500,
+        padding: "3px 8px", borderRadius: RADIUS.sm,
+        color: cfg.color, backgroundColor: cfg.bg,
+        border: `1px solid ${cfg.border}`,
+      }}
+    >
       {cfg.icon}
-      {cfg.label}
+      {meta.label}
     </span>
   );
 }
@@ -734,6 +707,7 @@ interface ReviewQueueItem {
   room: string;
   conf: number;
   state: ConfidenceState;
+  suggestion: ReviewSuggestion;
   resolution: ReviewAction | null;
   classifyData?: {
     category: string;
@@ -743,26 +717,19 @@ interface ReviewQueueItem {
   };
 }
 
-const CATEGORIES = [
-  "Power (GPO, switches)",
-  "Lighting (downlights, strips)",
-  "Automation (blinds, curtains)",
-  "AV / Data",
-  "Security (CCTV, access)",
-  "Solar / Battery",
-  "EV Charging",
-  "Switchboard",
-  "Other",
-];
-
-function ClassifyForm({ onSave, onCancel }: {
+function ClassifyForm({
+  suggestion,
+  onSave,
+  onCancel,
+}: {
+  suggestion: ReviewSuggestion;
   onSave: (data: ReviewQueueItem["classifyData"]) => void;
   onCancel: () => void;
 }) {
-  const [category, setCategory] = useState(CATEGORIES[0]);
-  const [description, setDescription] = useState("");
-  const [qty, setQty] = useState(1);
-  const [rate, setRate] = useState(200);
+  const [category, setCategory] = useState(suggestion.category);
+  const [description, setDescription] = useState(suggestion.description);
+  const [qty, setQty] = useState(suggestion.qty);
+  const [rate, setRate] = useState(suggestion.rate);
 
   return (
     <div style={{
@@ -783,7 +750,7 @@ function ClassifyForm({ onSave, onCancel }: {
               backgroundColor: C.bgCard, color: C.text, fontFamily: FONT.heading,
             }}
           >
-            {CATEGORIES.map(cat => (
+            {REVIEW_CATEGORIES.map(cat => (
               <option key={cat} value={cat}>{cat}</option>
             ))}
           </select>
@@ -794,7 +761,7 @@ function ClassifyForm({ onSave, onCancel }: {
             type="text"
             value={description}
             onChange={e => setDescription(e.target.value)}
-            placeholder="e.g. Recessed downlight"
+            placeholder={suggestion.placeholder}
             style={{
               width: "100%", padding: "6px 8px", fontSize: 13,
               border: `1px solid ${C.border}`, borderRadius: RADIUS.sm,
@@ -836,7 +803,12 @@ function ClassifyForm({ onSave, onCancel }: {
       </div>
       <div style={{ display: "flex", gap: 8 }}>
         <button
-          onClick={() => onSave({ category, description: description || "Unclassified item", qty, rate })}
+          onClick={() => onSave({
+            category,
+            description: description || suggestion.label || "Unclassified item",
+            qty,
+            rate,
+          })}
           style={{
             padding: "7px 14px", fontSize: 12, fontFamily: FONT.heading, fontWeight: 600,
             backgroundColor: C.orange, color: "#fff", border: "none",
@@ -860,31 +832,46 @@ function ClassifyForm({ onSave, onCancel }: {
   );
 }
 
+function classifyPayload(suggestion: ReviewSuggestion): ReviewQueueItem["classifyData"] {
+  return {
+    category: suggestion.category,
+    description: suggestion.description || suggestion.label,
+    qty: suggestion.qty,
+    rate: suggestion.rate,
+  };
+}
+
 function ReviewQueuePanel({
   items,
   onResolve,
+  onResolveMany,
 }: {
   items: ReviewQueueItem[];
   onResolve: (id: number, action: ReviewAction, classifyData?: ReviewQueueItem["classifyData"]) => void;
+  onResolveMany: (ids: number[], action: ReviewAction, classifyData?: ReviewQueueItem["classifyData"]) => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const [classifyingId, setClassifyingId] = useState<number | null>(null);
 
   const unresolvedItems = items.filter(i => i.resolution === null);
-  const blockers = items.filter(i =>
-    (i.state === "unrecognised" || i.state === "unclear") && i.resolution === null
+  const blockers = unresolvedItems.filter(i => getConfidenceMeta(i.conf).blocksLock);
+  const groups = groupSuggestionsByCategory(
+    unresolvedItems.map(item => ({ item, suggestion: item.suggestion })),
   );
 
   if (unresolvedItems.length === 0) return null;
 
+  const headerTone = blockers.length > 0 ? "#EF4444" : "#B45309";
+  const headerBg = blockers.length > 0 ? "#FEF2F2" : "#FFFBEB";
+  const headerBorder = blockers.length > 0 ? "#EF4444" : "#F59E0B";
+
   return (
     <div style={{
-      border: `1px solid #EF4444`,
+      border: `1px solid ${headerBorder}`,
       borderRadius: RADIUS.lg,
       overflow: "hidden",
-      backgroundColor: "#FEF2F2",
+      backgroundColor: headerBg,
     }}>
-      {/* Header */}
       <button
         onClick={() => setCollapsed(c => !c)}
         style={{
@@ -893,106 +880,163 @@ function ReviewQueuePanel({
           cursor: "pointer", gap: 10,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <AlertCircle size={16} color="#EF4444" />
-          <span style={{ fontFamily: FONT.heading, fontSize: 14, fontWeight: 600, color: "#EF4444" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <AlertCircle size={16} color={headerTone} />
+          <span style={{ fontFamily: FONT.heading, fontSize: 14, fontWeight: 600, color: headerTone }}>
             Review Queue
           </span>
           <span style={{
             fontSize: 11, fontFamily: FONT.heading, fontWeight: 700,
-            backgroundColor: "#EF4444", color: "#fff",
+            backgroundColor: headerTone, color: "#fff",
             padding: "2px 8px", borderRadius: RADIUS.pill,
           }}>
-            {unresolvedItems.length} unresolved
+            {unresolvedItems.length} to confirm
+          </span>
+          <span style={{ fontSize: 12, color: headerTone, fontFamily: FONT.heading }}>
+            {groups.length} {groups.length === 1 ? "group" : "groups"} · add by type, then tweak outliers
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {blockers.length > 0 && (
             <span style={{ fontSize: 11, color: "#EF4444", fontFamily: FONT.heading }}>
-              Blocks estimate lock
+              {blockers.length} unrecognised — blocks estimate lock
             </span>
           )}
-          {collapsed ? <ChevronDown size={15} color="#EF4444" /> : <ChevronUp size={15} color="#EF4444" />}
+          {collapsed ? <ChevronDown size={15} color={headerTone} /> : <ChevronUp size={15} color={headerTone} />}
         </div>
       </button>
 
       {!collapsed && (
-        <div style={{ backgroundColor: C.bgCard, borderTop: `1px solid #FECACA` }}>
-          {unresolvedItems.map((item, i) => (
-            <div
-              key={item.id}
-              style={{
-                padding: "14px 16px",
-                borderTop: i > 0 ? `1px solid ${C.border}` : "none",
-              }}
-            >
-              {/* Item header */}
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                    <SymbolBadge symbol={item.symbol} small />
-                    <span style={{ fontFamily: FONT.heading, fontSize: 13, fontWeight: 600 }}>
-                      {item.desc}
-                    </span>
+        <div style={{ backgroundColor: C.bgCard, borderTop: `1px solid ${headerBorder}55` }}>
+          {groups.map(group => {
+            const ids = group.items.map(g => g.item.id);
+            const sample = group.items[0].suggestion;
+            return (
+              <div key={group.category} style={{ borderTop: `1px solid ${C.border}` }}>
+                <div style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  gap: 12, padding: "10px 16px", backgroundColor: C.bgSoft,
+                  flexWrap: "wrap",
+                }}>
+                  <div>
+                    <div style={{ fontFamily: FONT.heading, fontSize: 13, fontWeight: 600 }}>
+                      {group.category}
+                    </div>
+                    <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>
+                      {group.items.length} {group.items.length === 1 ? "item" : "items"}
+                      {" · "}suggested ${sample.rate.toLocaleString()} / unit
+                    </div>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ fontSize: 12, color: C.textMuted }}>{item.room}</span>
-                    <ConfStateBadge conf={item.conf} />
-                    <span style={{ fontFamily: FONT.mono, fontSize: 12, color: C.textSubtle }}>
-                      {Math.round(item.conf * 100)}%
-                    </span>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <button
+                      onClick={() => onResolveMany(ids, "classify")}
+                      style={{
+                        padding: "6px 12px", fontSize: 12, fontFamily: FONT.heading, fontWeight: 600,
+                        backgroundColor: C.orange, color: "#fff",
+                        border: "none", borderRadius: RADIUS.sm, cursor: "pointer",
+                      }}
+                    >
+                      Add all {group.items.length} as {group.category}
+                    </button>
+                    <button
+                      onClick={() => onResolveMany(ids, "not_in_scope")}
+                      style={{
+                        padding: "6px 12px", fontSize: 12, fontFamily: FONT.heading,
+                        backgroundColor: "transparent", color: C.textMuted,
+                        border: `1px solid ${C.border}`, borderRadius: RADIUS.sm, cursor: "pointer",
+                      }}
+                    >
+                      All not in scope
+                    </button>
                   </div>
                 </div>
+
+                {group.items.map(({ item }) => (
+                  <div
+                    key={item.id}
+                    style={{ padding: "14px 16px", borderTop: `1px solid ${C.border}` }}
+                  >
+                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                          <SymbolBadge symbol={item.symbol} small />
+                          <span style={{ fontFamily: FONT.heading, fontSize: 13, fontWeight: 600 }}>
+                            {item.desc}
+                          </span>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 12, color: C.textMuted }}>{item.room}</span>
+                          <ConfStateBadge conf={item.conf} />
+                          <span style={{ fontFamily: FONT.mono, fontSize: 12, color: C.textSubtle }}>
+                            {Math.round((item.conf > 1 ? item.conf : item.conf * 100))}%
+                          </span>
+                          <span style={{ fontSize: 12, color: C.textSubtle }}>
+                            {item.suggestion.category} · ${item.suggestion.rate.toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {classifyingId !== item.id && (
+                      <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+                        <button
+                          onClick={() => onResolve(item.id, "classify", classifyPayload(item.suggestion))}
+                          style={{
+                            padding: "6px 12px", fontSize: 12, fontFamily: FONT.heading, fontWeight: 600,
+                            backgroundColor: C.orange, color: "#fff",
+                            border: "none", borderRadius: RADIUS.sm, cursor: "pointer",
+                          }}
+                        >
+                          Classify & Add
+                        </button>
+                        <button
+                          onClick={() => setClassifyingId(item.id)}
+                          style={{
+                            padding: "6px 12px", fontSize: 12, fontFamily: FONT.heading,
+                            backgroundColor: "transparent", color: C.text,
+                            border: `1px solid ${C.border}`, borderRadius: RADIUS.sm, cursor: "pointer",
+                          }}
+                        >
+                          Adjust
+                        </button>
+                        <button
+                          onClick={() => onResolve(item.id, "not_in_scope")}
+                          style={{
+                            padding: "6px 12px", fontSize: 12, fontFamily: FONT.heading,
+                            backgroundColor: "transparent", color: C.textMuted,
+                            border: `1px solid ${C.border}`, borderRadius: RADIUS.sm, cursor: "pointer",
+                          }}
+                        >
+                          Not In Scope
+                        </button>
+                        <button
+                          onClick={() => onResolve(item.id, "flag_site")}
+                          style={{
+                            padding: "6px 12px", fontSize: 12, fontFamily: FONT.heading,
+                            backgroundColor: C.amberSoft, color: C.amber,
+                            border: `1px solid ${C.amber}`, borderRadius: RADIUS.sm, cursor: "pointer",
+                          }}
+                        >
+                          Flag for Site Check
+                        </button>
+                      </div>
+                    )}
+
+                    {classifyingId === item.id && (
+                      <ClassifyForm
+                        suggestion={item.suggestion}
+                        onSave={data => {
+                          onResolve(item.id, "classify", data);
+                          setClassifyingId(null);
+                        }}
+                        onCancel={() => setClassifyingId(null)}
+                      />
+                    )}
+                  </div>
+                ))}
               </div>
-
-              {/* Action buttons */}
-              {classifyingId !== item.id && (
-                <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
-                  <button
-                    onClick={() => setClassifyingId(item.id)}
-                    style={{
-                      padding: "6px 12px", fontSize: 12, fontFamily: FONT.heading, fontWeight: 600,
-                      backgroundColor: C.orange, color: "#fff",
-                      border: "none", borderRadius: RADIUS.sm, cursor: "pointer",
-                    }}
-                  >
-                    Classify & Add
-                  </button>
-                  <button
-                    onClick={() => onResolve(item.id, "not_in_scope")}
-                    style={{
-                      padding: "6px 12px", fontSize: 12, fontFamily: FONT.heading,
-                      backgroundColor: "transparent", color: C.textMuted,
-                      border: `1px solid ${C.border}`, borderRadius: RADIUS.sm, cursor: "pointer",
-                    }}
-                  >
-                    Not In Scope
-                  </button>
-                  <button
-                    onClick={() => onResolve(item.id, "flag_site")}
-                    style={{
-                      padding: "6px 12px", fontSize: 12, fontFamily: FONT.heading,
-                      backgroundColor: "#FFFBEB", color: "#F59E0B",
-                      border: `1px solid #F59E0B`, borderRadius: RADIUS.sm, cursor: "pointer",
-                    }}
-                  >
-                    Flag for Site Check
-                  </button>
-                </div>
-              )}
-
-              {/* Classify form */}
-              {classifyingId === item.id && (
-                <ClassifyForm
-                  onSave={data => {
-                    onResolve(item.id, "classify", data);
-                    setClassifyingId(null);
-                  }}
-                  onCancel={() => setClassifyingId(null)}
-                />
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -1000,25 +1044,36 @@ function ReviewQueuePanel({
 }
 
 // ─── Step 3: Review ─────────────────────────────────────────────────────
+function buildQueueItem(it: DetectedItem): ReviewQueueItem {
+  const lookup = RATE_LOOKUP[it.rateCode];
+  const fallbackRate = lookup ? lookup.rate + lookup.labour : undefined;
+  const suggestion = suggestReviewItem({
+    description: it.desc,
+    symbol: it.symbol,
+    detectedType: it.detectedType,
+    qty: it.qty,
+    unitPrice: it.unitPrice ?? fallbackRate,
+  });
+  return {
+    id: it.id,
+    symbol: suggestion.symbol,
+    desc: suggestion.label,
+    room: displayRoom(it.room),
+    conf: it.conf,
+    state: getConfidenceState(it.conf),
+    suggestion,
+    resolution: null,
+  };
+}
+
 function StepReview({ onNext, onBack, items: propItems }: { onNext: () => void; onBack: () => void; items?: DetectedItem[] }) {
   const source = propItems && propItems.length > 0 ? propItems : DETECTED_ITEMS;
   const [items, setItems] = useState(
     source.map(it => ({ ...it, ok: false })),
   );
 
-  // Build review queue: items with conf < 0.90 go into the queue
   const [reviewQueue, setReviewQueue] = useState<ReviewQueueItem[]>(
-    source
-      .filter(it => it.conf < 0.90)
-      .map(it => ({
-        id: it.id,
-        symbol: it.symbol,
-        desc: it.desc,
-        room: "Level 2",    // room would come from real scan data
-        conf: it.conf,
-        state: getConfidenceState(it.conf),
-        resolution: null,
-      }))
+    source.filter(it => shouldQueueForReview(it.conf)).map(buildQueueItem),
   );
 
   const toggle = (id: number) =>
@@ -1026,6 +1081,17 @@ function StepReview({ onNext, onBack, items: propItems }: { onNext: () => void; 
 
   const resolveQueueItem = (id: number, action: ReviewAction, classifyData?: ReviewQueueItem["classifyData"]) => {
     setReviewQueue(q => q.map(i => i.id === id ? { ...i, resolution: action, classifyData } : i));
+  };
+
+  const resolveQueueItems = (ids: number[], action: ReviewAction, classifyData?: ReviewQueueItem["classifyData"]) => {
+    const idSet = new Set(ids);
+    setReviewQueue(q => q.map(i => {
+      if (!idSet.has(i.id)) return i;
+      const data = action === "classify"
+        ? (classifyData ?? classifyPayload(i.suggestion))
+        : classifyData;
+      return { ...i, resolution: action, classifyData: data };
+    }));
   };
 
   // Estimate lock is blocked if any Unrecognised or Unclear items are unresolved
@@ -1037,7 +1103,7 @@ function StepReview({ onNext, onBack, items: propItems }: { onNext: () => void; 
   return (
     <div className="anim-in" style={{ display: "grid", gridTemplateColumns: "1fr", gap: 16 }}>
       {/* Review Queue — appears above component table */}
-      <ReviewQueuePanel items={reviewQueue} onResolve={resolveQueueItem} />
+      <ReviewQueuePanel items={reviewQueue} onResolve={resolveQueueItem} onResolveMany={resolveQueueItems} />
 
       <Card>
         <table style={{ width: "100%", fontSize: 14 }}>
