@@ -16,6 +16,7 @@ import {
   Th,
   Td,
   StatusPill,
+  EmptyState,
 } from "../components/ui/anthropic";
 import useSupabaseQuery from "../hooks/useSupabaseQuery";
 import {
@@ -23,6 +24,7 @@ import {
   fetchScans,
   formatScanToQuote,
 } from "../services/supabaseData";
+import { tenantBrandName } from "../services/companyProfile";
 import {
   computeDashboardMoneyStats,
   quotedTotalIncGst,
@@ -36,6 +38,7 @@ import QueryBanner from "../components/QueryBanner";
 
 export default function DashboardScreen() {
   const navigate = useNavigate();
+  const brand = tenantBrandName();
 
   const {
     data: liveEstimates,
@@ -87,12 +90,14 @@ export default function DashboardScreen() {
             lineHeight: 1.15,
           }}
         >
-          Good morning, Damien.
+          Welcome back, {brand}.
         </h1>
         <p style={{ color: C.textMuted, fontStyle: "italic", margin: 0, fontSize: 16 }}>
           {loading
             ? "Loading your pipeline…"
-            : <>You have <B>{displayScans.length} scans</B> in queue and <B>{formatQuotedValue(stats.pendingValue)}</B> in pending estimates.</>}
+            : liveEstimates.length === 0 && liveScans.length === 0
+              ? "Here's what's happening with your estimates — upload a plan to start the first scan."
+              : <>You have <B>{displayScans.length} scans</B> in queue and <B>{formatQuotedValue(stats.pendingValue)}</B> in pending estimates.</>}
         </p>
       </div>
 
@@ -105,15 +110,24 @@ export default function DashboardScreen() {
 
       <div style={{ display: "grid", gridTemplateColumns: "2fr 3fr", gap: 24 }}>
         <section>
-          <SectionHead title="Active scans" cta="View all" onCta={() => navigate("/detection")} />
+          <SectionHead title="Recent scans" cta="View all scans" onCta={() => navigate("/detection")} />
           <Card>
             {loading ? (
               <div style={{ padding: 18, color: C.textMuted, fontStyle: "italic", fontSize: 14 }}>
                 Loading scans…
               </div>
+            ) : liveScans.length === 0 ? (
+              <div style={{ padding: 10 }}>
+                <EmptyState
+                  title="No scans yet"
+                  body="Upload your first plan to start a scan and generate an estimate."
+                  ctaLabel="Upload plan"
+                  onCta={() => navigate("/detection/new")}
+                />
+              </div>
             ) : displayScans.length === 0 ? (
               <div style={{ padding: 18, color: C.textMuted, fontStyle: "italic", fontSize: 14 }}>
-                No scans in progress.
+                No scans in progress — all current jobs are complete.
               </div>
             ) : displayScans.map((s: any, i: number) => (
               <ScanRow
@@ -157,7 +171,7 @@ export default function DashboardScreen() {
             </p>
             <button
               className="es-link"
-              onClick={() => navigate("/pricing-schedule")}
+              onClick={() => navigate(liveEstimates.length === 0 ? "/detection/new" : "/pricing-schedule")}
               style={{
                 marginTop: 10,
                 fontSize: 13,
@@ -169,7 +183,7 @@ export default function DashboardScreen() {
                 gap: 4,
               }}
             >
-              Open rate library <ArrowUpRight size={13} />
+              {liveEstimates.length === 0 ? "Upload plan" : "Open rate library"} <ArrowUpRight size={13} />
             </button>
           </div>
         </section>
@@ -177,6 +191,20 @@ export default function DashboardScreen() {
         <section>
           <SectionHead title="Recent estimates" cta="Open estimates" onCta={() => navigate("/estimate")} />
           <Card>
+            {loading ? (
+              <div style={{ padding: 18, color: C.textMuted, fontStyle: "italic", fontSize: 14 }}>
+                Loading estimates…
+              </div>
+            ) : displayEstimates.length === 0 ? (
+              <div style={{ padding: 10 }}>
+                <EmptyState
+                  title="No estimates yet"
+                  body="Quotes land here after you send one from a scan. Start with a floor plan."
+                  ctaLabel="Upload plan"
+                  onCta={() => navigate("/detection/new")}
+                />
+              </div>
+            ) : (
             <table style={{ width: "100%", fontSize: 14 }}>
               <thead>
                 <tr style={{ backgroundColor: C.bg, borderBottom: `1px solid ${C.border}` }}>
@@ -189,31 +217,7 @@ export default function DashboardScreen() {
                 </tr>
               </thead>
               <tbody>
-                {loading ? (
-                  <tr>
-                    <Td>
-                      <span style={{ fontStyle: "italic", color: C.textMuted }}>Loading estimates…</span>
-                    </Td>
-                    <Td>{""}</Td>
-                    <Td align="right">{""}</Td>
-                    <Td>{""}</Td>
-                    <Td align="right">{""}</Td>
-                    <Td>{""}</Td>
-                  </tr>
-                ) : displayEstimates.length === 0 ? (
-                  <tr>
-                    <Td>
-                      <span style={{ fontStyle: "italic", color: C.textMuted }}>
-                        No estimates yet — send a quote from a scan.
-                      </span>
-                    </Td>
-                    <Td>{""}</Td>
-                    <Td align="right">{""}</Td>
-                    <Td>{""}</Td>
-                    <Td align="right">{""}</Td>
-                    <Td>{""}</Td>
-                  </tr>
-                ) : displayEstimates.map((e: any) => {
+                {displayEstimates.map((e: any) => {
                   const days = daysSinceSent(e);
                   return (
                     <tr
@@ -249,6 +253,7 @@ export default function DashboardScreen() {
                 })}
               </tbody>
             </table>
+            )}
           </Card>
         </section>
       </div>

@@ -452,8 +452,8 @@ function StepUpload({ onNext }: { onNext: (items: DetectedItem[], file: File) =>
       <div
         className="anim-in"
         style={{
-          backgroundColor: "#FEF2F2",
-          border: `2px dashed #EF4444`,
+          backgroundColor: C.bgCard,
+          border: `2px dashed ${C.red}`,
           borderRadius: RADIUS.xl,
           padding: 64,
           display: "flex",
@@ -463,13 +463,13 @@ function StepUpload({ onNext }: { onNext: (items: DetectedItem[], file: File) =>
           textAlign: "center",
         }}
       >
-        <div style={{ width: 56, height: 56, borderRadius: RADIUS.xl, backgroundColor: "#FEE2E2", color: "#EF4444", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ width: 56, height: 56, borderRadius: RADIUS.xl, backgroundColor: C.redSoft, color: C.red, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <AlertCircle size={28} />
         </div>
-        <h2 style={{ fontFamily: FONT.heading, fontSize: 20, fontWeight: 600, margin: 0, color: "#EF4444" }}>
+        <h2 style={{ fontFamily: FONT.heading, fontSize: 20, fontWeight: 600, margin: 0, color: C.red }}>
           Detection failed
         </h2>
-        <p style={{ color: "#B91C1C", fontStyle: "italic", margin: 0, maxWidth: 480 }}>
+        <p style={{ color: C.textMuted, fontStyle: "italic", margin: 0, maxWidth: 480 }}>
           {errorMsg}
         </p>
         <div style={{ display: "flex", gap: 10 }}>
@@ -642,27 +642,27 @@ type ConfidenceState = "recognised" | "low_confidence" | "unrecognised" | "uncle
 const CONF_TONE: Record<string, { icon: React.ReactNode; color: string; bg: string; border: string }> = {
   green: {
     icon: <Check size={11} strokeWidth={3} />,
-    color: "#10B981",
-    bg: "#F0FDF4",
-    border: "#10B981",
+    color: C.green,
+    bg: C.greenSoft,
+    border: C.green,
   },
   amber: {
     icon: <AlertTriangle size={11} />,
-    color: "#B45309",
-    bg: "#FFFBEB",
-    border: "#F59E0B",
+    color: C.amber,
+    bg: C.amberSoft,
+    border: C.amber,
   },
   orange: {
     icon: <AlertTriangle size={11} />,
-    color: "#C2410C",
-    bg: "#FFF7ED",
-    border: "#FB923C",
+    color: C.amber,
+    bg: C.amberSoft,
+    border: C.amber,
   },
   red: {
     icon: <HelpCircle size={11} />,
-    color: "#EF4444",
-    bg: "#FEF2F2",
-    border: "#EF4444",
+    color: C.red,
+    bg: C.redSoft,
+    border: C.red,
   },
 };
 
@@ -851,9 +851,9 @@ function ReviewQueuePanel({
 
   if (unresolvedItems.length === 0) return null;
 
-  const headerTone = blockers.length > 0 ? "#EF4444" : "#B45309";
-  const headerBg = blockers.length > 0 ? "#FEF2F2" : "#FFFBEB";
-  const headerBorder = blockers.length > 0 ? "#EF4444" : "#F59E0B";
+  const headerTone = blockers.length > 0 ? C.red : C.amber;
+  const headerBg = blockers.length > 0 ? C.redSoft : C.amberSoft;
+  const headerBorder = blockers.length > 0 ? C.red : C.amber;
 
   return (
     <div style={{
@@ -888,7 +888,7 @@ function ReviewQueuePanel({
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {blockers.length > 0 && (
-            <span style={{ fontSize: 11, color: "#EF4444", fontFamily: FONT.heading }}>
+            <span style={{ fontSize: 11, color: C.red, fontFamily: FONT.heading }}>
               {blockers.length} unrecognised — blocks estimate lock
             </span>
           )}

@@ -1,24 +1,22 @@
 /**
- * DesktopShell — persistent app chrome for the ElectraScan desktop workflow.
+ * DesktopShell — persistent navy chrome for the ElectraScan desktop workflow.
  *
- * Anthropic design-system layout:
+ * V1 refined navy AppShell:
  *   ┌───────────┬────────────────────────────────────────┐
- *   │           │ TopBar (search ⌘K, bell, New scan CTA) │
+ *   │           │ TopBar (New scan, search ⌘K, bell)     │
  *   │  Sidebar  ├────────────────────────────────────────┤
  *   │  (240)    │                                        │
  *   │           │  <Outlet /> — the routed screen        │
  *   │  Brand    │                                        │
  *   │  Nav      │                                        │
- *   │  Credits  │                                        │
  *   │  User     │                                        │
  *   └───────────┴────────────────────────────────────────┘
  *
- * Sidebar items map to the 6-screen workflow. "Settings" sits below the
- * stack as a secondary destination. The Vision credits card shows the
- * tenant's monthly Claude Vision usage — live data will arrive in Phase 2.
+ * Search opens a real palette. The bell has no fake unread badge.
+ * The old Vision-credits card (hardcoded 847/1,000) is gone — it lied.
  */
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -32,30 +30,35 @@ import {
   Bell,
   Plus,
   Search,
-  Sparkles,
 } from "lucide-react";
 import ElectraScanMark from "./ElectraScanMark";
+import CommandPalette from "./CommandPalette";
 import { C, FONT, RADIUS } from "./tokens";
-import { getActiveCompanyProfile } from "../../services/companyProfile";
+import {
+  getActiveCompanyProfile,
+  tenantBrandName,
+  tenantInitials,
+} from "../../services/companyProfile";
 import NavItem from "../ui/anthropic/NavItem";
+import useSupabaseQuery from "../../hooks/useSupabaseQuery";
+import { fetchEstimates, fetchScans } from "../../services/supabaseData";
+import { buildPaletteItems } from "../../lib/commandPalette";
 
-// ─── Nav config ─────────────────────────────────────────────────────────
-// Kept at module scope so adding a new route is a one-line change.
 interface NavEntry {
   path: string;
   label: string;
   icon: React.ReactNode;
-  badge?: string | number;
+  end?: boolean;
 }
 
 const PRIMARY_NAV: NavEntry[] = [
-  { path: "/dashboard",         label: "Dashboard",        icon: <LayoutDashboard size={16} /> },
-  { path: "/detection",         label: "Detection",        icon: <Scan size={16} /> },
-  { path: "/estimate",          label: "Estimate",         icon: <FileText size={16} /> },
-  { path: "/pricing-schedule",  label: "Pricing Schedule", icon: <BookOpen size={16} /> },
-  { path: "/variation-report",  label: "Variation Report", icon: <FileEdit size={16} /> },
-  { path: "/projects",          label: "Project Reports",  icon: <FolderOpen size={16} /> },
-  { path: "/approvals",         label: "Approvals",        icon: <CheckCircle2 size={16} /> },
+  { path: "/dashboard",        label: "Dashboard",        icon: <LayoutDashboard size={16} />, end: true },
+  { path: "/detection",        label: "Scans",            icon: <Scan size={16} /> },
+  { path: "/estimate",         label: "Estimates",        icon: <FileText size={16} /> },
+  { path: "/pricing-schedule", label: "Rates",            icon: <BookOpen size={16} /> },
+  { path: "/approvals",        label: "Approvals",        icon: <CheckCircle2 size={16} /> },
+  { path: "/variation-report", label: "Variation Report", icon: <FileEdit size={16} /> },
+  { path: "/projects",         label: "Project Reports",  icon: <FolderOpen size={16} /> },
 ];
 
 const SECONDARY_NAV: NavEntry[] = [
@@ -64,11 +67,11 @@ const SECONDARY_NAV: NavEntry[] = [
 
 export default function DesktopShell() {
   return (
-    <div style={{ display: "flex", minHeight: "100vh", color: C.text, fontFamily: FONT.body }}>
+    <div style={{ display: "flex", minHeight: "100vh", color: C.text, fontFamily: FONT.body, backgroundColor: C.bg }}>
       <Sidebar />
-      <main style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+      <main style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", backgroundColor: C.bg }}>
         <TopBar />
-        <div style={{ padding: "36px 32px", maxWidth: 1400, width: "100%", flex: 1 }}>
+        <div style={{ padding: "32px 32px 36px", maxWidth: 1400, width: "100%", flex: 1 }}>
           <Outlet />
         </div>
       </main>
@@ -76,18 +79,10 @@ export default function DesktopShell() {
   );
 }
 
-// ─── Sidebar ────────────────────────────────────────────────────────────
 function Sidebar() {
   const company = getActiveCompanyProfile();
-  const initials = (company.name ?? "")
-    .split(" ")
-    .map((w: string) => w[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-  // Shortened tenant name for the user-chip line 2 (drops "Pty Ltd", "Services")
-  const shortName = (company.name ?? "").replace(" Pty Ltd", "").replace(" Services", "");
+  const brand = tenantBrandName(company);
+  const initials = tenantInitials(company);
 
   return (
     <aside
@@ -96,7 +91,7 @@ function Sidebar() {
         minHeight: "100vh",
         borderRight: `1px solid ${C.border}`,
         backgroundColor: C.bgSoft,
-        padding: "24px 20px",
+        padding: "24px 16px",
         display: "flex",
         flexDirection: "column",
         position: "sticky",
@@ -105,111 +100,53 @@ function Sidebar() {
         flexShrink: 0,
       }}
     >
-      {/* Brand */}
-      <div style={{ padding: "0 6px", marginBottom: 36 }}>
-        <ElectraScanMark size={32} />
+      <div style={{ padding: "0 8px", marginBottom: 32 }}>
+        <ElectraScanMark size={32} subtitle={brand} />
       </div>
 
-      {/* Primary nav */}
-      <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      <nav style={{ display: "flex", flexDirection: "column", gap: 2 }} aria-label="Primary">
         {PRIMARY_NAV.map(item => (
           <NavItem
             key={item.path}
             to={item.path}
+            end={item.end}
             icon={item.icon}
             label={item.label}
-            badge={item.badge}
           />
         ))}
       </nav>
 
-      {/* Vision credits card */}
-      <div
-        style={{
-          marginTop: 28,
-          padding: 14,
-          border: `1px solid ${C.border}`,
-          borderRadius: RADIUS.lg,
-          backgroundColor: C.bgCard,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-          <Sparkles size={13} color={C.orange} />
-          <span
-            style={{
-              fontFamily: FONT.heading,
-              fontSize: 11,
-              fontWeight: 600,
-              letterSpacing: "0.06em",
-              textTransform: "uppercase",
-              color: C.textMuted,
-            }}
-          >
-            Vision credits
-          </span>
-        </div>
-        <div style={{ fontFamily: FONT.heading, fontSize: 20, fontWeight: 600 }}>
-          847{" "}
-          <span style={{ color: C.textSubtle, fontWeight: 400, fontSize: 13 }}>
-            / 1,000
-          </span>
-        </div>
-        <div
-          style={{
-            height: 4,
-            borderRadius: 2,
-            backgroundColor: C.border,
-            marginTop: 8,
-            overflow: "hidden",
-          }}
-        >
-          <div style={{ width: "84.7%", height: "100%", backgroundColor: C.orange }} />
-        </div>
-        <div
-          style={{
-            fontSize: 12,
-            color: C.textMuted,
-            marginTop: 8,
-            fontStyle: "italic",
-          }}
-        >
-          Resets 1 May
-        </div>
-      </div>
-
-      {/* Secondary nav */}
       <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 2 }}>
         {SECONDARY_NAV.map(item => (
           <NavItem key={item.path} to={item.path} icon={item.icon} label={item.label} />
         ))}
       </div>
 
-      {/* User chip — pinned to bottom */}
       <div style={{ marginTop: "auto", borderTop: `1px solid ${C.border}`, paddingTop: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 6px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 8px" }}>
           <div
             style={{
               width: 32,
               height: 32,
               borderRadius: "50%",
-              backgroundColor: C.green,
+              backgroundColor: C.orange,
               color: "#fff",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               fontFamily: FONT.heading,
-              fontWeight: 500,
-              fontSize: 13,
+              fontWeight: 600,
+              fontSize: 12,
               flexShrink: 0,
             }}
           >
             {initials}
           </div>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontFamily: FONT.heading, fontSize: 13, fontWeight: 500 }}>
-              Damien C.
+            <div style={{ fontFamily: FONT.heading, fontSize: 13, fontWeight: 600 }}>
+              {brand}
             </div>
-            <div style={{ fontSize: 12, color: C.textSubtle }}>{shortName}</div>
+            <div style={{ fontSize: 12, color: C.textSubtle }}>Admin</div>
           </div>
         </div>
       </div>
@@ -217,124 +154,176 @@ function Sidebar() {
   );
 }
 
-// ─── Top bar ────────────────────────────────────────────────────────────
 function TopBar() {
   const navigate = useNavigate();
-  const [_paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
+  const notesRef = useRef<HTMLDivElement>(null);
 
-  // ⌘K opens the command palette (placeholder until the full palette lands
-  // in a later phase). Escape closes it. We keep the listener here because
-  // TopBar is always mounted — no need to lift it into the app root.
+  const { data: liveScans } = useSupabaseQuery(fetchScans);
+  const { data: liveEstimates } = useSupabaseQuery(fetchEstimates);
+  const paletteItems = useMemo(
+    () => buildPaletteItems(liveScans, liveEstimates),
+    [liveScans, liveEstimates],
+  );
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
+        setNotesOpen(false);
         setPaletteOpen(o => !o);
       }
-      if (e.key === "Escape") setPaletteOpen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  useEffect(() => {
+    if (!notesOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (notesRef.current && !notesRef.current.contains(e.target as Node)) {
+        setNotesOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [notesOpen]);
+
   return (
     <div
       style={{
         borderBottom: `1px solid ${C.border}`,
-        padding: "14px 32px",
+        padding: "12px 32px",
         display: "flex",
         alignItems: "center",
-        justifyContent: "space-between",
+        justifyContent: "flex-end",
+        gap: 12,
         backgroundColor: C.bg,
         position: "sticky",
         top: 0,
         zIndex: 10,
-        backdropFilter: "blur(8px)",
       }}
     >
-      {/* Command search */}
       <button
-        onClick={() => setPaletteOpen(true)}
+        className="es-btn-primary"
+        onClick={() => navigate("/detection/new")}
+        style={{
+          fontFamily: FONT.heading,
+          fontSize: 14,
+          fontWeight: 500,
+          backgroundColor: C.orange,
+          color: "#fff",
+          padding: "9px 16px",
+          borderRadius: RADIUS.md + 2,
+          display: "flex",
+          alignItems: "center",
+          gap: 7,
+          transition: "background-color 150ms",
+        }}
+      >
+        <Plus size={15} strokeWidth={2.5} /> New scan
+      </button>
+
+      <button
+        type="button"
+        onClick={() => {
+          setNotesOpen(false);
+          setPaletteOpen(true);
+        }}
+        aria-label="Search scans, estimates, plans"
+        aria-keyshortcuts="Meta+K Control+K"
         style={{
           display: "flex",
           alignItems: "center",
           gap: 10,
           color: C.textSubtle,
           fontSize: 14,
-          fontStyle: "italic",
           padding: "8px 14px",
           border: `1px solid ${C.border}`,
           borderRadius: RADIUS.md + 2,
           backgroundColor: C.bgCard,
-          width: 380,
+          width: 320,
           textAlign: "left",
           fontFamily: FONT.body,
         }}
       >
         <Search size={15} />
-        <span>Search estimates, scans, rates…</span>
+        <span style={{ flex: 1 }}>Search scans, estimates, plans…</span>
         <span
           style={{
-            marginLeft: "auto",
             fontFamily: FONT.heading,
             fontSize: 11,
             color: C.textSubtle,
             padding: "2px 6px",
             border: `1px solid ${C.border}`,
             borderRadius: 4,
-            fontStyle: "normal",
           }}
         >
           ⌘K
         </span>
       </button>
 
-      {/* Right-side cluster */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        {/* Notifications */}
+      <div ref={notesRef} style={{ position: "relative" }}>
         <button
+          type="button"
           className="es-btn-ghost"
+          aria-label="Notifications"
+          aria-expanded={notesOpen}
+          aria-haspopup="dialog"
+          onClick={() => {
+            setPaletteOpen(false);
+            setNotesOpen(o => !o);
+          }}
           style={{
             position: "relative",
             padding: 8,
             borderRadius: RADIUS.md,
+            border: `1px solid ${C.border}`,
+            backgroundColor: C.bgCard,
           }}
         >
           <Bell size={16} />
-          <span
+        </button>
+        {notesOpen && (
+          <div
+            role="dialog"
+            aria-label="Notifications"
             style={{
               position: "absolute",
-              top: 6,
-              right: 6,
-              width: 6,
-              height: 6,
-              borderRadius: "50%",
-              backgroundColor: C.orange,
+              right: 0,
+              top: "calc(100% + 8px)",
+              width: 320,
+              backgroundColor: C.bgCard,
+              border: `1px solid ${C.border}`,
+              borderRadius: RADIUS.lg,
+              padding: 16,
+              boxShadow: "0 16px 40px rgba(0,0,0,0.35)",
+              zIndex: 20,
             }}
-          />
-        </button>
-
-        {/* Primary CTA — New scan */}
-        <button
-          className="es-btn-primary"
-          onClick={() => navigate("/detection/new")}
-          style={{
-            fontFamily: FONT.heading,
-            fontSize: 14,
-            fontWeight: 500,
-            backgroundColor: C.orange,
-            color: "#fff",
-            padding: "9px 16px",
-            borderRadius: RADIUS.md,
-            display: "flex",
-            alignItems: "center",
-            gap: 7,
-            transition: "background-color 150ms",
-          }}
-        >
-          <Plus size={15} strokeWidth={2.5} /> New scan
-        </button>
+          >
+            <div
+              style={{
+                fontFamily: FONT.heading,
+                fontSize: 13,
+                fontWeight: 600,
+                marginBottom: 6,
+              }}
+            >
+              Notifications
+            </div>
+            <p style={{ margin: 0, fontSize: 13, color: C.textMuted, lineHeight: 1.55 }}>
+              You&apos;re all caught up. Quote views and approvals will show up here when they happen — there is no unread count until then.
+            </p>
+          </div>
+        )}
       </div>
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        items={paletteItems}
+      />
     </div>
   );
 }

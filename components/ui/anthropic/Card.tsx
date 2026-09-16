@@ -1,5 +1,5 @@
 /**
- * Card — white surface with 1px border and 10px radius. No drop shadow.
+ * Card — navy card surface with 1px border and 10px radius. No drop shadow.
  * The single foundational container on every ElectraScan screen.
  */
 

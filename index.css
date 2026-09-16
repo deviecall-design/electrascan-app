@@ -189,6 +189,8 @@
   --es-green-soft:  #0d3a30;
   --es-amber:       #FFB020;
   --es-amber-soft:  #3a2c10;
+  --es-red:         #EF4444;
+  --es-red-soft:    #3a1518;
 
   /* Typography — loaded via <link> in index.html */
   --es-font-heading: 'Poppins', Arial, sans-serif;
@@ -245,7 +247,13 @@ table {
    mockup. Kept here (not in a utility stylesheet) so a single :hover cascade
    is the only path that can change hover colour. */
 .es-row:hover { background-color: var(--es-bg-soft); }
-.es-nav:hover { background-color: var(--es-border-soft); }
+.es-nav:hover:not([aria-current="page"]) { background-color: var(--es-border-soft); }
+.es-nav[aria-current="page"] {
+  background-color: var(--es-orange);
+  color: #ffffff;
+  font-weight: 600;
+}
+.es-nav[aria-current="page"]:hover { background-color: var(--es-orange-dark); }
 .es-link:hover { color: var(--es-orange-dark); }
 .es-btn-primary:hover { background-color: var(--es-orange-dark) !important; }
 .es-btn-ghost:hover { background-color: var(--es-bg-soft); }

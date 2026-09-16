@@ -18,9 +18,11 @@ interface ElectraScanMarkProps {
   size?: number;
   /** Render just the tile (no text). */
   iconOnly?: boolean;
+  /** Tenant chip under the wordmark, e.g. "Vesh". */
+  subtitle?: string;
 }
 
-export default function ElectraScanMark({ size = 32, iconOnly = false }: ElectraScanMarkProps) {
+export default function ElectraScanMark({ size = 32, iconOnly = false, subtitle }: ElectraScanMarkProps) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
       <div
@@ -39,17 +41,33 @@ export default function ElectraScanMark({ size = 32, iconOnly = false }: Electra
       </div>
 
       {!iconOnly && (
-        <span
-          style={{
-            fontFamily: FONT.heading,
-            fontWeight: 600,
-            fontSize: size * 0.53,
-            letterSpacing: "-0.01em",
-            color: C.text,
-          }}
-        >
-          ElectraScan
-        </span>
+        <div style={{ minWidth: 0 }}>
+          <div
+            style={{
+              fontFamily: FONT.heading,
+              fontWeight: 600,
+              fontSize: size * 0.53,
+              letterSpacing: "-0.01em",
+              color: C.text,
+              lineHeight: 1.15,
+            }}
+          >
+            ElectraScan
+          </div>
+          {subtitle && (
+            <div
+              style={{
+                fontFamily: FONT.heading,
+                fontSize: 12,
+                fontWeight: 500,
+                color: C.textSubtle,
+                marginTop: 1,
+              }}
+            >
+              / {subtitle}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

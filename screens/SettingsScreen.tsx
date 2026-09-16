@@ -176,7 +176,7 @@ export default function SettingsScreen() {
                       fontFamily: FONT.body,
                       fontSize: 14,
                       color: C.text,
-                      backgroundColor: C.bgCard,
+                      backgroundColor: C.bg,
                       border: `1px solid ${C.border}`,
                       borderRadius: RADIUS.md,
                       outline: "none",
