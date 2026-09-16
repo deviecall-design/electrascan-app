@@ -69,7 +69,7 @@ export default function DesktopShell() {
   return (
     <div style={{ display: "flex", minHeight: "100vh", color: C.text, fontFamily: FONT.body, backgroundColor: C.bg }}>
       <Sidebar />
-      <main style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", backgroundColor: C.bg }}>
+      <main style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", backgroundColor: C.bg, overflow: "auto" }}>
         <TopBar />
         <div style={{ padding: "32px 32px 36px", maxWidth: 1400, width: "100%", flex: 1 }}>
           <Outlet />
