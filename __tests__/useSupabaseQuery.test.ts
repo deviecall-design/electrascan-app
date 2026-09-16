@@ -9,12 +9,13 @@ describe('useSupabaseQuery', () => {
     vi.clearAllMocks();
   });
 
-  it('starts with fallback data and loading=true', () => {
+  it('starts empty while loading — never paints sample jobs as the pipeline', () => {
     const fetcher = vi.fn(() => new Promise(() => {})); // never resolves
     const { result } = renderHook(() => useSupabaseQuery(fetcher, MOCK_FALLBACK));
-    expect(result.current.data).toEqual(MOCK_FALLBACK);
+    expect(result.current.data).toEqual([]);
     expect(result.current.loading).toBe(true);
     expect(result.current.isLive).toBe(false);
+    expect(result.current.error).toBe(false);
   });
 
   it('transitions to live data on successful fetch', async () => {
@@ -26,9 +27,10 @@ describe('useSupabaseQuery', () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.data).toEqual(liveData);
     expect(result.current.isLive).toBe(true);
+    expect(result.current.error).toBe(false);
   });
 
-  it('falls back to mock data when Supabase returns an error', async () => {
+  it('uses fallback only after an error, not during loading', async () => {
     const fetcher = vi.fn().mockResolvedValue({ data: null, error: { message: 'table not found' } });
 
     const { result } = renderHook(() => useSupabaseQuery(fetcher, MOCK_FALLBACK));
@@ -36,19 +38,21 @@ describe('useSupabaseQuery', () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.data).toEqual(MOCK_FALLBACK);
     expect(result.current.isLive).toBe(false);
+    expect(result.current.error).toBe(true);
   });
 
-  it('falls back when data is null', async () => {
-    const fetcher = vi.fn().mockResolvedValue({ data: null, error: null });
+  it('stays empty on error when no fallback is passed (Dashboard path)', async () => {
+    const fetcher = vi.fn().mockResolvedValue({ data: null, error: { message: 'table not found' } });
 
-    const { result } = renderHook(() => useSupabaseQuery(fetcher, MOCK_FALLBACK));
+    const { result } = renderHook(() => useSupabaseQuery(fetcher));
 
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(result.current.data).toEqual(MOCK_FALLBACK);
+    expect(result.current.data).toEqual([]);
+    expect(result.current.error).toBe(true);
     expect(result.current.isLive).toBe(false);
   });
 
-  it('does NOT fall back on an empty array — empty live result is valid', async () => {
+  it('does NOT treat an empty array as an error — empty live result is valid', async () => {
     const fetcher = vi.fn().mockResolvedValue({ data: [], error: null });
 
     const { result } = renderHook(() => useSupabaseQuery(fetcher, MOCK_FALLBACK));
@@ -56,22 +60,23 @@ describe('useSupabaseQuery', () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.data).toEqual([]);
     expect(result.current.isLive).toBe(true);
+    expect(result.current.error).toBe(false);
   });
 
-  it('falls back gracefully when fetcher throws', async () => {
+  it('marks error when the fetcher throws, without showing fallback if omitted', async () => {
     const fetcher = vi.fn().mockRejectedValue(new Error('network error'));
 
-    const { result } = renderHook(() => useSupabaseQuery(fetcher, MOCK_FALLBACK));
+    const { result } = renderHook(() => useSupabaseQuery(fetcher));
 
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(result.current.data).toEqual(MOCK_FALLBACK);
-    expect(result.current.isLive).toBe(false);
+    expect(result.current.data).toEqual([]);
+    expect(result.current.error).toBe(true);
   });
 
   it('calls the fetcher exactly once on mount', async () => {
     const fetcher = vi.fn().mockResolvedValue({ data: [], error: null });
 
-    renderHook(() => useSupabaseQuery(fetcher, MOCK_FALLBACK));
+    renderHook(() => useSupabaseQuery(fetcher));
     await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
   });
 });

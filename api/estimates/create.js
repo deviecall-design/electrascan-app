@@ -84,7 +84,10 @@ export default async function handler(req, res) {
 
     const insert = await supabaseFetch('estimates', {
       method: 'POST',
-      body: { ...body, reference },
+      // `ref` is NOT NULL on the original estimates table; `reference` is the
+      // sequential EST-YYMM-XXXX column. Stamp both so Dashboard KPIs and
+      // scans.estimate_ref can join on either name.
+      body: { ...body, reference, ref: body.ref || reference },
       headers: {
         Authorization: auth,
         Prefer: 'return=representation',

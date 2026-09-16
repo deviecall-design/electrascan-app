@@ -21,7 +21,7 @@ import { supabase } from "../services/supabaseClient";
 import { useToast } from "../contexts/ToastContext";
 
 // ─── Constants ──────────────────────────────────────────────────────────
-const ESTIMATE_REF = "EST-26-001-v3";
+const ESTIMATE_REF = "EST-2609-0001";
 const PROJECT_NAME = "Toorak Residential Stage 2";
 const ESTIMATE_VALUE = 187450;
 
@@ -49,7 +49,7 @@ const SIGNATORIES: Signatory[] = [
 ];
 
 const TIMELINE_STEPS = [
-  { label: "Estimate Locked",         sub: "EST-26-001-v3 finalised, read-only",  ts: "31 Mar 2026 · 09:14 AEST", done: true  },
+  { label: "Estimate Locked",         sub: "EST-2609-0001 finalised, read-only",  ts: "31 Mar 2026 · 09:14 AEST", done: true  },
   { label: "Envelope Created & Sent", sub: "Envelope sent via DocuSign",           ts: "Just now",                  done: true  },
   { label: "Builder Signs",           sub: "James Caldwell — awaiting",            ts: null,                        done: false },
   { label: "Architect Signs",         sub: "Sarah Brennan — awaiting",             ts: null,                        done: false },
@@ -61,7 +61,7 @@ const ENVELOPE_PAYLOAD = `// POST https://au.docusign.net/restapi/v2.1
 //   45e21cac0fe5/envelopes
 
 {
-  "emailSubject": "EST-26-001-v3 Approval",
+  "emailSubject": "EST-2609-0001 Approval",
   "status": "sent",
   "sender": "Damien Callaghan",
   "documents": [/* locked estimate PDF */],
@@ -220,6 +220,9 @@ export default function ApprovalsScreen() {
           {ESTIMATE_REF}
         </span>
       </div>
+      <p style={{ color: C.textMuted, fontStyle: "italic", margin: "0 0 8px 0", fontSize: 13 }}>
+        Sample envelope (not a saved Vesh job). Reference format EST-YYMM-XXXX.
+      </p>
       <p style={{ color: C.textMuted, fontStyle: "italic", margin: "0 0 28px 0" }}>
         {PROJECT_NAME} · DocuSign multi-party signing workflow
       </p>

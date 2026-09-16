@@ -300,6 +300,8 @@ export const LEGEND_PATTERNS: LegendPattern[] = [
   { pattern: /32.?a.*cook|cook.*32.?a/i,                         componentType: "COOKTOP_32A" },
   { pattern: /25.?a.*cook|cook.*25.?a/i,                         componentType: "COOKTOP_25A" },
   { pattern: /20.?a.*cook|cook.*20.?a|oven/i,                    componentType: "COOKTOP_20A" },
+  { pattern: /zetr\s*13.*usb|usb.*zetr/i,                        componentType: "GPO_USB" },
+  { pattern: /zetr\s*1[23]|zetr\s+t[23]/i,                       componentType: "GPO_DOUBLE" },
   { pattern: /floor.*box|floor.*point|floor.*gpo/i,              componentType: "GPO_STANDARD" },
   { pattern: /weatherproof|external.*gpo|outdoor.*gpo|wp.*gpo/i, componentType: "GPO_WEATHERPROOF" },
   { pattern: /usb.*gpo|gpo.*usb|usb.*power/i,                    componentType: "GPO_USB" },

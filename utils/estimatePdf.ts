@@ -14,6 +14,7 @@
 
 import jsPDF from "jspdf";
 import { CompanyProfile } from "../services/companyProfile";
+import { computeQuoteTotals, lineTotal as qtyRateTotal } from "../lib/quoteTotals";
 
 // ─── Types ──────────────────────────────────────────────────────────────
 export interface EstimateLineItem {
@@ -273,12 +274,12 @@ function drawEstimateTable(doc: jsPDF, startY: number, items: EstimateLineItem[]
       doc.setFillColor(252, 252, 253);
       doc.rect(PAGE.marginX, y, rightEdge - PAGE.marginX, rowH, "F");
     }
-    const lineTotal = it.qty * it.unitPrice;
+    const rowTotal = qtyRateTotal(it.qty, it.unitPrice);
     doc.setTextColor(...hexToRgb(C.text));
     doc.text(it.description, colX.item, y + 5);
     doc.text(String(it.qty), colX.qty, y + 5, { align: "right" });
     doc.text(money(it.unitPrice), colX.rate, y + 5, { align: "right" });
-    doc.text(money(lineTotal), colX.total, y + 5, { align: "right" });
+    doc.text(money(rowTotal), colX.total, y + 5, { align: "right" });
     y += rowH;
   });
 
@@ -299,10 +300,11 @@ function drawTotals(
   const labelX = 120;
   const valueX = rightEdge - 2;
 
-  const marginAmt = subtotal * (marginPercent / 100);
-  const subM = subtotal + marginAmt;
-  const gst = subM * 0.1;
-  const total = subM + gst;
+  const totals = computeQuoteTotals(subtotal, marginPercent);
+  const marginAmt = totals.marginAmount;
+  const subM = totals.subtotal + totals.marginAmount;
+  const gst = totals.gst;
+  const total = totals.total;
 
   const rows: [string, string, string][] = [
     ["Subtotal ex GST", money(subtotal), C.text],
@@ -387,7 +389,7 @@ export async function generateEstimatePDF(input: EstimatePDFInput): Promise<Blob
   );
   const afterTableY = drawEstimateTable(doc, afterProjectY, input.items);
 
-  const subtotal = input.items.reduce((s, i) => s + i.qty * i.unitPrice, 0);
+  const subtotal = input.items.reduce((s, i) => s + qtyRateTotal(i.qty, i.unitPrice), 0);
   drawTotals(doc, afterTableY, subtotal, input.marginPercent);
 
   drawFooter(doc, input.company);

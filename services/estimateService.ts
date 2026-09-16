@@ -1,5 +1,6 @@
 import { supabase } from './supabaseClient';
 import { getCurrentTenantId } from '../lib/tenants';
+import { quotedTotalIncGst } from '../lib/estimateMoney';
 
 const N8N_WEBHOOK_URL = 'https://damienc13.app.n8n.cloud/webhook/electrascan-estimate';
 
@@ -48,8 +49,8 @@ export async function getDashboardKPIs(): Promise<DashboardKPIs | null> {
         .gte('created_at', monthStart),
       supabase
         .from('estimates')
-        .select('total, status')
-        .in('status', ['draft', 'sent', 'viewed']),
+        .select('value, subtotal, margin_pct, status')
+        .in('status', ['sent', 'viewed']),
       supabase
         .from('estimates')
         .select('status, created_at')
@@ -60,7 +61,7 @@ export async function getDashboardKPIs(): Promise<DashboardKPIs | null> {
     const estimatesThisMonth = thisMonth.count ?? thisMonth.data?.length ?? 0;
 
     const pendingValue = (pending.data ?? []).reduce(
-      (sum: number, r: any) => sum + Number(r.total ?? 0),
+      (sum: number, r: any) => sum + quotedTotalIncGst(r),
       0
     );
 

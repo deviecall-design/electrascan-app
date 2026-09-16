@@ -1,15 +1,16 @@
 /**
- * useSupabaseQuery — tries a Supabase fetch, falls back to mock data.
+ * useSupabaseQuery — fetch a table, then render live rows or an empty list.
  *
- * Usage:
- *   const { data, loading, isLive } = useSupabaseQuery(fetchEstimates, MOCK_ESTIMATES);
+ * Live production walk (15 Sep 2026): Dashboard initialised on Bondi mock
+ * rows (EST-2026-0142, Switchboard_LV2_rev3.pdf @ 72%) then swapped to an
+ * empty list. The amber chip said “Supabase tables not yet created” while
+ * Damien was signed in as Vesh Electrical — tables exist; the account is
+ * empty. That flash is worse than a blank pipeline.
  *
- *   - `data`    → the array to render (Supabase rows if available, else mock)
- *   - `loading` → true during the initial fetch
- *   - `isLive`  → true if the data came from Supabase (false = mock fallback)
- *
- * This pattern means every screen works immediately with hardcoded data and
- * "lights up" the moment the Supabase tables exist + auth is wired.
+ * Contract:
+ *   - loading → empty array (never sample jobs)
+ *   - success (including []) → isLive true
+ *   - error → empty array unless a fallback is passed (rate library only)
  */
 
 import { useState, useEffect } from "react";
@@ -23,16 +24,18 @@ interface QueryState<T> {
   data: T[];
   loading: boolean;
   isLive: boolean;
+  error: boolean;
 }
 
 export default function useSupabaseQuery<T>(
   fetcher: () => Promise<SupabaseResult<T>>,
-  fallback: T[],
+  fallback?: T[],
 ): QueryState<T> {
   const [state, setState] = useState<QueryState<T>>({
-    data: fallback,
+    data: [],
     loading: true,
     isLive: false,
+    error: false,
   });
 
   useEffect(() => {
@@ -41,18 +44,25 @@ export default function useSupabaseQuery<T>(
     fetcher()
       .then(({ data, error }) => {
         if (cancelled) return;
-        // An empty array is a valid live answer — a real account with no rows
-        // yet must show a genuine empty state, not sample data dressed up as
-        // the user's own. Only a failed fetch falls back.
         if (error || !data) {
-          setState({ data: fallback, loading: false, isLive: false });
+          setState({
+            data: fallback ?? [],
+            loading: false,
+            isLive: false,
+            error: true,
+          });
         } else {
-          setState({ data, loading: false, isLive: true });
+          setState({ data, loading: false, isLive: true, error: false });
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setState({ data: fallback, loading: false, isLive: false });
+          setState({
+            data: fallback ?? [],
+            loading: false,
+            isLive: false,
+            error: true,
+          });
         }
       });
 

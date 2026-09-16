@@ -11,7 +11,8 @@
  *
  *   /dashboard          — project pipeline overview
  *   /detection          — upload + AI scan + review detected components
- *   /estimate           — build / edit / lock estimates
+ *   /estimate           — estimate list (GST-inclusive quoted totals)
+ *   /estimate/new       — starts a scan (the live quote path)
  *   /pricing-schedule   — per-tenant rate library
  *   /variation-report   — scan → diff against prior estimate
  *   /approvals          — DocuSign multi-party signing workflow
@@ -46,6 +47,7 @@ export default function DesktopApp() {
           <Route path="/detection"         element={<DetectionScreen />} />
           <Route path="/detection/:id"     element={<ScanDetailScreen />} />
           <Route path="/estimate"          element={<EstimateScreen />} />
+          <Route path="/estimate/new"      element={<Navigate to="/detection/new" replace />} />
           <Route path="/pricing-schedule"  element={<PricingScheduleScreen />} />
           <Route path="/variation-report"  element={<VariationReportScreen />} />
           <Route path="/approvals"         element={<ApprovalsScreen />} />
