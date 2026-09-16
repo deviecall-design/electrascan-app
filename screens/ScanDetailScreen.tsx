@@ -519,7 +519,7 @@ function StepUpload({ onNext }: { onNext: (items: DetectedItem[], file: File) =>
         Drop your floor plan here
       </h2>
       <p style={{ color: C.textMuted, fontStyle: "italic", margin: 0, maxWidth: 420 }}>
-        PDF, PNG, or DWG. Claude Vision will detect symbols, map them to your rate library, and draft a quote.
+        PDF or PNG. Claude Vision will detect symbols, map them to your rate library, and draft a quote.
       </p>
       <PrimaryButton onClick={() => fileInputRef.current?.click()}>
         Upload floor plan →
@@ -1327,17 +1327,17 @@ function StepQuote({
             }}
           >
             {/* Letterhead header */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28, paddingBottom: 16, borderBottom: `2px solid ${C.text}` }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28, paddingBottom: 16, borderBottom: `2px solid ${C.paperText}` }}>
               <div>
                 <div style={{ fontFamily: FONT.heading, fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em" }}>
                   {company.name.replace(" Pty Ltd", "").replace(" Services", "")}
                 </div>
-                <div style={{ fontSize: 12, color: C.textMuted, fontStyle: "italic", marginTop: 2 }}>
+                <div style={{ fontSize: 12, color: C.paperTextMuted, fontStyle: "italic", marginTop: 2 }}>
                   Licensed electrical contractor · NSW Lic. {company.licence}
                 </div>
               </div>
               <div style={{ textAlign: "right" }}>
-                <div style={{ fontFamily: FONT.heading, fontSize: 11, color: C.textSubtle, textTransform: "uppercase", letterSpacing: "0.1em" }}>Estimate</div>
+                <div style={{ fontFamily: FONT.heading, fontSize: 11, color: C.paperTextMuted, textTransform: "uppercase", letterSpacing: "0.1em" }}>Estimate</div>
                 <div style={{ fontFamily: FONT.mono, fontSize: 14, fontWeight: 500 }}>{estimateRef}</div>
               </div>
             </div>
@@ -1345,7 +1345,7 @@ function StepQuote({
             {/* Prepared-for / scope */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginBottom: 24, fontSize: 12 }}>
               <div>
-                <div style={{ fontFamily: FONT.heading, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textSubtle, marginBottom: 4 }}>Prepared for</div>
+                <div style={{ fontFamily: FONT.heading, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em", color: C.paperTextMuted, marginBottom: 4 }}>Prepared for</div>
                 {/* Was hardcoded to a fictional client (Bondi Tower Residences,
                     Attn: Marco Petrou). On a document the contractor sends to a
                     builder, invented recipient details are worse than a blank —
@@ -1353,24 +1353,24 @@ function StepQuote({
                 {clientName ? (
                   <div style={{ fontWeight: 500 }}>{clientName}</div>
                 ) : (
-                  <div style={{ fontWeight: 500, color: C.orange }}>Client not set</div>
+                  <div style={{ fontWeight: 500, fontStyle: "italic", color: C.paperTextMuted }}>Client not set</div>
                 )}
               </div>
               <div>
-                <div style={{ fontFamily: FONT.heading, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textSubtle, marginBottom: 4 }}>Scope</div>
+                <div style={{ fontFamily: FONT.heading, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em", color: C.paperTextMuted, marginBottom: 4 }}>Scope</div>
                 <div style={{ fontWeight: 500 }}>Electrical fit-out</div>
-                <div style={{ color: C.textMuted, fontStyle: "italic" }}>
+                <div style={{ color: C.paperTextMuted, fontStyle: "italic" }}>
                   {sourceFileName ? `per ${sourceFileName}` : "per uploaded drawing"}
                 </div>
               </div>
             </div>
 
             {/* Line items summary */}
-            <div style={{ fontSize: 11, fontFamily: FONT.mono, color: C.textSubtle, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+            <div style={{ fontSize: 11, fontFamily: FONT.mono, color: C.paperTextMuted, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.06em" }}>
               Line items · qty × rate
             </div>
             {groups.length === 0 ? (
-              <div style={{ fontSize: 12, color: C.textMuted, fontStyle: "italic", padding: "8px 0" }}>
+              <div style={{ fontSize: 12, color: C.paperTextMuted, fontStyle: "italic", padding: "8px 0" }}>
                 No priced lines yet.
               </div>
             ) : groups.map(group => (
@@ -1380,7 +1380,7 @@ function StepQuote({
                   <span style={{ fontFamily: FONT.mono }}>${Math.round(group.total).toLocaleString()}</span>
                 </div>
                 {group.lines.map((line, i) => (
-                  <div key={`${line.desc}-${i}`} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0 3px 12px", borderBottom: `1px solid ${C.border}`, fontSize: 11, color: C.textMuted }}>
+                  <div key={`${line.desc}-${i}`} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0 3px 12px", borderBottom: `1px solid ${C.border}`, fontSize: 11, color: C.paperTextMuted }}>
                     <span>{line.desc}</span>
                     <span style={{ fontFamily: FONT.mono }}>
                       {formatQtyRate(line.qty, line.unitPrice)} = ${Math.round(line.lineTotal).toLocaleString()}
@@ -1396,7 +1396,7 @@ function StepQuote({
                 <LetterRow l="Subtotal"     v={`$${formatAud(totals.subtotal)}`} />
                 <LetterRow l={`Margin (${totals.marginPct}%)`} v={`$${formatAud(totals.marginAmount)}`} />
                 <LetterRow l={`GST (${totals.gstRatePct}%)`}    v={`$${formatAud(totals.gst)}`} />
-                <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0 0 0", marginTop: 6, borderTop: `2px solid ${C.text}`, fontFamily: FONT.heading, fontWeight: 600, fontSize: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0 0 0", marginTop: 6, borderTop: `2px solid ${C.paperText}`, fontFamily: FONT.heading, fontWeight: 600, fontSize: 14 }}>
                   <span>Total</span>
                   <span>${formatAud(totals.total)}</span>
                 </div>
@@ -1466,7 +1466,7 @@ function StepQuote({
             <p style={{ margin: 0, fontSize: 13, color: C.green, fontStyle: "italic" }}>{saveMessage}</p>
           )}
           {saveError && (
-            <p style={{ margin: 0, fontSize: 13, color: "#B91C1C", fontStyle: "italic" }}>{saveError}</p>
+            <p style={{ margin: 0, fontSize: 13, color: C.red, fontStyle: "italic" }}>{saveError}</p>
           )}
           <GhostButton icon={<Copy size={14} />} disabled>
             Duplicate as template
@@ -1482,9 +1482,9 @@ function StepQuote({
 
 function LetterRow({ l, v }: { l: string; v: string }) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", color: C.textMuted }}>
+    <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", color: C.paperTextMuted }}>
       <span>{l}</span>
-      <span style={{ fontFamily: FONT.mono, color: C.text }}>{v}</span>
+      <span style={{ fontFamily: FONT.mono, color: C.paperText }}>{v}</span>
     </div>
   );
 }

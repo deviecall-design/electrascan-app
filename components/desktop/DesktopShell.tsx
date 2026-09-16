@@ -41,6 +41,7 @@ import {
 } from "../../services/companyProfile";
 import NavItem from "../ui/anthropic/NavItem";
 import useSupabaseQuery from "../../hooks/useSupabaseQuery";
+import useOptionalAuthUser, { nameFromAuthUser } from "../../hooks/useOptionalAuthUser";
 import { fetchEstimates, fetchScans } from "../../services/supabaseData";
 import { buildPaletteItems } from "../../lib/commandPalette";
 
@@ -82,7 +83,11 @@ export default function DesktopShell() {
 function Sidebar() {
   const company = getActiveCompanyProfile();
   const brand = tenantBrandName(company);
-  const initials = tenantInitials(company);
+  const user = useOptionalAuthUser();
+  const authName = nameFromAuthUser(user);
+  const chipName = authName || brand;
+  const chipSub = user?.email?.trim() || null;
+  const initials = tenantInitials({ ...company, name: chipName });
 
   return (
     <aside
@@ -144,9 +149,22 @@ function Sidebar() {
           </div>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontFamily: FONT.heading, fontSize: 13, fontWeight: 600 }}>
-              {brand}
+              {chipName}
             </div>
-            <div style={{ fontSize: 12, color: C.textSubtle }}>Admin</div>
+            {chipSub && (
+              <div
+                style={{
+                  fontSize: 12,
+                  color: C.textSubtle,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+                title={chipSub}
+              >
+                {chipSub}
+              </div>
+            )}
           </div>
         </div>
       </div>

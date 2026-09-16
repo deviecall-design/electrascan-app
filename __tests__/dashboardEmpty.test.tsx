@@ -8,6 +8,17 @@ vi.mock("../hooks/useSupabaseQuery", () => ({
   default: () => ({ data: [], loading: false, isLive: true, error: false }),
 }));
 
+vi.mock("../services/supabaseClient", () => ({
+  supabase: {
+    auth: {
+      getSession: vi.fn().mockResolvedValue({ data: { session: null }, error: null }),
+      onAuthStateChange: vi.fn(() => ({
+        data: { subscription: { unsubscribe: vi.fn() } },
+      })),
+    },
+  },
+}));
+
 describe("Dashboard empty pipeline", () => {
   it("shows Upload plan CTAs instead of a dead italic empty row", async () => {
     const user = userEvent.setup();

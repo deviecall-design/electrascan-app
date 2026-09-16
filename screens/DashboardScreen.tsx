@@ -2,7 +2,6 @@ import React, { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowUpRight,
-  MoreHorizontal,
   Sparkles,
 } from "lucide-react";
 import { C, FONT } from "../components/desktop/tokens";
@@ -25,6 +24,10 @@ import {
   formatScanToQuote,
 } from "../services/supabaseData";
 import { tenantBrandName } from "../services/companyProfile";
+import useOptionalAuthUser, {
+  firstNameFromDisplay,
+  nameFromAuthUser,
+} from "../hooks/useOptionalAuthUser";
 import {
   computeDashboardMoneyStats,
   quotedTotalIncGst,
@@ -39,6 +42,8 @@ import QueryBanner from "../components/QueryBanner";
 export default function DashboardScreen() {
   const navigate = useNavigate();
   const brand = tenantBrandName();
+  const authName = nameFromAuthUser(useOptionalAuthUser());
+  const greetName = firstNameFromDisplay(authName || brand);
 
   const {
     data: liveEstimates,
@@ -90,7 +95,7 @@ export default function DashboardScreen() {
             lineHeight: 1.15,
           }}
         >
-          Welcome back, {brand}.
+          Welcome back, {greetName}.
         </h1>
         <p style={{ color: C.textMuted, fontStyle: "italic", margin: 0, fontSize: 16 }}>
           {loading
@@ -213,7 +218,6 @@ export default function DashboardScreen() {
                   <Th align="right">Value</Th>
                   <Th>Status</Th>
                   <Th align="right">Sent</Th>
-                  <Th width={32} />
                 </tr>
               </thead>
               <tbody>
@@ -244,9 +248,6 @@ export default function DashboardScreen() {
                         <span style={{ fontStyle: "italic", fontSize: 13 }}>
                           {days == null ? "—" : `${days}d ago`}
                         </span>
-                      </Td>
-                      <Td align="right">
-                        <MoreHorizontal size={15} color={C.textSubtle} />
                       </Td>
                     </tr>
                   );

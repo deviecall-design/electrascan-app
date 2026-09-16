@@ -9,6 +9,17 @@ vi.mock("../services/supabaseData", () => ({
   fetchEstimates: vi.fn().mockResolvedValue({ data: [], error: null }),
 }));
 
+vi.mock("../services/supabaseClient", () => ({
+  supabase: {
+    auth: {
+      getSession: vi.fn().mockResolvedValue({ data: { session: null }, error: null }),
+      onAuthStateChange: vi.fn(() => ({
+        data: { subscription: { unsubscribe: vi.fn() } },
+      })),
+    },
+  },
+}));
+
 function renderShell(path = "/dashboard") {
   return render(
     <MemoryRouter initialEntries={[path]}>
@@ -44,6 +55,9 @@ describe("DesktopShell V1 navy chrome", () => {
     expect(screen.queryByText("Vision credits")).not.toBeInTheDocument();
     expect(screen.queryByText(/847/)).not.toBeInTheDocument();
     expect(screen.queryByText(/aries online/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("Damien C.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Admin")).not.toBeInTheDocument();
+    expect(screen.queryByText(/groundplan/i)).not.toBeInTheDocument();
   });
 
   it("opens a real search palette from the header control", async () => {

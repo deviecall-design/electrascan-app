@@ -35,7 +35,7 @@ const RISKS: { level: "high" | "medium" | "info"; title: string; desc: string }[
 type Change = "added" | "removed" | "increased" | "decreased";
 const CHANGE_CFG: Record<Change, { color: string; bg: string; label: string }> = {
   added:     { color: C.green, bg: C.greenSoft, label: "+ Added" },
-  removed:   { color: "#c44",  bg: "#fef2f2",   label: "− Removed" },
+  removed:   { color: C.red,   bg: C.redSoft,   label: "− Removed" },
   increased: { color: C.amber, bg: C.amberSoft, label: "↑ Increased" },
   decreased: { color: C.blue,  bg: C.blueSoft,  label: "↓ Decreased" },
 };
@@ -168,9 +168,14 @@ export default function VariationReportScreen() {
               <span style={{ fontFamily: FONT.heading, fontSize: 22, fontWeight: 600, color: C.green }}>{fmt(newTotal)}</span>
             </div>
 
-            <div style={{ marginTop: 24, display: "flex", gap: 10 }}>
-              <PrimaryButton icon={<Send size={15} />}>Send to client</PrimaryButton>
-              <GhostButton icon={<FileDown size={14} />}>Download PDF</GhostButton>
+            <div style={{ marginTop: 24, display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start" }}>
+              <div style={{ display: "flex", gap: 10 }}>
+                <PrimaryButton icon={<Send size={15} />} disabled>Send to client</PrimaryButton>
+                <GhostButton icon={<FileDown size={14} />} disabled>Download PDF</GhostButton>
+              </div>
+              <span style={{ fontSize: 12, color: C.textSubtle, fontStyle: "italic" }}>
+                Sample only — send and download are not wired.
+              </span>
             </div>
           </Card>
         </div>

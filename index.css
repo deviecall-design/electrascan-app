@@ -151,12 +151,12 @@
 }
 
 /* ────────────────────────────────────────────────────────────────────────
-   ElectraScan — Anthropic design system (warm cream + Lora + Poppins + orange)
+   ElectraScan — navy design tokens (deep navy + Poppins + Lora + brand blue)
 
    These tokens mirror the TS constants in components/desktop/tokens.ts and
    are prefixed with --es- so they never collide with shadcn's generic names.
    The base --background and --foreground are also overridden so any shadcn
-   components we use inherit the warm palette automatically.
+   components we use inherit the navy palette automatically.
    ──────────────────────────────────────────────────────────────────────── */
 
 /* Mirror of components/desktop/tokens.ts — keep the two in step. Restored to
@@ -209,7 +209,7 @@
   --muted-foreground: #8BA4C4;
 }
 
-/* Body styles — warm bg, grain, Lora serif as default */
+/* Body styles — navy bg, grain, Lora serif as default */
 html, body, #root { height: 100%; margin: 0; }
 
 body {

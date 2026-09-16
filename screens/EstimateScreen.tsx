@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { MoreHorizontal, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { C } from "../components/desktop/tokens";
 import {
   PageHeader,
@@ -83,7 +83,6 @@ export default function EstimateScreen() {
                 <Th align="right">Value (inc GST)</Th>
                 <Th>Status</Th>
                 <Th align="right">Sent</Th>
-                <Th width={32} />
               </tr>
             </thead>
             <tbody>
@@ -96,7 +95,6 @@ export default function EstimateScreen() {
                     style={{
                       borderTop: `1px solid ${C.border}`,
                       transition: "background-color 120ms",
-                      cursor: "pointer",
                     }}
                   >
                     <Td mono>
@@ -113,9 +111,6 @@ export default function EstimateScreen() {
                       <span style={{ fontStyle: "italic", fontSize: 13 }}>
                         {days == null ? "—" : `${days}d ago`}
                       </span>
-                    </Td>
-                    <Td align="right">
-                      <MoreHorizontal size={15} color={C.textSubtle} />
                     </Td>
                   </tr>
                 );

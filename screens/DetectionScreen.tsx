@@ -14,6 +14,7 @@ import { PrimaryButton } from "../components/ui/anthropic/Button";
 import useSupabaseQuery from "../hooks/useSupabaseQuery";
 import { fetchScans } from "../services/supabaseData";
 import QueryBanner from "../components/QueryBanner";
+import { formatAuShortDateTime } from "../lib/dates";
 
 export default function DetectionScreen() {
   const navigate = useNavigate();
@@ -96,7 +97,9 @@ export default function DetectionScreen() {
                     </div>
                   </Td>
                   <Td align="right" muted>
-                    <span style={{ fontStyle: "italic", fontSize: 13 }}>{s.t ?? "just now"}</span>
+                    <span style={{ fontStyle: "italic", fontSize: 13 }}>
+                      {formatAuShortDateTime(s.started_at ?? s.t)}
+                    </span>
                   </Td>
                 </tr>
               ))}

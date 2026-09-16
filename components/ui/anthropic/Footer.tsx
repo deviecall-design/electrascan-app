@@ -16,7 +16,7 @@ interface FooterProps {
 }
 
 export default function Footer({
-  tagline = "Groundplan measures your plans. ElectraScan reads them — and writes your quote.",
+  tagline = "ElectraScan reads the plan and writes the quote.",
   version = "v1.1.1.0",
   region = "Sydney",
 }: FooterProps) {

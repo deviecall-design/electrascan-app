@@ -79,7 +79,7 @@ export const RADIUS = {
 } as const;
 
 // Grain texture applied to body background. Reproduced as-is from the mockup
-// — subtle fractal noise at 3.5% opacity. Keeps the warm-paper feel without
-// being distracting.
+// — subtle fractal noise at 3.5% opacity. Keeps the navy surface from
+// reading as a flat fill without being distracting.
 export const GRAIN_URL =
   "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.035 0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E\")";
