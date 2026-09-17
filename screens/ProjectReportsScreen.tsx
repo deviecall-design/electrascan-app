@@ -24,11 +24,11 @@ import {
 
 // ─── RAG colours (spec Section 5) ────────────────────────────────────────
 const RAG = {
-  red:   { fg: "#EF4444", bg: "#FEF2F2" },
-  amber: { fg: "#F59E0B", bg: "#FFFBEB" },
-  green: { fg: "#10B981", bg: "#F0FDF4" },
-  blue:  { fg: "#1D6EFD", bg: "#EFF6FF" },
-  gray:  { fg: "#64748B", bg: "#F8FAFC" },
+  red:   { fg: C.red,        bg: C.redSoft },
+  amber: { fg: C.amber,      bg: C.amberSoft },
+  green: { fg: C.green,      bg: C.greenSoft },
+  blue:  { fg: C.orange,     bg: C.orangeSoft },
+  gray:  { fg: C.textMuted,  bg: C.bgSoft },
 } as const;
 
 type MilestoneStatus = "pending" | "ready_to_claim" | "invoiced_draft" | "invoiced" | "received";

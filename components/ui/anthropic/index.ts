@@ -22,5 +22,6 @@ export { default as ConfPill }    from "./ConfPill";
 export { default as SymbolBadge } from "./SymbolBadge";
 export { default as NavItem }     from "./NavItem";
 export { default as ScanRow }     from "./ScanRow";
+export { default as EmptyState }  from "./EmptyState";
 export { default as Dots }        from "./Dots";
 export { Th, Td }                 from "./Table";

@@ -151,12 +151,12 @@
 }
 
 /* ────────────────────────────────────────────────────────────────────────
-   ElectraScan — Anthropic design system (warm cream + Lora + Poppins + orange)
+   ElectraScan — navy design tokens (deep navy + Poppins + Lora + brand blue)
 
    These tokens mirror the TS constants in components/desktop/tokens.ts and
    are prefixed with --es- so they never collide with shadcn's generic names.
    The base --background and --foreground are also overridden so any shadcn
-   components we use inherit the warm palette automatically.
+   components we use inherit the navy palette automatically.
    ──────────────────────────────────────────────────────────────────────── */
 
 /* Mirror of components/desktop/tokens.ts — keep the two in step. Restored to
@@ -189,6 +189,8 @@
   --es-green-soft:  #0d3a30;
   --es-amber:       #FFB020;
   --es-amber-soft:  #3a2c10;
+  --es-red:         #EF4444;
+  --es-red-soft:    #3a1518;
 
   /* Typography — loaded via <link> in index.html */
   --es-font-heading: 'Poppins', Arial, sans-serif;
@@ -207,7 +209,7 @@
   --muted-foreground: #8BA4C4;
 }
 
-/* Body styles — warm bg, grain, Lora serif as default */
+/* Body styles — navy bg, grain, Lora serif as default */
 html, body, #root { height: 100%; margin: 0; }
 
 body {
@@ -245,7 +247,13 @@ table {
    mockup. Kept here (not in a utility stylesheet) so a single :hover cascade
    is the only path that can change hover colour. */
 .es-row:hover { background-color: var(--es-bg-soft); }
-.es-nav:hover { background-color: var(--es-border-soft); }
+.es-nav:hover:not([aria-current="page"]) { background-color: var(--es-border-soft); }
+.es-nav[aria-current="page"] {
+  background-color: var(--es-orange);
+  color: #ffffff;
+  font-weight: 600;
+}
+.es-nav[aria-current="page"]:hover { background-color: var(--es-orange-dark); }
 .es-link:hover { color: var(--es-orange-dark); }
 .es-btn-primary:hover { background-color: var(--es-orange-dark) !important; }
 .es-btn-ghost:hover { background-color: var(--es-bg-soft); }

@@ -300,7 +300,7 @@ export default function PricingScheduleScreen() {
       )}
       <PageHeader
         title="Rate library"
-        sub={`${totalItems} items · ${isLive ? "live from Supabase" : "imported from Vesh Electrical"} · last synced today`}
+        sub={`${totalItems} items · ${isLive ? "live from Supabase" : "imported from Vesh Electrical"}`}
         cta={
           <PrimaryButton icon={<Plus size={14} />} onClick={openAdd}>
             Add rate

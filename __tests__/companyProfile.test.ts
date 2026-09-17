@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { incrementEstimateNumber, getActiveCompanyProfile, VESH_PROFILE } from '../services/companyProfile';
+import { incrementEstimateNumber, getActiveCompanyProfile, VESH_PROFILE, tenantBrandName, tenantInitials } from '../services/companyProfile';
 
 describe('incrementEstimateNumber', () => {
   it('increments a standard revision suffix', () => {
@@ -42,5 +42,15 @@ describe('getActiveCompanyProfile', () => {
     const profile = getActiveCompanyProfile();
     expect(profile.defaultMargin).toBeGreaterThan(0);
     expect(profile.defaultMargin).toBeLessThan(100);
+  });
+});
+
+describe('tenant brand helpers', () => {
+  it('shortens Vesh Electrical Services Pty Ltd to Vesh', () => {
+    expect(tenantBrandName(VESH_PROFILE)).toBe('Vesh');
+  });
+
+  it('uses the first two word initials', () => {
+    expect(tenantInitials(VESH_PROFILE)).toBe('VE');
   });
 });
