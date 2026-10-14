@@ -47,9 +47,9 @@ Traced `App.tsx` `<App>` → `screen` state machine:
 All four transitions rely on already-shipped code paths that the build
 successfully types and bundles.
 
-**Not live-tested** — running the scan requires
-`VITE_ANTHROPIC_API_KEY`, which isn't wired into this session. The
-detection happy-path can't be exercised without that key.
+**Not live-tested** — running the scan requires a signed-in session and
+`ANTHROPIC_API_KEY` on the server (Vercel env, no `VITE_` / `NEXT_PUBLIC_`
+prefix). The detection happy-path can't be exercised without that key.
 
 ### Variation Report — PASS (by inspection)
 
@@ -93,7 +93,7 @@ the anon role to `INSERT`.
 
 - **Vercel auth** needs a one-time human-driven `vercel login`.
 - **Supabase `variations` table** needs DDL + RLS.
-- **Anthropic API key** (`VITE_ANTHROPIC_API_KEY`) for live scan testing.
+- **Anthropic API key** (`ANTHROPIC_API_KEY`, server-side only) for live scan testing.
 - **EstimatesView.tsx orphan**: `components/EstimatesView.tsx` is not
   imported anywhere; it's residual takeoff-app scaffolding. Safe to
   delete in a dedicated cleanup commit if desired.
