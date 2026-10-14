@@ -11,7 +11,6 @@
  *   Result — Symbol-matched quantities × Vesh catalogue prices = accurate estimate
  */
 
-import Anthropic from "@anthropic-ai/sdk";
 import * as pdfjsLib from "pdfjs-dist";
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 import { mapLegendItem, type CatalogueItem } from "./vesh_catalogue";
@@ -34,36 +33,42 @@ export interface DetectionProgress {
 }
 export type ProgressFn = (p: DetectionProgress) => void;
 
+/** Shape of the Messages API response this scanner actually reads. */
+interface DetectResponse {
+  stop_reason: string | null;
+  content: Array<{ type: string; text?: string }>;
+}
+
 /**
  * Runs one detection pass through the server-side proxy.
  *
- * The Anthropic key is deliberately not available in the browser — see
- * api/detect.js. Failures are thrown with the upstream reason attached so a
- * broken model id or an expired session surfaces as a real error instead of
- * silently becoming "0 components detected".
+ * The model key stays on the server (see api/detect.js). Failures throw with
+ * the upstream reason attached so a broken model id or an expired session
+ * surfaces as a real error instead of silently becoming "0 components detected".
  */
 async function callDetect(payload: {
   model: string;
   max_tokens: number;
   system: string;
   messages: unknown[];
-}): Promise<Anthropic.Message> {
+}): Promise<DetectResponse> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
+  if (!token) {
+    throw new Error("You need to be signed in to run a scan.");
+  }
 
-  if (token) {
-    const res = await fetch("/api/detect", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(payload),
-    });
+  const res = await fetch("/api/detect", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
 
-    const raw = await res.text();
-    if (res.ok) return JSON.parse(raw) as Anthropic.Message;
-
+  const raw = await res.text();
+  if (!res.ok) {
     let reason = raw.slice(0, 300);
     try {
       const parsed = JSON.parse(raw);
@@ -71,43 +76,19 @@ async function callDetect(payload: {
     } catch {
       /* keep the raw text */
     }
-
-    // 500 here means the server has no ANTHROPIC_API_KEY yet. Deploying the
-    // proxy before that variable exists would otherwise take the scanner down,
-    // so fall through to the legacy in-browser path rather than failing. Any
-    // other status is a real error and must surface.
-    const notConfigured = res.status === 500 && /ANTHROPIC_API_KEY/.test(reason);
-    if (!notConfigured) {
-      throw new Error(`Detection failed (${res.status}): ${reason}`);
-    }
-    console.warn(
-      "[ElectraScan] /api/detect has no server key — falling back to the in-browser key. " +
-        "Set ANTHROPIC_API_KEY in Vercel to move the key server-side.",
-    );
+    throw new Error(`Detection failed (${res.status}): ${reason}`);
   }
 
-  // Legacy path: key inlined into the bundle by Vite. Retained only so the
-  // scanner keeps working until ANTHROPIC_API_KEY is configured; remove this
-  // branch, and VITE_ANTHROPIC_API_KEY, once the proxy is serving.
-  const browserKey = (import.meta as any).env?.VITE_ANTHROPIC_API_KEY;
-  if (!browserKey) {
-    throw new Error(
-      token
-        ? "Detection is not configured. Set ANTHROPIC_API_KEY in Vercel."
-        : "You need to be signed in to run a scan.",
-    );
-  }
-  const client = new Anthropic({ apiKey: browserKey, dangerouslyAllowBrowser: true });
-  return (await client.messages.create(payload as any)) as Anthropic.Message;
+  return JSON.parse(raw) as DetectResponse;
 }
 
 // Pull the text out of a response. Never index content[0] directly: current
 // models think by default, so the first block is usually a thinking block and
 // the model's actual answer sits after it. Assuming index 0 silently yielded ""
 // and made every scan look like "0 components detected".
-function extractText(r: Anthropic.Message): string {
+function extractText(r: DetectResponse): string {
   return r.content
-    .filter((b): b is Anthropic.TextBlock => b.type === "text")
+    .filter((b): b is { type: "text"; text: string } => b.type === "text" && typeof b.text === "string")
     .map(b => b.text)
     .join("\n")
     .trim();
@@ -671,7 +652,7 @@ export async function detectElectricalComponents(
   console.log(`[ElectraScan v4] Converting: ${file.name}`);
   report("rendering", "Rendering drawing pages…");
   const pageImages = await pdfToImages(file);
-  const imageBlocks: Anthropic.ImageBlockParam[] = pageImages.map(base64 => ({
+  const imageBlocks = pageImages.map(base64 => ({
     type: "image" as const,
     source: { type: "base64" as const, media_type: "image/jpeg" as const, data: base64 },
   }));
@@ -795,7 +776,7 @@ export async function detectElectricalComponents(
       "Check the Pass 1 / Pass 2 raw responses above for: (a) JSON parse errors, " +
       "(b) empty `items` / `components` arrays from the model, " +
       "(c) an empty Pass 2 decoder (no legend items had a Vesh catalogue match), " +
-      "(d) HTTP/auth errors from the Anthropic SDK."
+      "(d) HTTP/auth errors from /api/detect."
     );
   }
 
