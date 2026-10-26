@@ -71,12 +71,21 @@ import SourcePlanPreview from "../components/SourcePlanPreview";
 import { ariesMarginSuggestion } from "../lib/ariesSuggestion";
 import { computeQuoteTotals, DEFAULT_MARGIN_PCT, formatAud, lineTotal as qtyRateTotal, roundCents } from "../lib/quoteTotals";
 import { mapDetectionToQuoteItems, quoteVisibleLines, formatQtyRate, type ScanQuoteItem } from "../lib/scanQuote";
+import {
+  applyReviewResolutions,
+  upsertResolution,
+  type ReviewClassifyData,
+  type ReviewResolution,
+} from "../lib/reviewedLines";
 
 interface DetectedItem extends ScanQuoteItem {
   /** Room / location from the detector — never a hardcoded "Level 2". */
   room?: string;
   /** Raw analyze_pdf ComponentType, when we have one. */
   detectedType?: string;
+  /** Set by Review. Quote totals and the PDF omit excluded lines. */
+  excluded?: boolean;
+  flagged?: boolean;
 }
 
 /** Line total for an item: catalogue price when known, demo rates otherwise. */
@@ -144,12 +153,23 @@ function mapDetectionToItems(detection: DetectionResult | null | undefined): Det
 }
 
 // ─── Screen root ────────────────────────────────────────────────────────
-export default function ScanDetailScreen() {
+export default function ScanDetailScreen({
+  initialStep,
+  initialItems,
+}: {
+  initialStep?: number;
+  initialItems?: DetectedItem[];
+} = {}) {
   const navigate = useNavigate();
   const { id } = useParams();
   const [liveScan, setLiveScan] = useState<ScanRow | null>(null);
-  const [step, setStep] = useState(id === "new" ? 1 : 2);
-  const [detectedItems, setDetectedItems] = useState<DetectedItem[]>([]);
+  const [step, setStep] = useState(initialStep ?? (id === "new" ? 1 : 2));
+  const [detectedItems, setDetectedItems] = useState<DetectedItem[]>(initialItems ?? []);
+  const [resolutions, setResolutions] = useState<ReviewResolution[]>([]);
+  const reviewedItems = useMemo(
+    () => applyReviewResolutions(detectedItems, resolutions),
+    [detectedItems, resolutions],
+  );
   const [uploadedName, setUploadedName] = useState<string>("");
   const [sourceFile, setSourceFile] = useState<File | null>(null);
 
@@ -208,6 +228,7 @@ export default function ScanDetailScreen() {
         <StepUpload
           onNext={(items, file) => {
             setDetectedItems(items ?? []);
+            setResolutions([]);
             if (file) {
               setSourceFile(file);
               setUploadedName(file.name);
@@ -224,11 +245,19 @@ export default function ScanDetailScreen() {
           sourceFileName={uploadedName || liveScan?.file_name}
         />
       )}
-      {step === 3 && <StepReview onNext={() => setStep(4)} onBack={() => setStep(2)} items={detectedItems} />}
+      {step === 3 && (
+        <StepReview
+          onNext={() => setStep(4)}
+          onBack={() => setStep(2)}
+          items={detectedItems}
+          resolutions={resolutions}
+          onResolutions={setResolutions}
+        />
+      )}
       {step === 4 && (
         <StepQuote
           onBack={() => setStep(3)}
-          items={detectedItems}
+          items={reviewedItems}
           clientName={clientLabel}
           sourceFileName={uploadedName || liveScan?.file_name}
           scanId={id}
@@ -699,12 +728,7 @@ interface ReviewQueueItem {
   state: ConfidenceState;
   suggestion: ReviewSuggestion;
   resolution: ReviewAction | null;
-  classifyData?: {
-    category: string;
-    description: string;
-    qty: number;
-    rate: number;
-  };
+  classifyData?: ReviewClassifyData;
 }
 
 function ClassifyForm({
@@ -798,6 +822,7 @@ function ClassifyForm({
             description: description || suggestion.label || "Unclassified item",
             qty,
             rate,
+            symbol: suggestion.symbol,
           })}
           style={{
             padding: "7px 14px", fontSize: 12, fontFamily: FONT.heading, fontWeight: 600,
@@ -822,12 +847,13 @@ function ClassifyForm({
   );
 }
 
-function classifyPayload(suggestion: ReviewSuggestion): ReviewQueueItem["classifyData"] {
+function classifyPayload(suggestion: ReviewSuggestion): ReviewClassifyData {
   return {
     category: suggestion.category,
     description: suggestion.description || suggestion.label,
     qty: suggestion.qty,
     rate: suggestion.rate,
+    symbol: suggestion.symbol,
   };
 }
 
@@ -944,6 +970,7 @@ function ReviewQueuePanel({
                 {group.items.map(({ item }) => (
                   <div
                     key={item.id}
+                    data-review-id={item.id}
                     style={{ padding: "14px 16px", borderTop: `1px solid ${C.border}` }}
                   >
                     <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
@@ -1056,32 +1083,53 @@ function buildQueueItem(it: DetectedItem): ReviewQueueItem {
   };
 }
 
-function StepReview({ onNext, onBack, items: propItems }: { onNext: () => void; onBack: () => void; items?: DetectedItem[] }) {
-  const source = propItems ?? [];
-  const [items, setItems] = useState(
-    source.map(it => ({ ...it, ok: false })),
+function StepReview({
+  onNext,
+  onBack,
+  items: source,
+  resolutions,
+  onResolutions,
+}: {
+  onNext: () => void;
+  onBack: () => void;
+  items: DetectedItem[];
+  resolutions: ReviewResolution[];
+  onResolutions: (next: ReviewResolution[]) => void;
+}) {
+  const [checked, setChecked] = useState<Record<number, boolean>>({});
+  const items = useMemo(
+    () => applyReviewResolutions(source, resolutions),
+    [source, resolutions],
   );
 
-  const [reviewQueue, setReviewQueue] = useState<ReviewQueueItem[]>(
-    source.filter(it => shouldQueueForReview(it.conf)).map(buildQueueItem),
-  );
+  const reviewQueue = useMemo(() => {
+    const byId = new Map(resolutions.map(r => [r.id, r]));
+    return source.filter(it => shouldQueueForReview(it.conf)).map(it => {
+      const base = buildQueueItem(it);
+      const res = byId.get(it.id);
+      if (!res) return base;
+      return { ...base, resolution: res.action, classifyData: res.classifyData };
+    });
+  }, [source, resolutions]);
 
   const toggle = (id: number) =>
-    setItems(arr => arr.map(i => (i.id === id ? { ...i, ok: !i.ok } : i)));
+    setChecked(prev => ({ ...prev, [id]: !prev[id] }));
 
-  const resolveQueueItem = (id: number, action: ReviewAction, classifyData?: ReviewQueueItem["classifyData"]) => {
-    setReviewQueue(q => q.map(i => i.id === id ? { ...i, resolution: action, classifyData } : i));
+  const resolveQueueItem = (id: number, action: ReviewAction, classifyData?: ReviewClassifyData) => {
+    onResolutions(upsertResolution(resolutions, id, action, classifyData));
   };
 
-  const resolveQueueItems = (ids: number[], action: ReviewAction, classifyData?: ReviewQueueItem["classifyData"]) => {
+  const resolveQueueItems = (ids: number[], action: ReviewAction, classifyData?: ReviewClassifyData) => {
     const idSet = new Set(ids);
-    setReviewQueue(q => q.map(i => {
-      if (!idSet.has(i.id)) return i;
+    let next = resolutions;
+    for (const item of reviewQueue) {
+      if (!idSet.has(item.id)) continue;
       const data = action === "classify"
-        ? (classifyData ?? classifyPayload(i.suggestion))
+        ? (classifyData ?? classifyPayload(item.suggestion))
         : classifyData;
-      return { ...i, resolution: action, classifyData: data };
-    }));
+      next = upsertResolution(next, item.id, action, data);
+    }
+    onResolutions(next);
   };
 
   // Estimate lock is blocked if any Unrecognised or Unclear items are unresolved
@@ -1111,29 +1159,38 @@ function StepReview({ onNext, onBack, items: propItems }: { onNext: () => void; 
           </thead>
           <tbody>
             {items.map(it => {
-              const total = lineTotal(it);
+              const total = it.excluded ? 0 : lineTotal(it);
               const unit = it.qty > 0 ? total / it.qty : 0;
+              const ok = Boolean(checked[it.id]);
               return (
-                <tr key={it.id} className="es-row" style={{ borderTop: `1px solid ${C.border}` }}>
+                <tr key={it.id} className="es-row" style={{ borderTop: `1px solid ${C.border}`, opacity: it.excluded ? 0.55 : 1 }}>
                   <Td>
                     <button
                       onClick={() => toggle(it.id)}
+                      aria-label={ok ? "Reviewed" : "Mark reviewed"}
                       style={{
                         width: 18,
                         height: 18,
                         borderRadius: 4,
-                        border: `1.5px solid ${it.ok ? C.green : C.border}`,
-                        backgroundColor: it.ok ? C.green : "transparent",
+                        border: `1.5px solid ${ok ? C.green : C.border}`,
+                        backgroundColor: ok ? C.green : "transparent",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
                       }}
                     >
-                      {it.ok && <Check size={11} color="#fff" strokeWidth={3} />}
+                      {ok && <Check size={11} color="#fff" strokeWidth={3} />}
                     </button>
                   </Td>
                   <Td><SymbolBadge symbol={it.symbol} small /></Td>
-                  <Td>{it.desc}</Td>
+                  <Td>
+                    {it.desc}
+                    {it.excluded && (
+                      <span style={{ display: "block", fontSize: 12, color: C.textMuted, fontStyle: "italic" }}>
+                        Not in scope
+                      </span>
+                    )}
+                  </Td>
                   <Td>
                     <span style={{ fontFamily: FONT.mono, fontSize: 12, color: C.textMuted }}>
                       {it.rateCode || "—"}
@@ -1199,7 +1256,9 @@ function StepQuote({
   scanId?: string;
 }) {
   const navigate = useNavigate();
-  const source = propItems ?? [];
+  const detected = propItems ?? [];
+  const source = useMemo(() => detected.filter(it => !it.excluded), [detected]);
+  const excludedCount = detected.length - source.length;
   const company = getActiveCompanyProfile();
   const [estimateRef, setEstimateRef] = useState<string>("…");
   const [saving, setSaving] = useState(false);
@@ -1317,13 +1376,14 @@ function StepQuote({
         {/* The quote preview is a document, so it stays on light paper even in
             the navy theme. Pin the text colour here: the inherited `C.text` is
             near-white and would be invisible on this surface. */}
-        <div style={{ padding: 40, backgroundColor: C.bgPaper, color: C.paperText }}>
+        <div data-testid="quote-paper" style={{ padding: 40, backgroundColor: C.bgPaper, color: C.paperText }}>
           <div
             style={{
               backgroundColor: "#fff",
               padding: 36,
               boxShadow: "0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04)",
               minHeight: 540,
+              color: C.paperText,
             }}
           >
             {/* Letterhead header */}
@@ -1375,12 +1435,12 @@ function StepQuote({
               </div>
             ) : groups.map(group => (
               <div key={group.category} style={{ marginBottom: 10 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 12, fontWeight: 600 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 12, fontWeight: 600, color: C.paperText }}>
                   <span>{group.category}</span>
                   <span style={{ fontFamily: FONT.mono }}>${Math.round(group.total).toLocaleString()}</span>
                 </div>
                 {group.lines.map((line, i) => (
-                  <div key={`${line.desc}-${i}`} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0 3px 12px", borderBottom: `1px solid ${C.border}`, fontSize: 11, color: C.paperTextMuted }}>
+                  <div key={`${line.desc}-${i}`} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0 3px 12px", borderBottom: "1px solid #D5DDE8", fontSize: 11, color: C.paperTextMuted }}>
                     <span>{line.desc}</span>
                     <span style={{ fontFamily: FONT.mono }}>
                       {formatQtyRate(line.qty, line.unitPrice)} = ${Math.round(line.lineTotal).toLocaleString()}
@@ -1396,7 +1456,7 @@ function StepQuote({
                 <LetterRow l="Subtotal"     v={`$${formatAud(totals.subtotal)}`} />
                 <LetterRow l={`Margin (${totals.marginPct}%)`} v={`$${formatAud(totals.marginAmount)}`} />
                 <LetterRow l={`GST (${totals.gstRatePct}%)`}    v={`$${formatAud(totals.gst)}`} />
-                <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0 0 0", marginTop: 6, borderTop: `2px solid ${C.paperText}`, fontFamily: FONT.heading, fontWeight: 600, fontSize: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0 0 0", marginTop: 6, borderTop: `2px solid ${C.paperText}`, fontFamily: FONT.heading, fontWeight: 600, fontSize: 14, color: C.paperText }}>
                   <span>Total</span>
                   <span>${formatAud(totals.total)}</span>
                 </div>
@@ -1411,11 +1471,12 @@ function StepQuote({
         {/* Quoted total */}
         <Card style={{ padding: 20 }}>
           <div style={{ fontFamily: FONT.heading, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textSubtle, marginBottom: 6 }}>Quoted total</div>
-          <div style={{ fontFamily: FONT.heading, fontSize: 36, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1 }}>
+          <div data-testid="quoted-total" style={{ fontFamily: FONT.heading, fontSize: 36, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1 }}>
             ${formatAud(totals.total, true)}
           </div>
           <div style={{ fontSize: 13, color: C.textMuted, fontStyle: "italic", marginTop: 8 }}>
             incl. GST · {source.length} {source.length === 1 ? "item" : "items"} · {totals.marginPct}% margin
+            {excludedCount > 0 ? ` · ${excludedCount} removed in review` : ""}
           </div>
 
           {/* Materials/Labour used to be a fixed 55/45 split of the subtotal.

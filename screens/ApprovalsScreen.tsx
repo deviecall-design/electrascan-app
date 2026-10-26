@@ -19,6 +19,8 @@ import {
 import { PrimaryButton, GhostButton } from "../components/ui/anthropic/Button";
 import { supabase } from "../services/supabaseClient";
 import { useToast } from "../contexts/ToastContext";
+import useOptionalAuthUser from "../hooks/useOptionalAuthUser";
+import { envelopeSendBlockReason } from "../lib/docusignSendGuard";
 
 // ─── Constants ──────────────────────────────────────────────────────────
 const ESTIMATE_REF = "EST-2609-0001";
@@ -87,6 +89,13 @@ const MCP_CAPABILITIES = [
 export default function ApprovalsScreen() {
   const navigate = useNavigate();
   const { addToast } = useToast();
+  const user = useOptionalAuthUser();
+  const blockReason = envelopeSendBlockReason({
+    signedIn: Boolean(user),
+    sample: true,
+    estimateRef: ESTIMATE_REF,
+    documentBase64: PLACEHOLDER_PDF_BASE64,
+  });
 
   const [signatories, setSignatories] = useState<Signatory[]>(SIGNATORIES);
   const [sent, setSent] = useState(false);
@@ -110,60 +119,22 @@ export default function ApprovalsScreen() {
   const allSigned = signatories.every(s => s.status === "signed");
 
   const handleSendEnvelope = async () => {
-    if (sent || allSigned || sending) return;
-
-    if (!signerEmail.trim() || !signerName.trim()) {
-      addToast("Signer name and email are required.", "error");
+    if (sent || allSigned || sending || blockReason) {
+      if (blockReason) addToast(blockReason, "error");
       return;
     }
 
-    setSending(true);
-
-    try {
-      const res = await fetch("/api/docusign/envelope", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          signerEmail: signerEmail.trim(),
-          signerName: signerName.trim(),
-          estimateRef: ESTIMATE_REF,
-          projectName: PROJECT_NAME,
-          estimateValue: ESTIMATE_VALUE,
-          documentBase64: PLACEHOLDER_PDF_BASE64,
-        }),
-      });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({ error: `HTTP ${res.status}` })) as { error?: string };
-        throw new Error(errData.error ?? `HTTP ${res.status}`);
-      }
-
-      const result = await res.json() as { envelopeId: string; status: string };
-
-      // Log to approval_audit (best-effort — don't block the UI on failure)
-      supabase
-        .from("approval_audit")
-        .insert({
-          envelope_id: result.envelopeId,
-          estimate_ref: ESTIMATE_REF,
-          signer_email: signerEmail.trim(),
-          action: "envelope_sent",
-          actor: "system",
-        })
-        .then(({ error }) => {
-          if (error) {
-            console.warn("[ElectraScan] approval_audit insert failed:", error.message);
-          }
-        });
-
-      setEnvelopeId(result.envelopeId);
-      setSent(true);
-      addToast(`Envelope sent. ID: ${result.envelopeId}`, "success");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown error";
-      addToast(`Could not send envelope: ${message}`, "error");
-    } finally {
-      setSending(false);
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    const sessionReason = envelopeSendBlockReason({
+      signedIn: Boolean(token),
+      sample: true,
+      estimateRef: ESTIMATE_REF,
+      documentBase64: PLACEHOLDER_PDF_BASE64,
+    });
+    if (sessionReason) {
+      addToast(sessionReason, "error");
+      return;
     }
   };
 
@@ -713,14 +684,18 @@ export default function ApprovalsScreen() {
       >
         <div>
           <div style={{ fontFamily: FONT.heading, fontSize: 14, fontWeight: 600 }}>
-            Ready to send for approval?
+            {blockReason ? "DocuSign send is turned off" : "Ready to send for approval?"}
           </div>
-          <div style={{ fontSize: 13, color: C.textMuted }}>
-            Estimate {ESTIMATE_REF} is locked ·{" "}
-            <span style={{ color: C.green, fontWeight: 500 }}>
-              ${ESTIMATE_VALUE.toLocaleString()}
-            </span>{" "}
-            excl. GST · 3 signatories configured
+          <div id="docusign-send-reason" style={{ fontSize: 13, color: blockReason ? C.amber : C.textMuted, maxWidth: 560 }}>
+            {blockReason ?? (
+              <>
+                Estimate {ESTIMATE_REF} is locked ·{" "}
+                <span style={{ color: C.green, fontWeight: 500 }}>
+                  ${ESTIMATE_VALUE.toLocaleString()}
+                </span>{" "}
+                excl. GST · 3 signatories configured
+              </>
+            )}
           </div>
         </div>
         <div style={{ display: "flex", gap: 10 }}>
@@ -737,7 +712,7 @@ export default function ApprovalsScreen() {
               )
             }
             onClick={handleSendEnvelope}
-            disabled={allSigned || sending}
+            disabled={Boolean(blockReason) || allSigned || sending}
           >
             {allSigned
               ? "Fully Executed"

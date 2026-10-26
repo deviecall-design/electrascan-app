@@ -913,6 +913,30 @@ export default function ProjectReportsScreen() {
 
   return (
     <div className="anim-in">
+      <div
+        role="status"
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 10,
+          marginBottom: 16,
+          padding: "12px 16px",
+          borderRadius: RADIUS.lg,
+          border: `1px solid ${C.amber}`,
+          background: C.amberSoft,
+          color: C.amber,
+        }}
+      >
+        <Info size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+        <div>
+          <div style={{ fontFamily: FONT.heading, fontSize: 13, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase" }}>
+            Sample data
+          </div>
+          <div style={{ fontSize: 13, lineHeight: 1.5, marginTop: 2 }}>
+            Mark Arnesen · 8/110 North Steyne is an example project. Budget, milestones and overruns on this page are not a saved Vesh job.
+          </div>
+        </div>
+      </div>
       <PageHeader
         title={projectName}
         sub={`${PROJECT.address} · ${projectClient}`}
