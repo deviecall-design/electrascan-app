@@ -83,7 +83,16 @@ describe("DesktopShell V1 navy chrome", () => {
     expect(screen.queryByTestId("notification-unread")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /notifications/i }));
     expect(screen.getByRole("dialog", { name: /notifications/i })).toBeInTheDocument();
-    expect(screen.getByText(/you.re all caught up/i)).toBeInTheDocument();
+    expect(screen.getByText(/notifications are not connected/i)).toBeInTheDocument();
+    expect(screen.queryByText(/you.re all caught up/i)).not.toBeInTheDocument();
+  });
+
+  it("opens the command palette from Ctrl+K", async () => {
+    const user = userEvent.setup();
+    renderShell();
+    await user.keyboard("{Control>}k{/Control}");
+    expect(screen.getByRole("dialog", { name: /search scans, estimates, and pages/i })).toBeInTheDocument();
+    expect(screen.getByText("Upload plan")).toBeInTheDocument();
   });
 
   it("routes New scan to the upload flow", async () => {

@@ -331,7 +331,7 @@ function TopBar() {
               Notifications
             </div>
             <p style={{ margin: 0, fontSize: 13, color: C.textMuted, lineHeight: 1.55 }}>
-              You&apos;re all caught up. Quote views and approvals will show up here when they happen — there is no unread count until then.
+              Notifications are not connected. There is no unread count until a live feed exists.
             </p>
           </div>
         )}
