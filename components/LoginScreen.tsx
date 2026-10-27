@@ -3,9 +3,9 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../services/supabaseClient';
 
 const C = {
-  bg: '#0A1628', navy: '#0F1E35', card: '#132240',
-  blue: '#1D6EFD', text: '#EDF2FF', muted: '#5C7A9E',
-  border: '#1A3358', red: '#FF4D4D', green: '#10B981',
+  bg: '#f8fafc', navy: '#ffffff', card: '#ffffff',
+  blue: '#1f56e6', text: '#0f172a', muted: '#64748b',
+  border: '#e2e8f0', red: '#e11d48', green: '#059669',
 };
 
 type Mode = 'signin' | 'reset';

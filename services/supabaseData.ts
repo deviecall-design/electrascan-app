@@ -1,11 +1,7 @@
 /**
- * Supabase data service — typed fetch/insert functions for all ElectraScan
- * tables. Each function returns `{ data, error }` following the Supabase
- * convention; callers should fall back to mock data when `error` is truthy.
- *
- * Tables must be created via migrations/001_create_tables.sql before these
- * functions return real data. Until then, every fetch returns an error and
- * the screens show their hardcoded fallback arrays.
+ * Supabase data service — typed fetch/insert functions for ElectraScan tables.
+ * Each function returns `{ data, error }`. Screens show an empty state when
+ * the list is empty or the query fails. They do not invent sample jobs.
  */
 
 import { supabase } from "./supabaseClient";
@@ -131,10 +127,30 @@ export async function insertEstimate(row: Omit<EstimateRow, "id" | "created_at">
     .single();
 }
 
-export async function insertScan(row: Pick<ScanRow, "file_name" | "client">) {
+/** Attach a signed-in user to the Vesh beta tenant when they have none. */
+export async function ensureBetaMembership() {
+  const { data: sessionData } = await supabase.auth.getSession();
+  if (!sessionData.session) return { ok: false as const, error: "Not signed in" };
+  const { data, error } = await supabase.rpc("ensure_beta_membership");
+  if (error) return { ok: false as const, error: error.message };
+  return { ok: true as const, tenantId: (data as string | null) ?? null };
+}
+
+export async function insertScan(row: Partial<ScanRow> & Pick<ScanRow, "file_name">) {
+  await ensureBetaMembership();
   return supabase
     .from("scans")
-    .insert([{ ...row, tenant_id: await getCurrentTenantId() }])
+    .insert([{
+      file_name: row.file_name,
+      client: row.client ?? null,
+      stage: row.stage ?? "review",
+      items_detected: row.items_detected ?? 0,
+      progress: row.progress ?? 0,
+      detected_items: row.detected_items ?? [],
+      risk_flags: row.risk_flags ?? [],
+      estimate_ref: row.estimate_ref ?? null,
+      tenant_id: await getCurrentTenantId(),
+    }])
     .select()
     .single();
 }
@@ -315,10 +331,9 @@ export function formatScanToQuote(ms: number | null): string {
 
 // ─── Milestone claims ────────────────────────────────────────────────────
 //
-// milestone_claims table records each Submit Claim action. It creates a
-// DRAFT invoice in MYOB (via a future accounting sync trigger). Callers
-// update the local milestone status to "invoiced_draft" immediately;
-// MYOB sync-back will advance it to "invoiced" once finance approves.
+// milestone_claims records a Submit Claim only after the insert succeeds.
+// Callers must leave the milestone unchanged when `ok` is false. A draft
+// invoice reference is allocated only for a row that was actually written.
 //
 // Table schema (run via migrations):
 //   id uuid PK, project_id text, milestone_id text,
@@ -349,12 +364,15 @@ export async function submitMilestoneClaim(
   milestoneId: string,
   milestoneLabel: string,
   amount: number,
-): Promise<{ invRef: string | null; error: any }> {
+): Promise<{ ok: boolean; invRef: string | null; error: { message: string } | null }> {
   const { data: userResult } = await supabase.auth.getUser();
   const ownerId = userResult?.user?.id ?? null;
+  if (!ownerId) {
+    return { ok: false, invRef: null, error: { message: "Sign in before submitting a claim." } };
+  }
 
-  // Generate an invoice reference: INV-YYYY-NNN (3-digit random suffix for
-  // demo; in production this would be a MYOB-assigned sequence number).
+  await ensureBetaMembership();
+
   const year = new Date().getFullYear();
   const seq = String(Math.floor(Math.random() * 900) + 100);
   const invRef = `INV-${year}-${seq}`;
@@ -377,11 +395,9 @@ export async function submitMilestoneClaim(
     }]);
 
   if (error) {
-    // Table may not exist yet — log and return the generated ref anyway so
-    // the UI can update its local state optimistically.
     console.warn("[ElectraScan] milestone_claims insert failed:", error.message);
-    return { invRef, error };
+    return { ok: false, invRef: null, error: { message: error.message } };
   }
 
-  return { invRef, error: null };
+  return { ok: true, invRef, error: null };
 }

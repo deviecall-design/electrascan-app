@@ -1,15 +1,14 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, FileCheck2 } from "lucide-react";
+import { Plus } from "lucide-react";
 import { C, FONT } from "../components/desktop/tokens";
 import {
   PageHeader,
   Card,
   Footer,
-  Th,
-  Td,
   EmptyState,
 } from "../components/ui/anthropic";
+import { scanListStatus } from "../lib/scanRecord";
 import { PrimaryButton } from "../components/ui/anthropic/Button";
 import useSupabaseQuery from "../hooks/useSupabaseQuery";
 import { fetchScans } from "../services/supabaseData";
@@ -51,61 +50,29 @@ export default function DetectionScreen() {
           onCta={() => navigate("/detection/new")}
         />
       ) : (
-        <Card>
-          <table style={{ width: "100%", fontSize: 14 }}>
-            <thead>
-              <tr style={{ backgroundColor: C.bg, borderBottom: `1px solid ${C.border}` }}>
-                <Th>File</Th>
-                <Th>Client</Th>
-                <Th>Stage</Th>
-                <Th align="right">Items</Th>
-                <Th>Progress</Th>
-                <Th align="right">Started</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {liveScans.map((s: any, i: number) => (
-                <tr
-                  key={s.id ?? s.file_name}
-                  className="es-row"
-                  onClick={() => navigate(`/detection/${s.id ?? `scan-${i + 1}`}`)}
-                  style={{
-                    borderTop: `1px solid ${C.border}`,
-                    transition: "background-color 120ms",
-                    cursor: "pointer",
-                  }}
-                >
-                  <Td>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <FileCheck2 size={16} color={(s.progress ?? s.p) === 100 ? C.green : C.orange} />
-                      <span style={{ fontFamily: FONT.heading, fontSize: 14, fontWeight: 500 }}>{s.file_name ?? s.f}</span>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 }}>
+          {liveScans.map((s: any) => {
+            const status = scanListStatus(s);
+            return (
+              <Card key={s.id ?? s.file_name}>
+                <div style={{ height: 88, background: "linear-gradient(#e2e8f0 1px, transparent 1px), linear-gradient(90deg, #e2e8f0 1px, transparent 1px)", backgroundSize: "16px 16px", backgroundColor: "#f8fafc" }} />
+                <div style={{ padding: 18 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                    <div>
+                      <div style={{ fontFamily: FONT.heading, fontWeight: 600 }}>{s.file_name ?? "Untitled scan"}</div>
+                      <div style={{ fontSize: 13, color: C.textMuted }}>{s.client || "Client not set"}</div>
                     </div>
-                  </Td>
-                  <Td>{s.client ?? s.c}</Td>
-                  <Td>
-                    <span style={{ fontFamily: FONT.heading, fontSize: 13, color: C.textMuted }}>{s.stage ?? s.s}</span>
-                  </Td>
-                  <Td align="right" mono>
-                    <span style={{ fontWeight: 500 }}>{s.items_detected ?? s.n ?? 0}</span>
-                  </Td>
-                  <Td>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, width: 160 }}>
-                      <div style={{ flex: 1, height: 3, borderRadius: 2, backgroundColor: C.border, overflow: "hidden" }}>
-                        <div style={{ width: `${s.progress ?? s.p}%`, height: "100%", backgroundColor: (s.progress ?? s.p) === 100 ? C.green : C.orange }} />
-                      </div>
-                      <span style={{ fontFamily: FONT.mono, fontSize: 12, color: C.textMuted, width: 34 }}>{s.progress ?? s.p}%</span>
-                    </div>
-                  </Td>
-                  <Td align="right" muted>
-                    <span style={{ fontStyle: "italic", fontSize: 13 }}>
-                      {formatAuShortDateTime(s.started_at ?? s.t)}
-                    </span>
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: status === "Needs review" ? C.amber : C.green }}>{status}</span>
+                  </div>
+                  <div style={{ marginTop: 14, display: "flex", justifyContent: "space-between", fontSize: 13, color: C.textMuted }}>
+                    <span>{s.items_detected ?? 0} items · {formatAuShortDateTime(s.started_at)}</span>
+                    <button type="button" onClick={() => navigate(`/detection/${s.id}`)} style={{ color: C.orange, fontWeight: 600 }}>Open →</button>
+                  </div>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
       )}
 
       <Footer />

@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus } from "lucide-react";
 import { C } from "../components/desktop/tokens";
@@ -32,6 +32,7 @@ export default function EstimateScreen() {
     () => computeDashboardMoneyStats(liveEstimates),
     [liveEstimates],
   );
+  const [filter, setFilter] = useState<"All" | "draft" | "sent" | "viewed" | "approved">("All");
   const drafted = liveEstimates.length;
   const sentCount = liveEstimates.filter((e: any) => e.status === "sent").length;
   const approvedCount = liveEstimates.filter((e: any) => e.status === "approved").length;
@@ -57,6 +58,36 @@ export default function EstimateScreen() {
           <MiniStat label="Sent"      v={loading ? "—" : String(sentCount)}     tint={C.blue} />
           <MiniStat label="Approved"  v={loading ? "—" : String(approvedCount)} tint={C.green} />
           <MiniStat label="Win value" v={loading ? "—" : formatQuotedValue(stats.wonValue)} tint={C.green} />
+        </div>
+      )}
+
+      {!loading && !empty && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+          {([
+            ["All", "All"],
+            ["Draft", "draft"],
+            ["Sent", "sent"],
+            ["Viewed", "viewed"],
+            ["Won", "approved"],
+          ] as const).map(([label, value]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setFilter(value)}
+              style={{
+                minHeight: 40,
+                borderRadius: 999,
+                padding: "0 16px",
+                fontWeight: 600,
+                fontSize: 14,
+                background: filter === value ? C.ink : C.bgCard,
+                color: filter === value ? "#fff" : C.textMuted,
+                border: filter === value ? "none" : `1px solid ${C.border}`,
+              }}
+            >
+              {label}
+            </button>
+          ))}
         </div>
       )}
 
@@ -86,7 +117,7 @@ export default function EstimateScreen() {
               </tr>
             </thead>
             <tbody>
-              {liveEstimates.map((e: any) => {
+              {liveEstimates.filter((e: any) => filter === "All" || e.status === filter).map((e: any) => {
                 const days = daysSinceSent(e);
                 return (
                   <tr

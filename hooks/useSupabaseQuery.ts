@@ -27,9 +27,12 @@ interface QueryState<T> {
   error: boolean;
 }
 
+const DEFAULT_TIMEOUT_MS = 12000;
+
 export default function useSupabaseQuery<T>(
   fetcher: () => Promise<SupabaseResult<T>>,
   fallback?: T[],
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): QueryState<T> {
   const [state, setState] = useState<QueryState<T>>({
     data: [],
@@ -40,33 +43,51 @@ export default function useSupabaseQuery<T>(
 
   useEffect(() => {
     let cancelled = false;
+    let settled = false;
+
+    let timer = 0;
+    const finish = (next: QueryState<T>) => {
+      if (cancelled || settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      setState(next);
+    };
+
+    timer = window.setTimeout(() => {
+      finish({
+        data: fallback ?? [],
+        loading: false,
+        isLive: false,
+        error: true,
+      });
+    }, timeoutMs);
 
     fetcher()
       .then(({ data, error }) => {
-        if (cancelled) return;
         if (error || !data) {
-          setState({
+          finish({
             data: fallback ?? [],
             loading: false,
             isLive: false,
             error: true,
           });
         } else {
-          setState({ data, loading: false, isLive: true, error: false });
+          finish({ data, loading: false, isLive: true, error: false });
         }
       })
       .catch(() => {
-        if (!cancelled) {
-          setState({
-            data: fallback ?? [],
-            loading: false,
-            isLive: false,
-            error: true,
-          });
-        }
+        finish({
+          data: fallback ?? [],
+          loading: false,
+          isLive: false,
+          error: true,
+        });
       });
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, []); // intentional: fetch once on mount
 
   return state;

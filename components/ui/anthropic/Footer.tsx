@@ -32,7 +32,7 @@ export default function Footer({
         fontSize: 13,
       }}
     >
-      <span style={{ fontStyle: "italic" }}>{tagline}</span>
+      <span>{tagline}</span>
       <span style={{ fontFamily: FONT.mono, fontSize: 12 }}>
         {version} · {region}
       </span>

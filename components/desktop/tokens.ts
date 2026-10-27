@@ -10,62 +10,59 @@
  * without updating that reference. Mirror tokens also exist as `--es-*` CSS
  * variables in index.css for Tailwind / CSS-only consumers.
  *
- * PALETTE — restored to the original navy/blue scheme (2026-08-31).
+ * PALETTE — light workspace, navy sidebar, electric blue.
  *
- * The warm-cream + orange reskin landed in d85ecbf (2026-04-21). This file
- * returns the values to the dark navy and electric blue of the original
- * ElectraScan look while keeping every token NAME unchanged, so all screens
- * pick it up without edits. Do not rename these keys — roughly 250 call sites
- * across screens/ and components/ reference them.
- *
- * The `orange*` keys are retained as aliases mapped onto the blue brand ramp.
- * They are referenced widely; renaming them would be a large, risky diff while
- * the product is in front of a client. Treat them as "brand accent".
+ * Token NAMES are unchanged so existing call sites pick up the light theme.
+ * The `orange*` keys stay as the brand-blue aliases.
  *
  * Design rules:
- *   - Body bg is #0A1628 (deep navy). Cards sit on #132240.
- *   - Blue (#1D6EFD) is EARNED — primary CTAs, active nav, progress bars,
- *     AI sparkle icons only. Not decoration.
- *   - bgPaper stays light: it backs the printed quote preview, which must
- *     read as paper. Text on it uses `paperText`, never `text`.
+ *   - Page background is slate-50. Cards are white.
+ *   - The sidebar is navy (`sidebar` / `ink`). Do not paint page text with it.
+ *   - Blue (#1F56E6) is the primary action. One sans (Inter) everywhere;
+ *     JetBrains Mono for codes and amounts.
+ *   - bgPaper stays white for the printed quote preview.
  */
 
 export const C = {
-  // Surface
-  bg:         "#0A1628", // App body — deep navy
-  bgSoft:     "#0F1E35", // Sidebar + zebra row hover
-  bgCard:     "#132240", // Cards, tables, inputs
-  bgPaper:    "#ffffff", // Document preview paper — stays light, it is paper
-  border:     "#1A3358", // Card + divider borders
-  borderSoft: "#172A4D", // Ghost hover, nav hover
+  // Surface — light workspace
+  bg:         "#f8fafc",
+  bgSoft:     "#f1f5f9",
+  bgCard:     "#ffffff",
+  bgPaper:    "#ffffff",
+  border:     "#e2e8f0",
+  borderSoft: "#f1f5f9",
 
-  // Text
-  text:       "#EDF2FF", // Primary text on dark
-  textMuted:  "#8BA4C4", // Secondary (labels, table muted)
-  textSubtle: "#5C7A9E", // Tertiary (hints, deep de-emphasis)
+  // Text on light
+  text:       "#0f172a",
+  textMuted:  "#475569",
+  textSubtle: "#64748b",
 
-  // Text for the light paper surface (quote/PDF preview only)
-  paperText:      "#0A1628",
-  paperTextMuted: "#4A5B72",
+  paperText:      "#0f172a",
+  paperTextMuted: "#475569",
 
-  // Brand — earned, never decorative. Named orange* for call-site
-  // compatibility; the values are the blue brand ramp.
-  orange:     "#1D6EFD", // Primary accent
-  orangeDark: "#4B8FFF", // Hover — lighter on dark, not darker
-  orangeSoft: "#16294a", // Tinted chip / pill background on navy
+  // Brand blue. Named orange* so existing call sites keep working.
+  orange:     "#1f56e6",
+  orangeDark: "#1a45b8",
+  orangeSoft: "#eef4ff",
 
-  // Semantic — tuned for contrast on the navy surface
-  blue:       "#4B8FFF", blueSoft:  "#16294a",  // Sent / informational
-  green:      "#00C48C", greenSoft: "#0d3a30",  // Approved / materials
-  amber:      "#FFB020", amberSoft: "#3a2c10",  // Needs review / warning
-  red:        "#EF4444", redSoft:   "#3a1518",  // Errors / blockers — navy tint, not cream
+  blue:       "#1f56e6", blueSoft:  "#eef4ff",
+  green:      "#059669", greenSoft: "#ecfdf5",
+  amber:      "#b45309", amberSoft: "#fffbeb",
+  red:        "#e11d48", redSoft:   "#fff1f2",
+
+  // Navy chrome — sidebar and the Aries card only
+  sidebar:    "#0a1628",
+  ink:        "#0a1628",
+  ink2:       "#132240",
+  sidebarText:"#cbd5e1",
+  sidebarMuted:"#64748b",
 } as const;
 
-// Font stacks — loaded via Google Fonts <link> in index.html (no npm dep).
+// Inter for every UI string. Mono for rate codes and money.
 export const FONT = {
-  heading: "'Poppins', Arial, sans-serif",     // Headings, numbers, labels, buttons
-  body:    "'Lora', Georgia, serif",           // Prose, italic accents
-  mono:    "'JetBrains Mono', ui-monospace, monospace", // Rate codes, monetary values
+  heading: "Inter, system-ui, sans-serif",
+  body:    "Inter, system-ui, sans-serif",
+  mono:    "'JetBrains Mono', ui-monospace, monospace",
 } as const;
 
 export const SPACING = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;

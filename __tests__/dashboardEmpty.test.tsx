@@ -31,7 +31,7 @@ describe("Dashboard empty pipeline", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText(/welcome back, vesh/i)).toBeInTheDocument();
+    expect(screen.getByText(/good (morning|afternoon|evening), vesh/i)).toBeInTheDocument();
     expect(screen.getAllByText("No scans yet").length).toBeGreaterThan(0);
     expect(screen.getByText("No estimates yet")).toBeInTheDocument();
     const ctas = screen.getAllByRole("button", { name: /upload plan/i });
