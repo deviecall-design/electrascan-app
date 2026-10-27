@@ -164,49 +164,43 @@
    body background and any CSS-only consumer read, so changing tokens.ts alone
    leaves the page on the old cream background. */
 :root {
-  /* Surface — deep navy */
-  --es-bg:          #0A1628;
-  --es-bg-soft:     #0F1E35;
-  --es-bg-card:     #132240;
-  --es-bg-paper:    #ffffff; /* quote preview is paper — stays light */
-  --es-border:      #1A3358;
-  --es-border-soft: #172A4D;
+  --es-bg:          #f8fafc;
+  --es-bg-soft:     #f1f5f9;
+  --es-bg-card:     #ffffff;
+  --es-bg-paper:    #ffffff;
+  --es-border:      #e2e8f0;
+  --es-border-soft: #f1f5f9;
 
-  /* Text on dark */
-  --es-text:        #EDF2FF;
-  --es-text-muted:  #8BA4C4;
-  --es-text-subtle: #5C7A9E;
+  --es-text:        #0f172a;
+  --es-text-muted:  #475569;
+  --es-text-subtle: #64748b;
 
-  /* Brand — named orange* for call-site compatibility, values are blue */
-  --es-orange:      #1D6EFD;
-  --es-orange-dark: #4B8FFF;
-  --es-orange-soft: #16294a;
+  --es-orange:      #1f56e6;
+  --es-orange-dark: #1a45b8;
+  --es-orange-soft: #eef4ff;
 
-  /* Semantic tints — tuned for the navy surface */
-  --es-blue:        #4B8FFF;
-  --es-blue-soft:   #16294a;
-  --es-green:       #00C48C;
-  --es-green-soft:  #0d3a30;
-  --es-amber:       #FFB020;
-  --es-amber-soft:  #3a2c10;
-  --es-red:         #EF4444;
-  --es-red-soft:    #3a1518;
+  --es-blue:        #1f56e6;
+  --es-blue-soft:   #eef4ff;
+  --es-green:       #059669;
+  --es-green-soft:  #ecfdf5;
+  --es-amber:       #b45309;
+  --es-amber-soft:  #fffbeb;
+  --es-red:         #e11d48;
+  --es-red-soft:    #fff1f2;
 
-  /* Typography — loaded via <link> in index.html */
-  --es-font-heading: 'Poppins', Arial, sans-serif;
-  --es-font-body:    'Lora', Georgia, serif;
+  --es-font-heading: Inter, system-ui, sans-serif;
+  --es-font-body:    Inter, system-ui, sans-serif;
   --es-font-mono:    'JetBrains Mono', ui-monospace, monospace;
 
-  /* Override shadcn base so ported shadcn components inherit the navy palette */
-  --background: #0A1628;
-  --foreground: #EDF2FF;
-  --card: #132240;
-  --card-foreground: #EDF2FF;
-  --border: #1A3358;
-  --primary: #1D6EFD;
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --border: #e2e8f0;
+  --primary: #1f56e6;
   --primary-foreground: #ffffff;
-  --muted: #0F1E35;
-  --muted-foreground: #8BA4C4;
+  --muted: #f1f5f9;
+  --muted-foreground: #475569;
 }
 
 /* Body styles — navy bg, grain, Lora serif as default */
@@ -218,7 +212,14 @@ body {
   line-height: 1.55;
   color: var(--es-text);
   background-color: var(--es-bg);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.035 0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.es-menu-btn { display: grid; }
+@media (min-width: 1024px) {
+  .es-menu-btn { display: none; }
+}
+@media (max-width: 1023px) {
+  .es-sidebar-desktop { display: none !important; }
 }
 
 /* Normalise interactive elements so they inherit the ElectraScan look by
@@ -254,6 +255,12 @@ table {
   font-weight: 600;
 }
 .es-nav[aria-current="page"]:hover { background-color: var(--es-orange-dark); }
+.es-nav.es-nav-side:hover:not([aria-current="page"]) { background-color: rgba(255,255,255,0.06); }
+.es-nav.es-nav-side[aria-current="page"],
+.es-nav.es-nav-side[aria-current="page"]:hover {
+  background-color: rgba(255,255,255,0.10);
+  color: #ffffff;
+}
 .es-link:hover { color: var(--es-orange-dark); }
 .es-btn-primary:hover { background-color: var(--es-orange-dark) !important; }
 .es-btn-ghost:hover { background-color: var(--es-bg-soft); }

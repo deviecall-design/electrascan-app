@@ -13,38 +13,46 @@ interface PageHeaderProps {
   title: string;
   sub?: string;
   cta?: React.ReactNode;
+  crumb?: React.ReactNode;
 }
 
-export default function PageHeader({ title, sub, cta }: PageHeaderProps) {
+export default function PageHeader({ title, sub, cta, crumb }: PageHeaderProps) {
   return (
     <div
       style={{
         display: "flex",
         alignItems: "flex-end",
         justifyContent: "space-between",
+        gap: 16,
         marginBottom: 28,
+        flexWrap: "wrap",
       }}
     >
       <div>
+        {crumb && (
+          <div style={{ marginBottom: 8, fontSize: 14, fontWeight: 500, color: C.textMuted }}>
+            {crumb}
+          </div>
+        )}
         <h1
           style={{
             fontFamily: FONT.heading,
             fontSize: 30,
-            fontWeight: 600,
+            fontWeight: 700,
             letterSpacing: "-0.02em",
-            margin: "0 0 6px 0",
+            margin: 0,
             lineHeight: 1.15,
           }}
         >
           {title}
         </h1>
         {sub && (
-          <p style={{ color: C.textMuted, fontStyle: "italic", margin: 0 }}>
+          <p style={{ color: C.textMuted, margin: "6px 0 0 0", maxWidth: 640 }}>
             {sub}
           </p>
         )}
       </div>
-      {cta}
+      {cta && <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>{cta}</div>}
     </div>
   );
 }

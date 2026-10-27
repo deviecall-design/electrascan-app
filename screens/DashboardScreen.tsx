@@ -1,22 +1,24 @@
 import React, { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  ArrowUpRight,
+  ArrowRight,
   Sparkles,
+  FileText,
+  DollarSign,
+  Target,
+  Clock,
+  AlertTriangle,
+  Send,
+  ChevronRight,
+  ScanLine,
 } from "lucide-react";
 import { C, FONT } from "../components/desktop/tokens";
 import {
   Card,
-  Kpi,
-  SectionHead,
-  ScanRow,
   Footer,
-  B,
-  Th,
-  Td,
-  StatusPill,
   EmptyState,
 } from "../components/ui/anthropic";
+import { PrimaryButton } from "../components/ui/anthropic/Button";
 import useSupabaseQuery from "../hooks/useSupabaseQuery";
 import {
   fetchEstimates,
@@ -30,14 +32,22 @@ import useOptionalAuthUser, {
 } from "../hooks/useOptionalAuthUser";
 import {
   computeDashboardMoneyStats,
-  quotedTotalIncGst,
   formatQuotedValue,
   formatPipelineKpi,
-  estimateDisplayRef,
-  daysSinceSent,
 } from "../lib/estimateMoney";
 import { ariesPipelineInsight } from "../lib/ariesSuggestion";
 import QueryBanner from "../components/QueryBanner";
+import { timeGreeting } from "../lib/greeting";
+import { scanListStatus } from "../lib/scanRecord";
+import { attentionFromPipeline } from "../lib/pipelineAttention";
+import { formatAuShortDateTime } from "../lib/dates";
+
+const STATUS_TONE: Record<string, { bg: string; fg: string }> = {
+  Reviewed: { bg: C.greenSoft, fg: C.green },
+  "Needs review": { bg: C.amberSoft, fg: C.amber },
+  Quoted: { bg: C.orangeSoft, fg: C.orange },
+  "In progress": { bg: C.bgSoft, fg: C.textMuted },
+};
 
 export default function DashboardScreen() {
   const navigate = useNavigate();
@@ -59,12 +69,16 @@ export default function DashboardScreen() {
 
   const loading = estimatesLoading || scansLoading;
   const loadError = estimatesError || scansError;
-  const displayEstimates = liveEstimates.slice(0, 6);
-  const displayScans = liveScans.filter((s: any) => (s.progress ?? 0) < 100).slice(0, 3);
+  const recentScans = liveScans.slice(0, 5);
 
   const stats = useMemo(
     () => computeDashboardMoneyStats(liveEstimates, liveScans),
     [liveEstimates, liveScans],
+  );
+
+  const attention = useMemo(
+    () => attentionFromPipeline(liveScans, liveEstimates),
+    [liveScans, liveEstimates],
   );
 
   const ariesCopy = loading
@@ -77,189 +91,176 @@ export default function DashboardScreen() {
           estimateCount: liveEstimates.length,
         });
 
-  const fmtCount = (n: number) => String(n);
   const fmtPct = (n: number | null) => (n == null ? "—" : `${n}%`);
+  const emptyPipeline = !loading && liveEstimates.length === 0 && liveScans.length === 0;
 
   return (
     <div className="anim-in">
       <QueryBanner loading={loading} error={loadError} noun="estimates and scans" />
 
-      <div style={{ marginBottom: 32 }}>
-        <h1
-          style={{
-            fontFamily: FONT.heading,
-            fontSize: 30,
-            fontWeight: 600,
-            letterSpacing: "-0.02em",
-            margin: "0 0 6px 0",
-            lineHeight: 1.15,
-          }}
-        >
-          Welcome back, {greetName}.
-        </h1>
-        <p style={{ color: C.textMuted, fontStyle: "italic", margin: 0, fontSize: 16 }}>
-          {loading
-            ? "Loading your pipeline…"
-            : liveEstimates.length === 0 && liveScans.length === 0
-              ? "Here's what's happening with your estimates — upload a plan to start the first scan."
-              : <>You have <B>{displayScans.length} scans</B> in queue and <B>{formatQuotedValue(stats.pendingValue)}</B> in pending estimates.</>}
-        </p>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-end", marginBottom: 28, flexWrap: "wrap" }}>
+        <div>
+          <h1 style={{ fontFamily: FONT.heading, fontSize: 30, fontWeight: 700, letterSpacing: "-0.02em", margin: 0 }}>
+            {timeGreeting(greetName)}
+          </h1>
+          <p style={{ color: C.textMuted, margin: "6px 0 0 0", maxWidth: 640 }}>
+            {emptyPipeline
+              ? "Your quoting pipeline is empty. Upload a plan to start the first scan."
+              : "Your quoting pipeline at a glance. Pick up where you left off, or start a new scan."}
+          </p>
+        </div>
+        <PrimaryButton icon={<ScanLine size={18} />} onClick={() => navigate("/detection/new")}>
+          New scan
+        </PrimaryButton>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 32 }}>
-        <Kpi label="Estimates this month" value={loading ? "—" : fmtCount(stats.estimatesThisMonth)} delta=""    sub="MTD"                 up />
-        <Kpi label="Pending value"        value={loading ? "—" : formatPipelineKpi(stats.pendingValue)} delta="" sub="sent + viewed inc GST" up />
-        <Kpi label="Win rate"             value={loading ? "—" : fmtPct(stats.winRate)}          delta=""    sub="closed last 90 days"  up />
-        <Kpi label="Avg scan-to-quote"    value={loading ? "—" : formatScanToQuote(stats.avgScanToQuoteMs)} delta="" sub="linked scans" up />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16, marginBottom: 24 }}>
+        <Kpi label="Estimates this month" value={loading ? "—" : String(stats.estimatesThisMonth)} hint="This month" icon={<FileText size={18} />} />
+        <Kpi label="Pending value" value={loading ? "—" : formatPipelineKpi(stats.pendingValue)} hint="Sent + viewed, inc GST" icon={<DollarSign size={18} />} />
+        <Kpi label="Win rate" value={loading ? "—" : fmtPct(stats.winRate)} hint="Closed, last 90 days" icon={<Target size={18} />} accent={C.green} />
+        <Kpi label="Avg scan-to-quote" value={loading ? "—" : formatScanToQuote(stats.avgScanToQuoteMs)} hint="Across linked scans" icon={<Clock size={18} />} />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "2fr 3fr", gap: 24 }}>
-        <section>
-          <SectionHead title="Recent scans" cta="View all scans" onCta={() => navigate("/detection")} />
-          <Card>
-            {loading ? (
-              <div style={{ padding: 18, color: C.textMuted, fontStyle: "italic", fontSize: 14 }}>
-                Loading scans…
-              </div>
-            ) : liveScans.length === 0 ? (
-              <div style={{ padding: 10 }}>
-                <EmptyState
-                  title="No scans yet"
-                  body="Upload your first plan to start a scan and generate an estimate."
-                  ctaLabel="Upload plan"
-                  onCta={() => navigate("/detection/new")}
-                />
-              </div>
-            ) : displayScans.length === 0 ? (
-              <div style={{ padding: 18, color: C.textMuted, fontStyle: "italic", fontSize: 14 }}>
-                No scans in progress — all current jobs are complete.
-              </div>
-            ) : displayScans.map((s: any, i: number) => (
-              <ScanRow
-                key={s.id ?? s.file_name}
-                file={s.file_name ?? s.file}
-                client={s.client ?? ""}
-                progress={s.progress ?? 0}
-                stage={s.stage ?? "Processing"}
-                divider={i > 0}
-                onClick={() => navigate(`/detection/${s.id ?? `scan-${i + 1}`}`)}
-              />
-            ))}
-          </Card>
-
-          <div
-            style={{
-              marginTop: 20,
-              padding: 18,
-              backgroundColor: C.bgCard,
-              border: `1px solid ${C.border}`,
-              borderRadius: 10,
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-              <Sparkles size={14} color={C.orange} />
-              <span
-                style={{
-                  fontFamily: FONT.heading,
-                  fontSize: 11,
-                  fontWeight: 600,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.08em",
-                  color: C.textMuted,
-                }}
-              >
-                Aries insight
-              </span>
-            </div>
-            <p style={{ margin: 0, fontSize: 15, lineHeight: 1.65 }}>
-              {ariesCopy}
-            </p>
-            <button
-              className="es-link"
-              onClick={() => navigate(liveEstimates.length === 0 ? "/detection/new" : "/pricing-schedule")}
-              style={{
-                marginTop: 10,
-                fontSize: 13,
-                color: C.orange,
-                fontFamily: FONT.heading,
-                fontWeight: 500,
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 4,
-              }}
-            >
-              {liveEstimates.length === 0 ? "Upload plan" : "Open rate library"} <ArrowUpRight size={13} />
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 2fr) minmax(260px, 1fr)", gap: 24 }}>
+        <Card>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 20px", borderBottom: `1px solid ${C.border}` }}>
+            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Continue where you left off</h2>
+            <button type="button" onClick={() => navigate("/detection")} style={{ color: C.orange, fontWeight: 600, fontSize: 14 }}>
+              All scans →
             </button>
           </div>
-        </section>
-
-        <section>
-          <SectionHead title="Recent estimates" cta="Open estimates" onCta={() => navigate("/estimate")} />
-          <Card>
-            {loading ? (
-              <div style={{ padding: 18, color: C.textMuted, fontStyle: "italic", fontSize: 14 }}>
-                Loading estimates…
-              </div>
-            ) : displayEstimates.length === 0 ? (
-              <div style={{ padding: 10 }}>
-                <EmptyState
-                  title="No estimates yet"
-                  body="Quotes land here after you send one from a scan. Start with a floor plan."
-                  ctaLabel="Upload plan"
-                  onCta={() => navigate("/detection/new")}
-                />
-              </div>
-            ) : (
-            <table style={{ width: "100%", fontSize: 14 }}>
-              <thead>
-                <tr style={{ backgroundColor: C.bg, borderBottom: `1px solid ${C.border}` }}>
-                  <Th>Reference</Th>
-                  <Th>Client</Th>
-                  <Th align="right">Value</Th>
-                  <Th>Status</Th>
-                  <Th align="right">Sent</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {displayEstimates.map((e: any) => {
-                  const days = daysSinceSent(e);
-                  return (
-                    <tr
-                      key={e.id ?? e.reference ?? e.ref ?? e.r}
-                      className="es-row"
+          {loading ? (
+            <div style={{ padding: 18, color: C.textMuted }}>Loading scans…</div>
+          ) : liveScans.length === 0 ? (
+            <div style={{ padding: 12 }}>
+              <EmptyState
+                title="No scans yet"
+                body="Upload your first plan to start a scan and generate an estimate."
+                ctaLabel="Upload plan"
+                onCta={() => navigate("/detection/new")}
+              />
+            </div>
+          ) : (
+            <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+              {recentScans.map((scan: any) => {
+                const status = scanListStatus(scan);
+                const tone = STATUS_TONE[status];
+                const when = formatAuShortDateTime(scan.started_at);
+                return (
+                  <li key={scan.id}>
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/detection/${scan.id}`)}
                       style={{
-                        borderTop: `1px solid ${C.border}`,
-                        transition: "background-color 120ms",
-                        cursor: "pointer",
+                        display: "flex",
+                        width: "100%",
+                        alignItems: "center",
+                        gap: 14,
+                        padding: "14px 20px",
+                        textAlign: "left",
+                        minHeight: 64,
                       }}
-                      onClick={() => navigate("/estimate")}
                     >
-                      <Td mono>
-                        <span style={{ fontWeight: 500, fontSize: 13, letterSpacing: "-0.01em" }}>
-                          {estimateDisplayRef(e)}
+                      <span style={{ width: 40, height: 40, borderRadius: 12, background: C.orangeSoft, color: C.orange, display: "grid", placeItems: "center", flexShrink: 0 }}>
+                        <ScanLine size={18} />
+                      </span>
+                      <span style={{ minWidth: 0, flex: 1 }}>
+                        <span style={{ display: "block", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {scan.file_name || "Untitled scan"}
                         </span>
-                      </Td>
-                      <Td>{e.client}</Td>
-                      <Td align="right" mono>
-                        <span style={{ fontWeight: 500 }}>{formatQuotedValue(quotedTotalIncGst(e))}</span>
-                      </Td>
-                      <Td><StatusPill status={e.status} /></Td>
-                      <Td align="right" muted>
-                        <span style={{ fontStyle: "italic", fontSize: 13 }}>
-                          {days == null ? "—" : `${days}d ago`}
+                        <span style={{ fontSize: 13, color: C.textMuted }}>
+                          {[scan.client, scan.items_detected != null ? `${scan.items_detected} items` : null, when !== "—" ? when : null].filter(Boolean).join(" · ")}
                         </span>
-                      </Td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                      </span>
+                      <span style={{ borderRadius: 999, padding: "4px 10px", fontSize: 12, fontWeight: 600, background: tone.bg, color: tone.fg }}>{status}</span>
+                      <ChevronRight size={18} color={C.textSubtle} />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ borderRadius: 16, padding: 22, background: `linear-gradient(135deg, ${C.ink}, ${C.ink2})`, color: "#fff" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, color: "#dbe6ff" }}>
+              <Sparkles size={16} /> Aries insight
+            </div>
+            <p style={{ margin: "12px 0 0", fontSize: 16, lineHeight: 1.45 }}>{ariesCopy}</p>
+            <button
+              type="button"
+              onClick={() => navigate(liveEstimates.length === 0 ? "/detection/new" : "/pricing-schedule")}
+              style={{
+                marginTop: 16,
+                minHeight: 44,
+                padding: "0 14px",
+                borderRadius: 12,
+                background: "#eef4ff",
+                color: C.orangeDark,
+                fontWeight: 600,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              {liveEstimates.length === 0 ? "Upload plan" : "Review rates"} <ArrowRight size={16} />
+            </button>
+          </div>
+
+          <Card style={{ padding: 20 }}>
+            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Needs your attention</h2>
+            {loading ? (
+              <p style={{ color: C.textMuted, fontSize: 14 }}>Loading…</p>
+            ) : attention.length === 0 ? (
+              liveEstimates.length === 0 ? (
+                <div style={{ marginTop: 8 }}>
+                  <EmptyState
+                    title="No estimates yet"
+                    body="Quotes land here after you send one from a scan."
+                    ctaLabel="Upload plan"
+                    onCta={() => navigate("/detection/new")}
+                  />
+                </div>
+              ) : (
+                <p style={{ color: C.textMuted, fontSize: 14, marginBottom: 0 }}>Nothing is waiting on you.</p>
+              )
+            ) : (
+              <ul style={{ listStyle: "none", margin: "12px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+                {attention.map(item => (
+                  <li key={item.id}>
+                    <button
+                      type="button"
+                      onClick={() => navigate(item.to)}
+                      style={{ display: "flex", gap: 10, alignItems: "flex-start", textAlign: "left", fontSize: 14, minHeight: 44 }}
+                    >
+                      {item.tone === "warning"
+                        ? <AlertTriangle size={18} color={C.amber} />
+                        : <Send size={18} color={C.orange} />}
+                      <span>{item.text}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
             )}
           </Card>
-        </section>
+        </div>
       </div>
 
       <Footer />
     </div>
+  );
+}
+
+function Kpi({ label, value, hint, icon, accent }: { label: string; value: string; hint: string; icon: React.ReactNode; accent?: string }) {
+  return (
+    <Card style={{ padding: 18 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span style={{ fontSize: 13, fontWeight: 500, color: C.textMuted }}>{label}</span>
+        <span style={{ width: 36, height: 36, borderRadius: 10, background: C.bgSoft, color: C.textMuted, display: "grid", placeItems: "center" }}>{icon}</span>
+      </div>
+      <div style={{ marginTop: 12, fontSize: 28, fontWeight: 700, letterSpacing: "-0.02em", color: accent || C.text, fontFamily: FONT.heading }}>{value}</div>
+      <div style={{ marginTop: 4, fontSize: 13, color: C.textMuted }}>{hint}</div>
+    </Card>
   );
 }

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useProjects, type Project } from "../contexts/ProjectContext";
 import { submitTimesheet, submitMilestoneClaim, calculateLabourSpent, calculateMaterialsSpent, calculateOverrunAmount } from "../services/reportsService";
+import { milestoneAfterSave } from "../lib/progressClaim";
 import { labourTotals } from "../services/hoursService";
 import { paymentSummary } from "../services/milestonesService";
 import { calculateVariance } from "../services/overrunsService";
@@ -248,10 +249,20 @@ export default function ReportsScreen({
 
   const claimMilestone = async (idx: number) => {
     const m = milestones[idx];
-    // Per Section 9.2: Submit Claim transitions Ready → Invoiced (Draft), pending finance approval in MYOB.
-    setMilestones(prev => prev.map((x, i) => i === idx ? { ...x, status: "invoiced-draft" as const, claimDate: new Date().toLocaleDateString("en-AU"), warning: false } : x));
     const res = await submitMilestoneClaim({ projectName, milestone: m.label, amount: m.amount });
-    setSyncMsg(res.ok ? "ok" : "local");
+    if (!res.ok) {
+      setSyncMsg("local");
+      window.setTimeout(() => setSyncMsg("idle"), 1800);
+      return;
+    }
+    setMilestones(prev => prev.map((row, i) => i === idx
+      ? milestoneAfterSave(row, res, {
+          status: "invoiced-draft" as const,
+          claimDate: new Date().toLocaleDateString("en-AU"),
+          warning: false,
+        })
+      : row));
+    setSyncMsg("ok");
     window.setTimeout(() => setSyncMsg("idle"), 1800);
   };
 

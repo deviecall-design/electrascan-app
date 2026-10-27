@@ -23,7 +23,7 @@ interface StatusPillProps {
 }
 
 const MAP: Record<EstimateStatus, { bg: string; fg: string; icon: React.ReactNode; label: string }> = {
-  approved: { bg: C.greenSoft,  fg: C.green,     icon: <CheckCircle2 size={11} />, label: "Approved" },
+  approved: { bg: C.greenSoft,  fg: C.green,     icon: <CheckCircle2 size={11} />, label: "Won" },
   sent:     { bg: C.blueSoft,   fg: C.blue,      icon: <Send size={11} />,         label: "Sent" },
   viewed:   { bg: C.borderSoft, fg: C.textMuted, icon: <Eye size={11} />,          label: "Viewed" },
   draft:    { bg: C.bgSoft,     fg: C.textSubtle, icon: <FileEdit size={11} />,    label: "Draft" },

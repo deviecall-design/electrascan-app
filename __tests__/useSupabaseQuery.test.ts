@@ -73,6 +73,14 @@ describe('useSupabaseQuery', () => {
     expect(result.current.error).toBe(true);
   });
 
+  it('stops loading when the query never settles', async () => {
+    const fetcher = vi.fn(() => new Promise<{ data: null; error: null }>(() => {}));
+    const { result } = renderHook(() => useSupabaseQuery(fetcher, undefined, 20));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.error).toBe(true);
+    expect(result.current.data).toEqual([]);
+  });
+
   it('calls the fetcher exactly once on mount', async () => {
     const fetcher = vi.fn().mockResolvedValue({ data: [], error: null });
 

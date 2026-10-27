@@ -1,35 +1,27 @@
 /**
- * DesktopShell — persistent navy chrome for the ElectraScan desktop workflow.
+ * DesktopShell — navy sidebar, light workspace.
  *
- * V1 refined navy AppShell:
- *   ┌───────────┬────────────────────────────────────────┐
- *   │           │ TopBar (New scan, search ⌘K, bell)     │
- *   │  Sidebar  ├────────────────────────────────────────┤
- *   │  (240)    │                                        │
- *   │           │  <Outlet /> — the routed screen        │
- *   │  Brand    │                                        │
- *   │  Nav      │                                        │
- *   │  User     │                                        │
- *   └───────────┴────────────────────────────────────────┘
- *
- * Search opens a real palette. The bell has no fake unread badge.
- * The old Vision-credits card (hardcoded 847/1,000) is gone — it lied.
+ * Workflow / Projects / Setup. New scan is the primary action.
+ * Search opens the real command palette. The bell has no fake unread dot.
+ * Below 1024px the sidebar becomes a drawer.
  */
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Outlet, useNavigate } from "react-router-dom";
+import { Link, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Scan,
   FileText,
   BookOpen,
   Settings as SettingsIcon,
-  FileEdit,
+  GitCompare,
   CheckCircle2,
-  FolderOpen,
+  FolderKanban,
   Bell,
   Plus,
   Search,
+  Menu,
+  X,
 } from "lucide-react";
 import ElectraScanMark from "./ElectraScanMark";
 import CommandPalette from "./CommandPalette";
@@ -52,27 +44,68 @@ interface NavEntry {
   end?: boolean;
 }
 
-const PRIMARY_NAV: NavEntry[] = [
-  { path: "/dashboard",        label: "Dashboard",        icon: <LayoutDashboard size={16} />, end: true },
-  { path: "/detection",        label: "Scans",            icon: <Scan size={16} /> },
-  { path: "/estimate",         label: "Estimates",        icon: <FileText size={16} /> },
-  { path: "/pricing-schedule", label: "Rates",            icon: <BookOpen size={16} /> },
-  { path: "/approvals",        label: "Approvals",        icon: <CheckCircle2 size={16} /> },
-  { path: "/variation-report", label: "Variation Report", icon: <FileEdit size={16} /> },
-  { path: "/projects",         label: "Project Reports",  icon: <FolderOpen size={16} /> },
-];
-
-const SECONDARY_NAV: NavEntry[] = [
-  { path: "/settings", label: "Settings", icon: <SettingsIcon size={16} /> },
+const NAV: { grp: string; items: NavEntry[] }[] = [
+  {
+    grp: "Workflow",
+    items: [
+      { path: "/dashboard", label: "Dashboard", icon: <LayoutDashboard size={18} />, end: true },
+      { path: "/detection", label: "Scans", icon: <Scan size={18} /> },
+      { path: "/estimate", label: "Estimates", icon: <FileText size={18} /> },
+      { path: "/approvals", label: "Approvals", icon: <CheckCircle2 size={18} /> },
+    ],
+  },
+  {
+    grp: "Projects",
+    items: [
+      { path: "/variation-report", label: "Variations", icon: <GitCompare size={18} /> },
+      { path: "/projects", label: "Project reports", icon: <FolderKanban size={18} /> },
+    ],
+  },
+  {
+    grp: "Setup",
+    items: [
+      { path: "/pricing-schedule", label: "Rates", icon: <BookOpen size={18} /> },
+      { path: "/settings", label: "Settings", icon: <SettingsIcon size={18} /> },
+    ],
+  },
 ];
 
 export default function DesktopShell() {
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
   return (
     <div style={{ display: "flex", minHeight: "100vh", color: C.text, fontFamily: FONT.body, backgroundColor: C.bg }}>
-      <Sidebar />
+      <aside
+        className="es-sidebar-desktop"
+        style={{
+          width: 256,
+          flexShrink: 0,
+          position: "sticky",
+          top: 0,
+          height: "100vh",
+          backgroundColor: C.sidebar,
+        }}
+      >
+        <SidebarBody onNavigate={() => setDrawerOpen(false)} />
+      </aside>
+
+      {drawerOpen && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 40 }}>
+          <button
+            type="button"
+            aria-label="Close menu"
+            onClick={() => setDrawerOpen(false)}
+            style={{ position: "absolute", inset: 0, backgroundColor: "rgba(0,0,0,0.4)" }}
+          />
+          <div style={{ position: "relative", height: "100%", width: 288, backgroundColor: C.sidebar }}>
+            <SidebarBody onNavigate={() => setDrawerOpen(false)} />
+          </div>
+        </div>
+      )}
+
       <main style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", backgroundColor: C.bg, overflow: "auto" }}>
-        <TopBar />
-        <div style={{ padding: "32px 32px 36px", maxWidth: 1400, width: "100%", flex: 1 }}>
+        <TopBar onMenu={() => setDrawerOpen(open => !open)} menuOpen={drawerOpen} />
+        <div style={{ padding: "32px 32px 36px", maxWidth: 1200, width: "100%", margin: "0 auto", flex: 1, boxSizing: "border-box" }}>
           <Outlet />
         </div>
       </main>
@@ -80,100 +113,107 @@ export default function DesktopShell() {
   );
 }
 
-function Sidebar() {
+function SidebarBody({ onNavigate }: { onNavigate: () => void }) {
+  const navigate = useNavigate();
   const company = getActiveCompanyProfile();
   const brand = tenantBrandName(company);
   const user = useOptionalAuthUser();
   const authName = nameFromAuthUser(user);
   const chipName = authName || brand;
-  const chipSub = user?.email?.trim() || null;
   const initials = tenantInitials({ ...company, name: chipName });
 
   return (
-    <aside
-      style={{
-        width: 240,
-        minHeight: "100vh",
-        borderRight: `1px solid ${C.border}`,
-        backgroundColor: C.bgSoft,
-        padding: "24px 16px",
-        display: "flex",
-        flexDirection: "column",
-        position: "sticky",
-        top: 0,
-        height: "100vh",
-        flexShrink: 0,
-      }}
-    >
-      <div style={{ padding: "0 8px", marginBottom: 32 }}>
-        <ElectraScanMark size={32} subtitle={brand} />
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", padding: "20px 16px", color: C.sidebarText }}>
+      <div style={{ padding: "0 8px" }}>
+        <ElectraScanMark size={36} onDark />
       </div>
 
-      <nav style={{ display: "flex", flexDirection: "column", gap: 2 }} aria-label="Primary">
-        {PRIMARY_NAV.map(item => (
-          <NavItem
-            key={item.path}
-            to={item.path}
-            end={item.end}
-            icon={item.icon}
-            label={item.label}
-          />
-        ))}
-      </nav>
+      <button
+        type="button"
+        className="es-btn-primary"
+        onClick={() => {
+          onNavigate();
+          navigate("/detection/new");
+        }}
+        style={{
+          marginTop: 24,
+          width: "100%",
+          minHeight: 44,
+          fontFamily: FONT.heading,
+          fontSize: 14,
+          fontWeight: 600,
+          backgroundColor: C.orange,
+          color: "#fff",
+          borderRadius: 12,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 8,
+        }}
+      >
+        <Plus size={18} strokeWidth={2.5} /> New scan
+      </button>
 
-      <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 2 }}>
-        {SECONDARY_NAV.map(item => (
-          <NavItem key={item.path} to={item.path} icon={item.icon} label={item.label} />
-        ))}
-      </div>
-
-      <div style={{ marginTop: "auto", borderTop: `1px solid ${C.border}`, paddingTop: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 8px" }}>
-          <div
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: "50%",
-              backgroundColor: C.orange,
-              color: "#fff",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontFamily: FONT.heading,
-              fontWeight: 600,
-              fontSize: 12,
-              flexShrink: 0,
-            }}
-          >
-            {initials}
+      {NAV.map(group => (
+        <div key={group.grp} style={{ marginTop: 24 }}>
+          <div style={{ padding: "0 12px", fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: C.sidebarMuted }}>
+            {group.grp}
           </div>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontFamily: FONT.heading, fontSize: 13, fontWeight: 600 }}>
-              {chipName}
+          <nav style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 8 }} aria-label={group.grp}>
+            {group.items.map(item => (
+              <NavItem
+                key={item.path}
+                to={item.path}
+                end={item.end}
+                icon={item.icon}
+                label={item.label}
+                variant="sidebar"
+                onClick={onNavigate}
+              />
+            ))}
+          </nav>
+        </div>
+      ))}
+
+      <div style={{ marginTop: "auto", display: "flex", alignItems: "center", gap: 12, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.05)", padding: 12 }}>
+        <div
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: "50%",
+            backgroundColor: C.orange,
+            color: "#fff",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontFamily: FONT.heading,
+            fontWeight: 700,
+            fontSize: 12,
+            flexShrink: 0,
+          }}
+        >
+          {initials}
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontFamily: FONT.heading, fontSize: 14, fontWeight: 600, color: "#fff" }}>
+            {chipName}
+          </div>
+          {user?.email ? (
+            <div style={{ fontSize: 12, color: "#94a3b8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {user.email}
             </div>
-            {chipSub && (
-              <div
-                style={{
-                  fontSize: 12,
-                  color: C.textSubtle,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-                title={chipSub}
-              >
-                {chipSub}
-              </div>
-            )}
-          </div>
+          ) : (
+            <Link to="/login" onClick={onNavigate} style={{ fontSize: 13, fontWeight: 600, color: "#93c5fd" }}>
+              Sign in
+            </Link>
+          )}
         </div>
       </div>
-    </aside>
+    </div>
   );
 }
 
-function TopBar() {
-  const navigate = useNavigate();
+function TopBar({ onMenu, menuOpen }: { onMenu: () => void; menuOpen: boolean }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
   const notesRef = useRef<HTMLDivElement>(null);
@@ -212,35 +252,33 @@ function TopBar() {
     <div
       style={{
         borderBottom: `1px solid ${C.border}`,
-        padding: "12px 32px",
+        padding: "12px 24px",
         display: "flex",
         alignItems: "center",
-        justifyContent: "flex-end",
         gap: 12,
-        backgroundColor: C.bg,
+        backgroundColor: "rgba(255,255,255,0.9)",
         position: "sticky",
         top: 0,
         zIndex: 10,
+        minHeight: 64,
       }}
     >
       <button
-        className="es-btn-primary"
-        onClick={() => navigate("/detection/new")}
+        type="button"
+        className="es-menu-btn"
+        aria-label="Menu"
+        onClick={onMenu}
         style={{
-          fontFamily: FONT.heading,
-          fontSize: 14,
-          fontWeight: 500,
-          backgroundColor: C.orange,
-          color: "#fff",
-          padding: "9px 16px",
-          borderRadius: RADIUS.md + 2,
-          display: "flex",
-          alignItems: "center",
-          gap: 7,
-          transition: "background-color 150ms",
+          width: 44,
+          height: 44,
+          placeItems: "center",
+          borderRadius: 12,
+          border: `1px solid ${C.border}`,
+          backgroundColor: C.bgCard,
+          color: C.text,
         }}
       >
-        <Plus size={15} strokeWidth={2.5} /> New scan
+        {menuOpen ? <X size={18} /> : <Menu size={18} />}
       </button>
 
       <button
@@ -257,16 +295,18 @@ function TopBar() {
           gap: 10,
           color: C.textSubtle,
           fontSize: 14,
-          padding: "8px 14px",
-          border: `1px solid ${C.border}`,
-          borderRadius: RADIUS.md + 2,
-          backgroundColor: C.bgCard,
-          width: 320,
+          padding: "0 14px",
+          minHeight: 44,
+          border: "none",
+          borderRadius: 12,
+          backgroundColor: "#f1f5f9",
+          flex: 1,
+          maxWidth: 480,
           textAlign: "left",
           fontFamily: FONT.body,
         }}
       >
-        <Search size={15} />
+        <Search size={18} />
         <span style={{ flex: 1 }}>Search scans, estimates, plans…</span>
         <span
           style={{
@@ -274,7 +314,7 @@ function TopBar() {
             fontSize: 11,
             color: C.textSubtle,
             padding: "2px 6px",
-            border: `1px solid ${C.border}`,
+            backgroundColor: "#fff",
             borderRadius: 4,
           }}
         >
@@ -282,7 +322,7 @@ function TopBar() {
         </span>
       </button>
 
-      <div ref={notesRef} style={{ position: "relative" }}>
+      <div ref={notesRef} style={{ position: "relative", marginLeft: "auto" }}>
         <button
           type="button"
           className="es-btn-ghost"
@@ -295,13 +335,17 @@ function TopBar() {
           }}
           style={{
             position: "relative",
-            padding: 8,
-            borderRadius: RADIUS.md,
+            width: 44,
+            height: 44,
+            borderRadius: 12,
             border: `1px solid ${C.border}`,
             backgroundColor: C.bgCard,
+            display: "grid",
+            placeItems: "center",
+            color: C.text,
           }}
         >
-          <Bell size={16} />
+          <Bell size={18} />
         </button>
         {notesOpen && (
           <div
@@ -316,18 +360,11 @@ function TopBar() {
               border: `1px solid ${C.border}`,
               borderRadius: RADIUS.lg,
               padding: 16,
-              boxShadow: "0 16px 40px rgba(0,0,0,0.35)",
+              boxShadow: "0 16px 40px rgba(15,23,42,0.12)",
               zIndex: 20,
             }}
           >
-            <div
-              style={{
-                fontFamily: FONT.heading,
-                fontSize: 13,
-                fontWeight: 600,
-                marginBottom: 6,
-              }}
-            >
+            <div style={{ fontFamily: FONT.heading, fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
               Notifications
             </div>
             <p style={{ margin: 0, fontSize: 13, color: C.textMuted, lineHeight: 1.55 }}>

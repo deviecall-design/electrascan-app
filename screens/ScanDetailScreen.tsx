@@ -14,7 +14,8 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { fetchScanById, ScanRow } from "../services/supabaseData";
+import { fetchScanById, insertScan, updateScan, ScanRow } from "../services/supabaseData";
+import { buildScanWrite, readDetectedItems, recallScanFile, rememberScanFile, type StoredDetectedItem } from "../lib/scanRecord";
 import {
   ArrowLeft,
   ArrowRight,
@@ -37,6 +38,7 @@ import {
   Sparkles,
   RefreshCw,
   Plus,
+  Flag,
 } from "lucide-react";
 import { detectElectricalComponents, DetectionResult, DetectionPhase } from "../analyze_pdf";
 import { C, FONT, RADIUS } from "../components/desktop/tokens";
@@ -86,41 +88,30 @@ function lineTotal(it: DetectedItem): number {
 
 function unitPriceOf(it: DetectedItem): number {
   if (typeof it.unitPrice === "number" && it.unitPrice > 0) return it.unitPrice;
-  const r = RATE_LOOKUP[it.rateCode];
-  return r ? r.rate + r.labour : 0;
+  return 0;
+}
+
+function toStored(items: DetectedItem[]): StoredDetectedItem[] {
+  return items.map(item => ({
+    id: item.id,
+    symbol: item.symbol,
+    qty: item.qty,
+    desc: item.desc,
+    rateCode: item.rateCode,
+    conf: item.conf,
+    x: item.x,
+    y: item.y,
+    unitPrice: item.unitPrice,
+    category: item.category,
+    room: item.room,
+    detectedType: item.detectedType,
+  }));
 }
 
 /** True when we have no price at all — surfaced as "Price required" in Review. */
 function isUnpriced(it: DetectedItem): boolean {
   return lineTotal(it) === 0;
 }
-
-const DETECTED_ITEMS: DetectedItem[] = [
-  { id: 1,  symbol: "GPO", qty: 14, desc: "Double power outlet",        rateCode: "GPO-001", conf: 0.98, x: 120, y: 140 },
-  { id: 2,  symbol: "GPO", qty: 2,  desc: "Weatherproof GPO (balcony)", rateCode: "GPO-003", conf: 0.94, x: 380, y: 90  },
-  { id: 3,  symbol: "LT",  qty: 22, desc: "LED downlight",              rateCode: "LT-001",  conf: 0.96, x: 210, y: 210 },
-  { id: 4,  symbol: "SW",  qty: 9,  desc: "2-way light switch",         rateCode: "SW-002",  conf: 0.91, x: 85,  y: 280 },
-  { id: 5,  symbol: "SW",  qty: 3,  desc: "Dimmer switch",              rateCode: "SW-003",  conf: 0.72, x: 340, y: 260 },
-  { id: 6,  symbol: "EDB", qty: 1,  desc: "Electrical distribution board", rateCode: "SB-002", conf: 0.85, x: 60,  y: 70, detectedType: "SWITCHBOARD_MAIN", category: "Distribution board" },
-  { id: 7,  symbol: "SA",  qty: 5,  desc: "Smoke alarm",                rateCode: "SA-001",  conf: 0.95, x: 290, y: 180 },
-  { id: 8,  symbol: "FN",  qty: 3,  desc: "Bathroom exhaust fan",       rateCode: "FN-001",  conf: 0.88, x: 440, y: 220 },
-  { id: 9,  symbol: "DC",  qty: 6,  desc: "Cat6A data point",           rateCode: "DC-001",  conf: 0.93, x: 180, y: 320 },
-  { id: 10, symbol: "LT",  qty: 2,  desc: "Pendant light (kitchen)",    rateCode: "LT-005",  conf: 0.65, x: 240, y: 120 },
-];
-
-
-const RATE_LOOKUP: Record<string, { description: string; rate: number; labour: number }> = {
-  "GPO-001": { description: "Double GPO install (flush)",      rate: 85,  labour: 45 },
-  "GPO-003": { description: "Weatherproof GPO IP56",           rate: 145, labour: 60 },
-  "LT-001":  { description: "LED downlight 10W dimmable",      rate: 65,  labour: 40 },
-  "LT-005":  { description: "Pendant rough-in",                rate: 120, labour: 55 },
-  "SW-002":  { description: "2-way switch 1-gang",             rate: 55,  labour: 30 },
-  "SW-003":  { description: "Dimmer switch LED-compatible",    rate: 95,  labour: 35 },
-  "SB-002":  { description: "Distribution board 12-way",       rate: 680, labour: 320 },
-  "SA-001":  { description: "Smoke alarm 240V interconnect",   rate: 140, labour: 50 },
-  "FN-001":  { description: "Bathroom exhaust fan + duct",     rate: 185, labour: 75 },
-  "DC-001":  { description: "Cat6A data point + faceplate",    rate: 135, labour: 55 },
-};
 
 // ─── mapDetectionToItems ─────────────────────────────────────────────────
 function mapDetectionToItems(detection: DetectionResult | null | undefined): DetectedItem[] {
@@ -152,20 +143,35 @@ export default function ScanDetailScreen() {
   const [detectedItems, setDetectedItems] = useState<DetectedItem[]>([]);
   const [uploadedName, setUploadedName] = useState<string>("");
   const [sourceFile, setSourceFile] = useState<File | null>(null);
+  const [persistError, setPersistError] = useState<string | null>(null);
+  const [savedRef, setSavedRef] = useState<string | null>(null);
+  const skipStageRestore = useRef(false);
 
   useEffect(() => {
     if (!id || id === "new") return;
+    let cancelled = false;
     fetchScanById(id).then(({ data }) => {
-      if (data) {
-        setLiveScan(data as ScanRow);
-        // Restore step from persisted stage when available
-        const stageMap: Record<string, number> = {
-          upload: 1, detecting: 2, review: 3, quote: 4,
-        };
-        const persisted = stageMap[data.stage ?? ""];
-        if (persisted) setStep(persisted);
+      if (cancelled || !data) return;
+      const row = data as ScanRow;
+      setLiveScan(row);
+      const restored = readDetectedItems(row.detected_items);
+      if (restored.length) setDetectedItems(restored as DetectedItem[]);
+      const cached = recallScanFile(id);
+      if (cached) {
+        setSourceFile(cached);
+        setUploadedName(cached.name);
+      } else if (row.file_name) {
+        setUploadedName(row.file_name);
       }
+      if (row.estimate_ref) setSavedRef(row.estimate_ref);
+      const stageMap: Record<string, number> = {
+        upload: 1, detecting: 2, review: 2, quote: 3, sign: 4, complete: 3,
+      };
+      const persisted = stageMap[row.stage ?? ""];
+      if (persisted && !skipStageRestore.current) setStep(persisted);
+      skipStageRestore.current = false;
     });
+    return () => { cancelled = true; };
   }, [id]);
 
   const isNew = id === "new";
@@ -195,43 +201,68 @@ export default function ScanDetailScreen() {
           {isNew ? "new" : (id ?? "")}
         </span>
       </div>
-      <p style={{ color: C.textMuted, fontStyle: "italic", margin: "0 0 28px 0" }}>
-        {/* "uploaded 14 minutes ago" was hardcoded and shown on every scan
-            regardless of age, leaving a dangling separator when no client is
-            set. Show the client when we have one, and nothing when we do not. */}
-        {clientLabel}
+      <p style={{ color: C.textMuted, margin: "0 0 8px 0" }}>
+        {step === 1 && "Drop a PDF floor plan. Detected symbols are priced from your rate library."}
+        {step === 2 && (clientLabel || "Confirm each line. Low-confidence items stay off the quote until you confirm them.")}
+        {step === 3 && "Price the takeoff and save it. The dashboard and estimates list read this quote."}
+        {step === 4 && "Send the saved quote for signature."}
       </p>
+      {persistError && (
+        <p style={{ color: C.red, fontSize: 14, margin: "0 0 16px 0" }}>{persistError}</p>
+      )}
 
       <StepBar step={step} onStep={setStep} />
 
       {step === 1 && (
         <StepUpload
-          onNext={(items, file) => {
-            setDetectedItems(items ?? []);
-            if (file) {
-              setSourceFile(file);
-              setUploadedName(file.name);
-            }
+          onNext={async (items, file) => {
+            const nextItems = items ?? [];
+            setDetectedItems(nextItems);
+            setSourceFile(file);
+            setUploadedName(file.name);
             setStep(2);
+            setPersistError(null);
+            const payload = buildScanWrite({
+              fileName: file.name,
+              client: clientLabel || null,
+              stage: "review",
+              items: toStored(nextItems),
+            });
+            const { data, error } = await insertScan(payload);
+            if (error || !data?.id) {
+              setPersistError(error?.message || "Sign in to save this scan. Detection stays on this screen until you do.");
+              return;
+            }
+            rememberScanFile(data.id, file);
+            skipStageRestore.current = true;
+            navigate(`/detection/${data.id}`, { replace: true });
           }}
         />
       )}
       {step === 2 && (
-        <StepDetecting
+        <StepReview
           onNext={() => setStep(3)}
+          onBack={() => setStep(1)}
           items={detectedItems}
-          sourceFile={sourceFile}
-          sourceFileName={uploadedName || liveScan?.file_name}
         />
       )}
-      {step === 3 && <StepReview onNext={() => setStep(4)} onBack={() => setStep(2)} items={detectedItems} />}
-      {step === 4 && (
+      {step === 3 && (
         <StepQuote
-          onBack={() => setStep(3)}
+          onBack={() => setStep(2)}
           items={detectedItems}
           clientName={clientLabel}
           sourceFileName={uploadedName || liveScan?.file_name}
           scanId={id}
+          onSaved={ref => {
+            setSavedRef(ref);
+            setStep(4);
+          }}
+        />
+      )}
+      {step === 4 && (
+        <StepSign
+          reference={savedRef || liveScan?.estimate_ref}
+          onBack={() => setStep(3)}
         />
       )}
 
@@ -245,10 +276,10 @@ interface StepBarProps { step: number; onStep: (n: number) => void }
 
 function StepBar({ step, onStep }: StepBarProps) {
   const steps = [
-    { n: 1, label: "Upload", icon: <UploadIcon size={14} /> },
-    { n: 2, label: "Detect", icon: <Wand2 size={14} /> },
-    { n: 3, label: "Review", icon: <FileEdit size={14} /> },
-    { n: 4, label: "Quote",  icon: <FileDown size={14} /> },
+    { n: 1, label: "Upload plan", icon: <UploadIcon size={14} /> },
+    { n: 2, label: "Review takeoff", icon: <FileEdit size={14} /> },
+    { n: 3, label: "Price & send", icon: <FileDown size={14} /> },
+    { n: 4, label: "Sign & order", icon: <Send size={14} /> },
   ];
   return (
     <div style={{ display: "flex", alignItems: "center", backgroundColor: C.bgCard, border: `1px solid ${C.border}`, borderRadius: RADIUS.lg, padding: 6, marginBottom: 24, gap: 4 }}>
@@ -1035,14 +1066,12 @@ function ReviewQueuePanel({
 
 // ─── Step 3: Review ─────────────────────────────────────────────────────
 function buildQueueItem(it: DetectedItem): ReviewQueueItem {
-  const lookup = RATE_LOOKUP[it.rateCode];
-  const fallbackRate = lookup ? lookup.rate + lookup.labour : undefined;
   const suggestion = suggestReviewItem({
     description: it.desc,
     symbol: it.symbol,
     detectedType: it.detectedType,
     qty: it.qty,
-    unitPrice: it.unitPrice ?? fallbackRate,
+    unitPrice: it.unitPrice,
   });
   return {
     id: it.id,
@@ -1058,16 +1087,27 @@ function buildQueueItem(it: DetectedItem): ReviewQueueItem {
 
 function StepReview({ onNext, onBack, items: propItems }: { onNext: () => void; onBack: () => void; items?: DetectedItem[] }) {
   const source = propItems ?? [];
+  const sourceKey = source.map(it => `${it.id}:${it.qty}:${it.desc}:${it.conf}:${it.unitPrice ?? ""}`).join("|");
   const [items, setItems] = useState(
-    source.map(it => ({ ...it, ok: false })),
+    source.map(it => ({ ...it, ok: it.conf >= 0.85, flagged: false })),
   );
 
   const [reviewQueue, setReviewQueue] = useState<ReviewQueueItem[]>(
     source.filter(it => shouldQueueForReview(it.conf)).map(buildQueueItem),
   );
 
-  const toggle = (id: number) =>
-    setItems(arr => arr.map(i => (i.id === id ? { ...i, ok: !i.ok } : i)));
+  useEffect(() => {
+    setItems(source.map(it => ({ ...it, ok: it.conf >= 0.85, flagged: false })));
+    setReviewQueue(source.filter(it => shouldQueueForReview(it.conf)).map(buildQueueItem));
+    // Re-seed only when the stored takeoff changes. Local confirm/flag edits stay put.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceKey]);
+
+  const confirm = (id: number) =>
+    setItems(arr => arr.map(i => (i.id === id ? { ...i, ok: true, flagged: false } : i)));
+  const flag = (id: number) =>
+    setItems(arr => arr.map(i => (i.id === id ? { ...i, ok: false, flagged: true } : i)));
+  const acceptAll = () => setItems(arr => arr.map(i => ({ ...i, ok: true, flagged: false })));
 
   const resolveQueueItem = (id: number, action: ReviewAction, classifyData?: ReviewQueueItem["classifyData"]) => {
     setReviewQueue(q => q.map(i => i.id === id ? { ...i, resolution: action, classifyData } : i));
@@ -1089,24 +1129,30 @@ function StepReview({ onNext, onBack, items: propItems }: { onNext: () => void; 
     (i.state === "unrecognised" || i.state === "unclear") && i.resolution === null
   );
   const lockBlocked = blockingUnresolved.length > 0;
+  const subtotal = items.reduce((sum, it) => sum + lineTotal(it), 0);
+  const confirmed = items.filter(it => it.ok).length;
 
   return (
     <div className="anim-in" style={{ display: "grid", gridTemplateColumns: "1fr", gap: 16 }}>
       {/* Review Queue — appears above component table */}
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <GhostButton onClick={acceptAll}>Accept all</GhostButton>
+      </div>
       <ReviewQueuePanel items={reviewQueue} onResolve={resolveQueueItem} onResolveMany={resolveQueueItems} />
 
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 2fr) minmax(220px, 1fr)", gap: 16, alignItems: "start" }}>
       <Card>
         <table style={{ width: "100%", fontSize: 14 }}>
           <thead>
             <tr style={{ backgroundColor: C.bg, borderBottom: `1px solid ${C.border}` }}>
-              <Th width={48} />
-              <Th>Symbol</Th>
+              <Th>Item</Th>
               <Th>Description</Th>
               <Th>Matched rate</Th>
               <Th align="right">Qty</Th>
               <Th align="right">Unit rate</Th>
               <Th align="right">Line total</Th>
               <Th>Confidence</Th>
+              <Th />
             </tr>
           </thead>
           <tbody>
@@ -1115,23 +1161,6 @@ function StepReview({ onNext, onBack, items: propItems }: { onNext: () => void; 
               const unit = it.qty > 0 ? total / it.qty : 0;
               return (
                 <tr key={it.id} className="es-row" style={{ borderTop: `1px solid ${C.border}` }}>
-                  <Td>
-                    <button
-                      onClick={() => toggle(it.id)}
-                      style={{
-                        width: 18,
-                        height: 18,
-                        borderRadius: 4,
-                        border: `1.5px solid ${it.ok ? C.green : C.border}`,
-                        backgroundColor: it.ok ? C.green : "transparent",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      {it.ok && <Check size={11} color="#fff" strokeWidth={3} />}
-                    </button>
-                  </Td>
                   <Td><SymbolBadge symbol={it.symbol} small /></Td>
                   <Td>{it.desc}</Td>
                   <Td>
@@ -1140,45 +1169,86 @@ function StepReview({ onNext, onBack, items: propItems }: { onNext: () => void; 
                     </span>
                     <span style={{ color: C.textSubtle, margin: "0 6px" }}>·</span>
                     <span style={{ fontSize: 13 }}>
-                      {RATE_LOOKUP[it.rateCode]?.description ?? (total > 0 ? "Catalogue rate" : "Price required")}
+                      {total > 0 ? "Catalogue rate" : "Price required"}
                     </span>
                   </Td>
                   <Td align="right" mono>{it.qty}</Td>
                   <Td align="right" mono>${Math.round(unit).toLocaleString()}</Td>
                   <Td align="right" mono><B>${total.toLocaleString()}</B></Td>
-                  <Td><ConfPill c={it.conf} withBar /></Td>
+                  <Td><ConfPill c={it.conf} /></Td>
+                  <Td>
+                    {it.ok ? (
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: C.green, fontWeight: 600 }}>
+                        <Check size={16} /> OK
+                      </span>
+                    ) : (
+                      <span style={{ display: "inline-flex", gap: 6, justifyContent: "flex-end" }}>
+                        <button
+                          type="button"
+                          title="Flag for site check"
+                          aria-label="Flag for site check"
+                          onClick={() => flag(it.id)}
+                          style={{
+                            width: 44,
+                            height: 44,
+                            borderRadius: 10,
+                            border: `1px solid ${it.flagged ? C.amber : C.border}`,
+                            color: it.flagged ? C.amber : C.textMuted,
+                            display: "grid",
+                            placeItems: "center",
+                            background: C.bgCard,
+                          }}
+                        >
+                          <Flag size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => confirm(it.id)}
+                          style={{
+                            minHeight: 44,
+                            borderRadius: 10,
+                            background: C.orange,
+                            color: "#fff",
+                            fontWeight: 600,
+                            fontSize: 12,
+                            padding: "0 12px",
+                          }}
+                        >
+                          Confirm
+                        </button>
+                      </span>
+                    )}
+                  </Td>
                 </tr>
               );
             })}
           </tbody>
         </table>
+        {items.length === 0 && (
+          <p style={{ padding: 24, color: C.textMuted, textAlign: "center" }}>
+            No detected items on this scan yet. Upload a plan to populate the takeoff.
+          </p>
+        )}
       </Card>
-
-      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
-        <GhostButton onClick={onBack} icon={<ArrowLeft size={14} />}>Back to detection</GhostButton>
-
-        {/* Lock blocked tooltip wrapper */}
-        <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
-          {lockBlocked && (
-            <div style={{
-              position: "absolute", bottom: "calc(100% + 8px)", right: 0,
-              backgroundColor: C.text, color: "#fff",
-              fontSize: 12, fontFamily: FONT.heading,
-              padding: "6px 10px", borderRadius: RADIUS.md,
-              whiteSpace: "nowrap", pointerEvents: "none", zIndex: 10,
-              boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-            }}>
-              <Lock size={11} style={{ marginRight: 5 }} />
-              Resolve all Unrecognised / Unclear items first
-            </div>
-          )}
-          <PrimaryButton
-            onClick={lockBlocked ? undefined : onNext}
-            icon={lockBlocked ? <Lock size={15} /> : <ArrowRight size={15} />}
-          >
-            {lockBlocked ? `Blocked — ${blockingUnresolved.length} unresolved` : "Generate quote"}
-          </PrimaryButton>
+      <Card style={{ padding: 22, position: "sticky", top: 88 }}>
+        <div style={{ fontSize: 13, color: C.textMuted }}>Takeoff subtotal (ex GST)</div>
+        <div style={{ marginTop: 4, fontSize: 32, fontWeight: 700, fontFamily: FONT.heading }}>
+          ${Math.round(subtotal).toLocaleString("en-AU")}
         </div>
+        <div style={{ marginTop: 16, height: 8, borderRadius: 99, background: C.bgSoft }}>
+          <div style={{ height: 8, borderRadius: 99, background: C.green, width: items.length ? `${(confirmed / items.length) * 100}%` : "0%" }} />
+        </div>
+        <div style={{ marginTop: 8, fontSize: 14, color: C.textMuted }}>{confirmed} of {items.length} lines confirmed</div>
+        {lockBlocked && (
+          <p style={{ color: C.amber, fontSize: 13 }}>Resolve {blockingUnresolved.length} unrecognised or unclear items before pricing.</p>
+        )}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 16 }}>
+          <PrimaryButton onClick={lockBlocked ? undefined : onNext} icon={<ArrowRight size={16} />} disabled={lockBlocked}>
+            Build estimate
+          </PrimaryButton>
+          <GhostButton onClick={onBack}>Back</GhostButton>
+        </div>
+      </Card>
       </div>
     </div>
   );
@@ -1191,12 +1261,14 @@ function StepQuote({
   clientName,
   sourceFileName,
   scanId,
+  onSaved,
 }: {
   onBack: () => void;
   items?: DetectedItem[];
   clientName?: string;
   sourceFileName?: string;
   scanId?: string;
+  onSaved?: (reference: string) => void;
 }) {
   const navigate = useNavigate();
   const source = propItems ?? [];
@@ -1277,6 +1349,10 @@ function StepQuote({
     }
     setEstimateRef(result.reference);
     setSaveMessage(`Saved as ${result.reference}. Dashboard pending value uses this GST-inclusive total.`);
+    if (scanId && scanId !== "new") {
+      await updateScan(scanId, { stage: "complete", progress: 100, estimate_ref: result.reference });
+    }
+    onSaved?.(result.reference);
   }
 
   async function handleDownloadPdf() {
@@ -1477,6 +1553,35 @@ function StepQuote({
         <GhostButton onClick={() => navigate('/detection/new')} icon={<Plus size={14} />}>New scan</GhostButton>
       </div>
     </div>
+  );
+}
+
+function StepSign({ reference, onBack }: { reference?: string | null; onBack: () => void }) {
+  const navigate = useNavigate();
+  return (
+    <Card style={{ padding: 28, maxWidth: 640 }}>
+      <h2 style={{ margin: "0 0 8px", fontFamily: FONT.heading, fontSize: 20 }}>Sign and order</h2>
+      {reference ? (
+        <>
+          <p style={{ color: C.textMuted, marginTop: 0 }}>
+            Quote <span style={{ fontFamily: FONT.mono }}>{reference}</span> is saved. Send it for signature when the client is ready. Nothing is sent until you confirm on the approvals screen.
+          </p>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <PrimaryButton icon={<Send size={16} />} onClick={() => navigate(`/approvals?estimate=${encodeURIComponent(reference)}`)}>
+              Open approvals
+            </PrimaryButton>
+            <GhostButton onClick={onBack}>Back</GhostButton>
+          </div>
+        </>
+      ) : (
+        <>
+          <p style={{ color: C.textMuted, marginTop: 0 }}>
+            Save the quote on Price &amp; send before requesting a signature.
+          </p>
+          <GhostButton onClick={onBack}>Back to price &amp; send</GhostButton>
+        </>
+      )}
+    </Card>
   );
 }
 

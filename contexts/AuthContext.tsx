@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../services/supabaseClient';
+import { provisionWorkspace } from '../services/supabaseData';
+import { clearTenantIdCache } from '../lib/tenants';
 
 interface AuthContextType {
   session: Session | null;
@@ -17,16 +19,40 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setLoading(false);
-    });
-    // Listen for auth state changes
+    let cancelled = false;
+    // getSession used to hang on navigator.locks and leave the app on a
+    // loading shell. The client bypasses that lock; this timeout is the
+    // backstop so a dead auth call still reveals the sign-in screen.
+    const timeout = window.setTimeout(() => {
+      if (!cancelled) setLoading(false);
+    }, 8000);
+
+    supabase.auth.getSession()
+      .then(({ data }) => {
+        if (cancelled) return;
+        setSession(data.session);
+        if (data.session) void provisionWorkspace();
+        else clearTenantIdCache();
+      })
+      .catch(() => {
+        if (!cancelled) setSession(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+        window.clearTimeout(timeout);
+      });
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
+      setLoading(false);
+      if (session) void provisionWorkspace();
+      else clearTenantIdCache();
     });
-    return () => subscription.unsubscribe();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signIn = async (email: string, password: string): Promise<{ error: string | null }> => {
@@ -35,6 +61,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const signOut = async () => {
+    clearTenantIdCache();
     await supabase.auth.signOut();
   };
 

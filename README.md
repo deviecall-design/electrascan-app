@@ -1,188 +1,105 @@
-<div align="center">
+# ElectraScan
 
-<a href="https://protakeoff.org">
-  <img src="public/prologo.svg" alt="ProTakeoff AI Logo - Open Source Construction Estimating Software" width="200"/>
-</a>
+AI electrical takeoff and estimating for Australian contractors. Upload a PDF floor plan, review the symbols ElectraScan detects, price them from the rate library, and save a GST quote. Vesh Electrical is the beta tenant.
 
-# ProTakeoff
-### Free & Open Source Construction Estimating & Takeoff Software[[1](https://www.google.com/url?sa=E&q=https%3A%2F%2Fprotakeoff.org)]
+The app is a Vite + React single-page app. Production deploys from `main` to [electrascan-app.vercel.app](https://electrascan-app.vercel.app/).
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
-![Version](https://img.shields.io/badge/version-0.1.0-blue?style=for-the-badge)
-![Status](https://img.shields.io/badge/status-active-success?style=for-the-badge)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=for-the-badge)](http://makeapullrequest.com)
+## What a scan does
 
-<div align="center">
-  
-  [![Tauri](https://img.shields.io/badge/Tauri-2.0-24C8D5?style=flat&logo=tauri&logoColor=white)](https://tauri.app/)
-  [![React](https://img.shields.io/badge/React-19-61DAFB?style=flat&logo=react&logoColor=black)](https://react.dev/)
-  [![Rust](https://img.shields.io/badge/Rust-1.77+-000000?style=flat&logo=rust&logoColor=white)](https://www.rust-lang.org/)
-  [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178C6?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-  [![TailwindCSS](https://img.shields.io/badge/Tailwind-4.0-38B2AC?style=flat&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+1. **Upload plan** — drop a PDF or PNG. Detection runs through `/api/detect` (Claude) and falls back to the browser key only when the server key is missing.
+2. **Review takeoff** — each detected line is stored on the `scans` row and shown with a confidence badge. Confirm a line or flag it for a site check. The subtotal is the sum of priced lines.
+3. **Price & send** — saving the quote writes an `estimates` row (`EST-YYMM-XXXX`, GST-inclusive `value`) and links it from the scan.
+4. **Sign & order** — approvals sends that saved quote through DocuSign. It does not invent a sample job.
 
-</div>
+Dashboard, scans, estimates, variations, project reports, and approvals read those rows. Empty lists stay empty. They do not show sample clients.
 
-_A lightning-fast, local-first alternative to expensive bidding software._
-<br/>
-_Measure PDF blueprints, calculate costs, and manage bids—free forever._
+A progress claim on a project report is marked invoiced-draft only after `milestone_claims` accepts the insert. A failed save leaves the milestone pending.
 
-<br />
+## Run locally
 
-<!-- Download Badges -->
-[![Download for macOS](https://img.shields.io/badge/Download-macOS-white?style=for-the-badge&logo=apple&logoColor=black)](https://github.com/ilirkl/protakeoff-ai3/releases/latest)
-[![Download for Windows](https://img.shields.io/badge/Download-Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/ilirkl/protakeoff-ai3/releases/latest)
-[![Download for Linux](https://img.shields.io/badge/Download-Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/ilirkl/protakeoff-ai3/releases/latest)
-
-<br />
-
-[🌐 Website](https://protakeoff.org) • [View Demo](#) • [Report Bug](https://github.com/ilirkl/protakeoff-ai3/issues) • [Request Feature](https://github.com/ilirkl/protakeoff-ai3/issues)
-
-</div>
-
----
-
-## 📑 Table of Contents
-- [Overview](#-overview)
-- [Why ProTakeoff?](#-why-protakeoff)
-- [Key Features](#-key-features)
-- [Screenshots](#-screenshots)
-- [Tech Stack](#-tech-stack)
-- [Getting Started](#-getting-started)
-- [Contributing](#-contributing)
-- [License](#-license)
-
----
-
-## 🚀 Overview
-
-**ProTakeoff** is a cutting-edge, open-source **construction estimating** and **quantity takeoff (QTO)** tool designed to streamline the bidding process for contractors. Built with **Tauri**, **React**, and **Rust**, it combines the raw performance of a native desktop application with the flexibility of modern web technologies.
-
-Most estimating software is expensive, cloud-dependent, and bloated. ProTakeoff is different. Whether you are a general contractor, flooring specialist, or a DIY enthusiast, ProTakeoff provides a **free** and **private** way to calculate materials, labor, and costs with pixel-perfect precision directly from your PDF plans.
-
-## 💡 Why ProTakeoff?
-- **💰 Free & Open Source:** Stop paying monthly subscriptions for basic takeoff tools.
-- **⚡ Local-First Speed:** Powered by Rust and SQLite. Opens large blueprint PDFs instantly. No internet required.
-- **🔒 Privacy Focused:** Your data stays on your machine. We don't mine your bid data.
-- **🛠 Infinite Customization:** Define your own formulas (JavaScript syntax) and assemblies.
-
-## ✨ Key Features
-
-### 📐 Digital Quantity Takeoffs
-Perform accurate measurements directly on your PDF blueprints.
-- **Area & Square Footage:** Perfect for flooring, roofing, drywall, and concrete slabs.
-- **Linear Footage:** Measure walls, trimming, curbing, and piping.
-- **Item Counts:** Track fixtures, outlets, drains, and columns.
-- **Canvas Tools:** Pan, zoom, and snap-to-lines for high-precision tracing.
-
-### 💰 Professional Estimating & Bidding
-Turn your takeoff measurements into professional bids.
-- **Smart Assemblies:** Build complex items (e.g., a "Wall" assembly that automatically calculates studs, insulation, drywall, and paint based on one linear measurement).
-- **Excel-like Formulas:** Use built-in math functions (`Math.ceil`, `Math.max`) to automate waste factors and pricing.
-- **Material & Labor:** Separate material costs from labor hours for accurate profit analysis.
-
-### 📄 PDF Plan Management
-- **Visual Plan Organizer:** Drag-and-drop plan management.
-- **Custom Scaling:** Calibrate each page to its specific scale (e.g., 1/4" = 1').
-- **High-Performance Rendering:** Smooth scrolling even on 100+ page architectural sets.
-
-### 📤 Reports & Export
-- **Client Proposals:** Generate professional PDF quotes.
-- **Excel/CSV Export:** Export raw data to connect with QuickBooks, Xero, or other accounting tools.
-
-## 📸 Screenshots
-
-<div align="center">
-
-> [!NOTE]
-> **Takeoff Canvas**  
-> *Perform precise area and linear measurements on blueprints.*  
-> `![Construction Takeoff Canvas measuring square footage on PDF](assets/takeoff-screenshot.png)`
-
-> [!NOTE]
-> **Estimating View**  
-> *Manage line items, unit costs, and material assemblies.*  
-> `![Construction Estimating Software Interface showing costs and formulas](assets/estimating-screenshot.png)`
-
-</div>
-
-## 🛠 Tech Stack
-
-ProTakeoff is engineered for performance using the "T3" (Tauri, TypeScript, Tailwind) architecture:
-
-| Component | Technology | Why we chose it |
-|-----------|------------|-------------|
-| **Frontend** | React 19, TypeScript, TailwindCSS | Type-safe, responsive, and modern UI. |
-| **Backend** | Rust, Tauri v2 | Extremely small bundle size (<10MB) and native speed. |
-| **Database** | SQLite | Robust local data storage without server latency. |
-| **Build Tool** | Vite | Instant HMR and optimized production builds. |
-
-## 📦 Getting Started
-
-### Prerequisites
-- **Node.js** (v18+)
-- **Rust** (Stable)
-- **pnpm** (recommended) or **npm**
-
-### Installation
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/ilirkl/protakeoff-ai3.git
-   cd protakeoff-ai3
-   ```
-
----
-
-## ✍️ DocuSign Integration (sandbox)
-
-ElectraScan can send estimates out for signature via DocuSign's demo environment. The signing flow runs through a Supabase Edge Function so the RSA private key never reaches the browser.
-
-### One-time setup
-
-1. **Grant consent** (only required the first time the integration key is used). Open this URL in a browser while signed into your DocuSign demo account and click **Accept**:
-
-   ```
-   https://account-d.docusign.com/oauth/auth?response_type=code&scope=signature%20impersonation&client_id=9862c9dd-5aef-4595-afbe-3f5a8927eac1&redirect_uri=https://electrascan-app.vercel.app/api/docusign/callback
-   ```
-
-2. **Set the private key as a Supabase secret** (do not commit the PEM):
-
-   ```bash
-   npx supabase secrets set DOCUSIGN_PRIVATE_KEY="$(cat ~/.openclaw/workspace/docusign_private.pem)"
-   ```
-
-3. **Deploy the edge function**:
-
-   ```bash
-   npx supabase functions deploy docusign-envelope
-   ```
-
-### Endpoints used
-
-| Purpose | URL |
-|---------|-----|
-| OAuth (JWT Bearer Grant) | `https://account-d.docusign.com/oauth/token` |
-| eSignature REST API      | `https://demo.docusign.net/restapi/v2.1` |
-
-### Client usage
-
-```ts
-import { sendEstimateForSigning } from "./services/docusignService";
-
-const result = await sendEstimateForSigning({
-  signerEmail: "client@example.com",
-  signerName: "Pat Client",
-  estimateRef: "EST-0042",
-  projectName: "Smith Residence",
-  estimateValue: 18750,
-  documentBase64, // base64-encoded PDF (no data URL prefix)
-});
-
-if (result.ok) {
-  console.log("Envelope sent:", result.envelopeId, result.status);
-} else {
-  console.error("DocuSign error:", result.error);
-}
+```bash
+npm install
+cp .env.example .env.local
+npm run dev
 ```
 
-The edge function caches the JWT-issued access token in module memory and refreshes it when within 60s of expiry. Sandbox identifiers (Integration Key, API Account ID, User ID) are hardcoded in `supabase/functions/docusign-envelope/index.ts` — replace them before pointing at production.
+Open http://localhost:3000. Sign in with a Supabase user (`/login`). Without a session you can look around, but scans and quotes will not save.
+
+```bash
+npm test
+npm run build
+```
+
+## Environment
+
+Set these on the Vercel project `electrascan-app` (Production and Preview) and in `.env.local`.
+
+| Name | Where it is read | Required for |
+| --- | --- | --- |
+| `VITE_SUPABASE_URL` | Browser | All saved data. Already `https://zxeznkuodpseijkvjwxa.supabase.co`. |
+| `VITE_SUPABASE_ANON_KEY` | Browser | All saved data. The publishable anon key. |
+| `SUPABASE_URL` | `/api/detect`, `/api/estimates/create` | Server checks. Defaults to the project URL if unset. |
+| `SUPABASE_ANON_KEY` | Those API routes | Verifying the caller. Defaults to the publishable key in source if unset. |
+| `ANTHROPIC_API_KEY` | `/api/detect` only. **Not** `VITE_` prefixed. | Symbol detection without putting the key in the JS bundle. **Not set in production today** — `/api/detect` returns 500 and the app falls back to `VITE_ANTHROPIC_API_KEY`. |
+| `VITE_ANTHROPIC_API_KEY` | Browser fallback | Keep until `ANTHROPIC_API_KEY` is set, then remove it so the key is not shipped to clients. |
+| `DOCUSIGN_INTEGRATION_KEY`, `DOCUSIGN_ACCOUNT_ID`, `DOCUSIGN_BASE_URI`, `DOCUSIGN_ACCESS_TOKEN` or `DOCUSIGN_PRIVATE_KEY` | DocuSign routes | Sending an envelope. Approvals still list real estimates when these are empty; Send will toast the API error. |
+| `XERO_CLIENT_ID`, `XERO_CLIENT_SECRET`, `XERO_REDIRECT_URI` | `/api/xero/*` | Xero connect. Optional for the takeoff flow. |
+
+`VITE_` variables are inlined into the public bundle. Do not put the Anthropic secret or the DocuSign private key behind a `VITE_` name.
+
+## Database
+
+Apply the SQL in `supabase/migrations/`, including `20261027143000_tenant_invites.sql`:
+
+```bash
+npx supabase db push
+```
+
+Or paste the new file into the Supabase SQL editor for project `zxeznkuodpseijkvjwxa` after the earlier migrations.
+
+Who can see which jobs:
+
+- **Allowlist.** `tenant_invites` maps an email to one tenant and a role (`member` or `owner`). Only those emails join that tenant, and the role is the one on the row. It does not default to owner.
+- **Everyone else** gets a private showcase workspace. A fictional Harbour & Co / Northbridge scan and quote are copied into that workspace so a demo is not empty. Those rows are stamped with the new tenant id. Row-level security (`tenant_id = get_tenant_id()`) hides them from Vesh and from every other login.
+- A shared Demo tenant is not used. Every Lawrence & Hanson login would otherwise read every other visitor’s uploads.
+
+Add a Vesh user in **Settings → Workspace access** while signed in as a Vesh owner, or in the SQL editor:
+
+```sql
+INSERT INTO public.tenant_invites (email, tenant_id, role)
+VALUES (
+  'name@veshelectrical.com.au',
+  '00000000-0000-0000-0000-000000000001',
+  'member'
+)
+ON CONFLICT (email) DO UPDATE
+  SET tenant_id = EXCLUDED.tenant_id,
+      role = EXCLUDED.role;
+```
+
+Use `'owner'` only for someone who should manage that list. Do not put a Lawrence & Hanson address in Vesh’s list.
+
+If an older `ensure_beta_membership()` already attached people to Vesh, remove them before the showcase. They keep that membership until you do, because provisioning does not move an existing member.
+
+```sql
+SELECT u.email, m.role, m.user_id
+FROM public.tenant_memberships m
+JOIN auth.users u ON u.id = m.user_id
+WHERE m.tenant_id = '00000000-0000-0000-0000-000000000001';
+
+DELETE FROM public.tenant_memberships
+WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+  AND user_id = '<user uuid>';
+```
+
+`20261027120000_scan_flow_and_claims.sql` lets tenant members update scans, creates `milestone_claims`, and creates `approval_audit`. It does not grant Vesh access.
+
+## Verify
+
+1. Sign in at `/login`.
+2. Dashboard shows real counts or the empty states “No scans yet” / “No estimates yet”. It should not stay on “Loading your pipeline…”, and it should not list Mark Arnesen, Bondi, or Toorak sample rows.
+3. New scan → upload a PDF. When detection finishes, the review table lists those symbols. Refresh the page: the same scan opens from `/detection/:id` with the same lines.
+4. Build estimate → save. The quote appears under Estimates and in Pending value.
+5. Project reports lists that quote. Submit claim. If the insert fails, the milestone stays Pending.
+6. Variations stays empty until two saved quotes have line items, then diffs those lines.
+7. Sign in as an email that is not on `tenant_invites`. Dashboard shows the fictional Harbour & Co demo, not Vesh’s jobs. Settings → Workspace access does not list Vesh’s invites.

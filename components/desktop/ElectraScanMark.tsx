@@ -20,9 +20,11 @@ interface ElectraScanMarkProps {
   iconOnly?: boolean;
   /** Tenant chip under the wordmark, e.g. "Vesh". */
   subtitle?: string;
+  /** White wordmark for the navy sidebar. */
+  onDark?: boolean;
 }
 
-export default function ElectraScanMark({ size = 32, iconOnly = false, subtitle }: ElectraScanMarkProps) {
+export default function ElectraScanMark({ size = 32, iconOnly = false, subtitle, onDark = false }: ElectraScanMarkProps) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
       <div
@@ -48,7 +50,7 @@ export default function ElectraScanMark({ size = 32, iconOnly = false, subtitle 
               fontWeight: 600,
               fontSize: size * 0.53,
               letterSpacing: "-0.01em",
-              color: C.text,
+              color: onDark ? "#ffffff" : C.text,
               lineHeight: 1.15,
             }}
           >
@@ -60,7 +62,7 @@ export default function ElectraScanMark({ size = 32, iconOnly = false, subtitle 
                 fontFamily: FONT.heading,
                 fontSize: 12,
                 fontWeight: 500,
-                color: C.textSubtle,
+                color: onDark ? "#94a3b8" : C.textSubtle,
                 marginTop: 1,
               }}
             >

@@ -24,9 +24,11 @@
  * bookmarkable URLs, and typed params for free.
  */
 
-import React from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import React, { useEffect } from "react";
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import DesktopShell from "./components/desktop/DesktopShell";
+import LoginScreen from "./components/LoginScreen";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import DashboardScreen from "./screens/DashboardScreen";
 import DetectionScreen from "./screens/DetectionScreen";
 import ScanDetailScreen from "./screens/ScanDetailScreen";
@@ -37,10 +39,28 @@ import ApprovalsScreen from "./screens/ApprovalsScreen";
 import ProjectReportsScreen from "./screens/ProjectReportsScreen";
 import SettingsScreen from "./screens/SettingsScreen";
 
+function LoginGate() {
+  const { session, loading } = useAuth();
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (!loading && session) navigate("/dashboard", { replace: true });
+  }, [loading, session, navigate]);
+  if (loading) {
+    return (
+      <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", color: "#475569" }}>
+        Checking your session…
+      </div>
+    );
+  }
+  return <LoginScreen />;
+}
+
 export default function DesktopApp() {
   return (
+    <AuthProvider>
     <BrowserRouter>
       <Routes>
+        <Route path="/login" element={<LoginGate />} />
         <Route element={<DesktopShell />}>
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard"         element={<DashboardScreen />} />
@@ -57,5 +77,6 @@ export default function DesktopApp() {
         </Route>
       </Routes>
     </BrowserRouter>
+    </AuthProvider>
   );
 }
