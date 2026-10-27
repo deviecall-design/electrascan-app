@@ -10,7 +10,6 @@
 import { supabase } from "./supabaseClient";
 import { quotePersistFields } from "../lib/estimateMoney";
 import { updateScan } from "./supabaseData";
-import { getCurrentTenantId } from "../lib/tenants";
 
 export interface PersistQuoteInput {
   client: string;
@@ -40,7 +39,6 @@ export async function persistQuoteFromScan(
   }
 
   const money = quotePersistFields(input.subtotal, input.marginPct);
-  const tenantId = await getCurrentTenantId();
   const body = {
     client: (input.client || "").trim() || "Client not set",
     project_name: input.projectName ?? null,
@@ -48,7 +46,6 @@ export async function persistQuoteFromScan(
     status: input.status,
     line_items: input.lineItems,
     days_since_sent: 0,
-    tenant_id: tenantId,
     ...money,
   };
 

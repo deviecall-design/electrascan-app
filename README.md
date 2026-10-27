@@ -49,22 +49,50 @@ Set these on the Vercel project `electrascan-app` (Production and Preview) and i
 
 ## Database
 
-Apply the SQL in `supabase/migrations/`, including `20261027120000_scan_flow_and_claims.sql`:
+Apply the SQL in `supabase/migrations/`, including `20261027143000_tenant_invites.sql`:
 
 ```bash
 npx supabase db push
 ```
 
-Or paste that file into the Supabase SQL editor for project `zxeznkuodpseijkvjwxa`.
+Or paste the new file into the Supabase SQL editor for project `zxeznkuodpseijkvjwxa` after the earlier migrations.
 
-That migration:
+Who can see which jobs:
 
-- Adds `ensure_beta_membership()`, which attaches a signed-in user who has no tenant to Vesh Electrical so row-level security allows reads and writes. Remove this before public signup — until then every new account becomes a Vesh owner.
-- Lets tenant members update `scans`.
-- Creates `milestone_claims` if it is missing, so a claim save can fail honestly.
-- Creates `approval_audit` for envelope sends.
+- **Allowlist.** `tenant_invites` maps an email to one tenant and a role (`member` or `owner`). Only those emails join that tenant, and the role is the one on the row. It does not default to owner.
+- **Everyone else** gets a private showcase workspace. A fictional Harbour & Co / Northbridge scan and quote are copied into that workspace so a demo is not empty. Those rows are stamped with the new tenant id. Row-level security (`tenant_id = get_tenant_id()`) hides them from Vesh and from every other login.
+- A shared Demo tenant is not used. Every Lawrence & Hanson login would otherwise read every other visitor’s uploads.
 
-A user must sign in. After the migration, the first authenticated request calls `ensure_beta_membership`.
+Add a Vesh user in **Settings → Workspace access** while signed in as a Vesh owner, or in the SQL editor:
+
+```sql
+INSERT INTO public.tenant_invites (email, tenant_id, role)
+VALUES (
+  'name@veshelectrical.com.au',
+  '00000000-0000-0000-0000-000000000001',
+  'member'
+)
+ON CONFLICT (email) DO UPDATE
+  SET tenant_id = EXCLUDED.tenant_id,
+      role = EXCLUDED.role;
+```
+
+Use `'owner'` only for someone who should manage that list. Do not put a Lawrence & Hanson address in Vesh’s list.
+
+If an older `ensure_beta_membership()` already attached people to Vesh, remove them before the showcase. They keep that membership until you do, because provisioning does not move an existing member.
+
+```sql
+SELECT u.email, m.role, m.user_id
+FROM public.tenant_memberships m
+JOIN auth.users u ON u.id = m.user_id
+WHERE m.tenant_id = '00000000-0000-0000-0000-000000000001';
+
+DELETE FROM public.tenant_memberships
+WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+  AND user_id = '<user uuid>';
+```
+
+`20261027120000_scan_flow_and_claims.sql` lets tenant members update scans, creates `milestone_claims`, and creates `approval_audit`. It does not grant Vesh access.
 
 ## Verify
 
@@ -74,3 +102,4 @@ A user must sign in. After the migration, the first authenticated request calls 
 4. Build estimate → save. The quote appears under Estimates and in Pending value.
 5. Project reports lists that quote. Submit claim. If the insert fails, the milestone stays Pending.
 6. Variations stays empty until two saved quotes have line items, then diffs those lines.
+7. Sign in as an email that is not on `tenant_invites`. Dashboard shows the fictional Harbour & Co demo, not Vesh’s jobs. Settings → Workspace access does not list Vesh’s invites.

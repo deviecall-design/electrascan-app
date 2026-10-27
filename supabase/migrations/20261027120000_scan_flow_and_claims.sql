@@ -1,61 +1,16 @@
 -- ElectraScan — make the upload → scan → claim path persist.
 --
--- 1. ensure_beta_membership()
---    The beta tenant (Vesh Electrical) is seeded, but a signed-in user with
---    no tenant_memberships row fails every RLS check (get_tenant_id() is
---    null). This function attaches the current user to Vesh only when they
---    have no membership yet. It is a POC unblock: remove it before public
---    signup, or every new account becomes a Vesh owner.
---
--- 2. scans UPDATE policy for tenant members (insert/select already exist).
---
--- 3. milestone_claims table, matching the columns the app inserts.
+-- 1. scans UPDATE policy for tenant members (insert/select already exist).
+-- 2. milestone_claims table, matching the columns the app inserts.
 --    A failed insert must be a real error so the UI does not advance a claim.
+-- 3. approval_audit so a DocuSign send can be recorded against an estimate.
 --
--- 4. approval_audit so a DocuSign send can be recorded against an estimate.
+-- Workspace access is NOT granted here. Do not attach every signed-in user
+-- to Vesh Electrical. That lives in 20261027143000_tenant_invites.sql.
 --
 -- Idempotent.
 
-CREATE OR REPLACE FUNCTION public.ensure_beta_membership()
-RETURNS UUID
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, pg_temp
-AS $$
-DECLARE
-  existing UUID;
-  beta UUID := '00000000-0000-0000-0000-000000000001';
-BEGIN
-  IF auth.uid() IS NULL THEN
-    RETURN NULL;
-  END IF;
-
-  SELECT tenant_id INTO existing
-  FROM public.tenant_memberships
-  WHERE user_id = auth.uid()
-  LIMIT 1;
-
-  IF existing IS NOT NULL THEN
-    RETURN existing;
-  END IF;
-
-  INSERT INTO public.tenants (id, name, abn, contact_email)
-  VALUES (beta, 'Vesh Electrical Services', '', 'admin@vesh.com.au')
-  ON CONFLICT (id) DO NOTHING;
-
-  INSERT INTO public.tenant_memberships (tenant_id, user_id, role)
-  VALUES (beta, auth.uid(), 'owner')
-  ON CONFLICT (tenant_id, user_id) DO NOTHING;
-
-  RETURN beta;
-END;
-$$;
-
-REVOKE ALL ON FUNCTION public.ensure_beta_membership() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ensure_beta_membership() TO authenticated;
-
-COMMENT ON FUNCTION public.ensure_beta_membership() IS
-  'POC: attach a signed-in user with no tenant to Vesh Electrical. Remove before public signup.';
+DROP FUNCTION IF EXISTS public.ensure_beta_membership();
 
 -- ─── scans: tenant members can update their own rows ────────────────────────
 

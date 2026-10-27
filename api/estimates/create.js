@@ -63,6 +63,30 @@ export default async function handler(req, res) {
   }
 
   const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+  // The caller does not choose a tenant. A payload tenant_id of Vesh's
+  // workspace must not stick for someone who is not a member.
+  delete body.tenant_id;
+
+  const tenantLookup = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_tenant_id`, {
+    method: 'POST',
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: auth,
+      'Content-Type': 'application/json',
+    },
+    body: '{}',
+  });
+  if (!tenantLookup.ok) {
+    const detail = await tenantLookup.text();
+    res.status(403).json({ error: 'Could not resolve a workspace for this account.', detail });
+    return;
+  }
+  const tenantId = await tenantLookup.json();
+  if (!tenantId || typeof tenantId !== 'string') {
+    res.status(403).json({ error: 'Sign in again to open a workspace before saving a quote.' });
+    return;
+  }
+  body.tenant_id = tenantId;
 
   const prefix = currentPrefix();
 

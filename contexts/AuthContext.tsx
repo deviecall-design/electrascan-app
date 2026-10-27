@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../services/supabaseClient';
-import { ensureBetaMembership } from '../services/supabaseData';
+import { provisionWorkspace } from '../services/supabaseData';
+import { clearTenantIdCache } from '../lib/tenants';
 
 interface AuthContextType {
   session: Session | null;
@@ -30,7 +31,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       .then(({ data }) => {
         if (cancelled) return;
         setSession(data.session);
-        if (data.session) void ensureBetaMembership();
+        if (data.session) void provisionWorkspace();
+        else clearTenantIdCache();
       })
       .catch(() => {
         if (!cancelled) setSession(null);
@@ -43,7 +45,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       setLoading(false);
-      if (session) void ensureBetaMembership();
+      if (session) void provisionWorkspace();
+      else clearTenantIdCache();
     });
     return () => {
       cancelled = true;
@@ -58,6 +61,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const signOut = async () => {
+    clearTenantIdCache();
     await supabase.auth.signOut();
   };
 

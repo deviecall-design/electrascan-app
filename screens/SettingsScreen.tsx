@@ -10,9 +10,15 @@ import { PrimaryButton, GhostButton } from "../components/ui/anthropic/Button";
 import {
   fetchCompanyProfile,
   upsertCompanyProfile,
+  fetchMyMembership,
+  fetchTenantInvites,
+  createTenantInvite,
+  deleteTenantInvite,
   type CompanyProfileInput,
+  type TenantInvite,
 } from "../services/supabaseData";
 import { getActiveCompanyProfile } from "../services/companyProfile";
+import { getCurrentTenantId, VESH_TENANT_ID } from "../lib/tenants";
 import { useToast } from "../contexts/ToastContext";
 
 const EMPTY_FORM: CompanyProfileInput = {
@@ -54,20 +60,24 @@ export default function SettingsScreen() {
   useEffect(() => {
     let cancelled = false;
     fetchCompanyProfile()
-      .then(({ data, error }) => {
+      .then(async ({ data, error }) => {
         if (cancelled) return;
         if (error || !data) {
-          // No profile yet (new tenant) or table missing — seed from the
-          // local Vesh fallback so the form is never blank on first load.
-          const seed = getActiveCompanyProfile();
-          setForm({
-            company_name: seed.name,
-            abn: seed.abn ?? null,
-            logo_url: seed.logoUrl ?? null,
-            address: seed.address ?? null,
-            phone: seed.phone ?? null,
-            email: seed.email ?? null,
-          });
+          // Prefill Vesh's details only for the Vesh workspace. Any other
+          // signed-in user gets a blank form so their workspace is not
+          // branded as Vesh Electrical.
+          const tenantId = await getCurrentTenantId();
+          if (!cancelled && tenantId === VESH_TENANT_ID) {
+            const seed = getActiveCompanyProfile();
+            setForm({
+              company_name: seed.name,
+              abn: seed.abn ?? null,
+              logo_url: seed.logoUrl ?? null,
+              address: seed.address ?? null,
+              phone: seed.phone ?? null,
+              email: seed.email ?? null,
+            });
+          }
           setIsLive(false);
         } else {
           setForm({
@@ -84,15 +94,6 @@ export default function SettingsScreen() {
       })
       .catch(() => {
         if (cancelled) return;
-        const seed = getActiveCompanyProfile();
-        setForm({
-          company_name: seed.name,
-          abn: seed.abn ?? null,
-          logo_url: seed.logoUrl ?? null,
-          address: seed.address ?? null,
-          phone: seed.phone ?? null,
-          email: seed.email ?? null,
-        });
         setIsLive(false);
         setLoading(false);
       });
@@ -205,8 +206,125 @@ export default function SettingsScreen() {
         </div>
       </form>
 
+      <WorkspaceInvites />
+
       <Footer />
     </div>
+  );
+}
+
+function WorkspaceInvites() {
+  const { addToast } = useToast();
+  const [tenantId, setTenantId] = useState<string | null>(null);
+  const [role, setRole] = useState<string | null>(null);
+  const [invites, setInvites] = useState<TenantInvite[]>([]);
+  const [email, setEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<"member" | "owner">("member");
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    const membership = await fetchMyMembership();
+    const row = membership.data as { tenant_id?: string; role?: string } | null;
+    setTenantId(row?.tenant_id ?? null);
+    setRole(row?.role ?? null);
+    if (row?.role === "owner") {
+      const list = await fetchTenantInvites();
+      setInvites((list.data as TenantInvite[] | null) ?? []);
+    } else {
+      setInvites([]);
+    }
+  };
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  const onInvite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    const { error } = await createTenantInvite(email, inviteRole);
+    setBusy(false);
+    if (error) {
+      addToast(error.message ?? "Could not add that email.", "error");
+      return;
+    }
+    setEmail("");
+    addToast("Invite saved. They join this workspace the next time they sign in.", "success");
+    await load();
+  };
+
+  const onRemove = async (id: string) => {
+    const { error } = await deleteTenantInvite(id);
+    if (error) {
+      addToast(error.message ?? "Could not remove that invite.", "error");
+      return;
+    }
+    await load();
+  };
+
+  const isVesh = tenantId === VESH_TENANT_ID;
+
+  return (
+    <Card style={{ maxWidth: 760, marginTop: 18 }}>
+      <div style={{ padding: 24 }}>
+        <div style={{ fontFamily: FONT.heading, fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted }}>
+          Workspace access
+        </div>
+        <p style={{ margin: "8px 0 0", color: C.textMuted, fontSize: 14, lineHeight: 1.5 }}>
+          {isVesh
+            ? "This workspace is Vesh Electrical. Only emails on this list can join it. The role is the one you set here."
+            : "Emails on this list join this workspace the next time they sign in. Anyone else gets their own workspace and cannot see these jobs."}
+        </p>
+        {role !== "owner" && (
+          <p style={{ margin: "12px 0 0", color: C.text, fontSize: 14 }}>
+            {role === "member"
+              ? "You are a member. An owner sends invites."
+              : "Sign in as a workspace owner to manage invites."}
+          </p>
+        )}
+        {role === "owner" && (
+          <>
+            <form onSubmit={onInvite} style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
+              <input
+                type="email"
+                required
+                value={email}
+                placeholder="name@company.com.au"
+                aria-label="Invite email"
+                onChange={e => setEmail(e.target.value)}
+                style={{ flex: "1 1 220px", minHeight: 44, padding: "10px 12px", borderRadius: RADIUS.md, border: `1px solid ${C.border}`, background: C.bg, color: C.text, fontFamily: FONT.body }}
+              />
+              <select
+                aria-label="Invite role"
+                value={inviteRole}
+                onChange={e => setInviteRole(e.target.value === "owner" ? "owner" : "member")}
+                style={{ minHeight: 44, padding: "0 12px", borderRadius: RADIUS.md, border: `1px solid ${C.border}`, background: C.bgCard, color: C.text }}
+              >
+                <option value="member">Member</option>
+                <option value="owner">Owner</option>
+              </select>
+              <PrimaryButton type="submit" disabled={busy}>
+                {busy ? "Saving…" : "Add email"}
+              </PrimaryButton>
+            </form>
+            <ul style={{ listStyle: "none", margin: "16px 0 0", padding: 0 }}>
+              {invites.map(invite => (
+                <li key={invite.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, minHeight: 44, borderTop: `1px solid ${C.border}` }}>
+                  <span style={{ fontFamily: FONT.mono, fontSize: 13 }}>{invite.email}</span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ color: C.textMuted, fontSize: 13 }}>{invite.role}</span>
+                    <GhostButton onClick={() => void onRemove(invite.id)}>Remove</GhostButton>
+                  </span>
+                </li>
+              ))}
+              {invites.length === 0 && (
+                <li style={{ color: C.textMuted, fontSize: 14, marginTop: 8 }}>No invites yet.</li>
+              )}
+            </ul>
+          </>
+        )}
+      </div>
+    </Card>
   );
 }
 

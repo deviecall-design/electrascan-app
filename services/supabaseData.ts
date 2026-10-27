@@ -5,7 +5,7 @@
  */
 
 import { supabase } from "./supabaseClient";
-import { getCurrentTenantId } from "../lib/tenants";
+import { getCurrentTenantId, rememberTenantId } from "../lib/tenants";
 import {
   quotedTotalIncGst,
   WIN_RATE_LOOKBACK_DAYS,
@@ -120,24 +120,42 @@ export async function fetchRateLibrary() {
 // ─── Insert functions ───────────────────────────────────────────────────
 
 export async function insertEstimate(row: Omit<EstimateRow, "id" | "created_at">) {
+  const tenantId = await tenantForWrite();
+  if (!tenantId) return { data: null, error: NO_WORKSPACE };
   return supabase
     .from("estimates")
-    .insert([{ ...row, tenant_id: await getCurrentTenantId() }])
+    .insert([{ ...row, tenant_id: tenantId }])
     .select()
     .single();
 }
 
-/** Attach a signed-in user to the Vesh beta tenant when they have none. */
-export async function ensureBetaMembership() {
+const NO_WORKSPACE = { message: "Sign in to open a workspace before saving." };
+
+/**
+ * Join an invited tenant, or open a private showcase workspace.
+ * Does not attach the caller to Vesh unless their email is on tenant_invites.
+ */
+export async function provisionWorkspace() {
   const { data: sessionData } = await supabase.auth.getSession();
   if (!sessionData.session) return { ok: false as const, error: "Not signed in" };
-  const { data, error } = await supabase.rpc("ensure_beta_membership");
+  const { data, error } = await supabase.rpc("provision_workspace");
   if (error) return { ok: false as const, error: error.message };
-  return { ok: true as const, tenantId: (data as string | null) ?? null };
+  const tenantId = (data as string | null) ?? null;
+  rememberTenantId(tenantId);
+  return { ok: true as const, tenantId };
+}
+
+async function tenantForWrite(): Promise<string | null> {
+  const existing = await getCurrentTenantId();
+  if (existing) return existing;
+  const provisioned = await provisionWorkspace();
+  if (provisioned.ok && provisioned.tenantId) return provisioned.tenantId;
+  return getCurrentTenantId();
 }
 
 export async function insertScan(row: Partial<ScanRow> & Pick<ScanRow, "file_name">) {
-  await ensureBetaMembership();
+  const tenantId = await tenantForWrite();
+  if (!tenantId) return { data: null, error: NO_WORKSPACE };
   return supabase
     .from("scans")
     .insert([{
@@ -149,7 +167,7 @@ export async function insertScan(row: Partial<ScanRow> & Pick<ScanRow, "file_nam
       detected_items: row.detected_items ?? [],
       risk_flags: row.risk_flags ?? [],
       estimate_ref: row.estimate_ref ?? null,
-      tenant_id: await getCurrentTenantId(),
+      tenant_id: tenantId,
     }])
     .select()
     .single();
@@ -160,9 +178,11 @@ export async function updateScan(id: string, updates: Partial<ScanRow>) {
 }
 
 export async function upsertRate(row: Omit<RateRow, "id" | "synced_at">) {
+  const tenantId = await tenantForWrite();
+  if (!tenantId) return { data: null, error: NO_WORKSPACE };
   return supabase
     .from("rate_library")
-    .upsert([{ ...row, tenant_id: await getCurrentTenantId() }], { onConflict: "code,owner_id" })
+    .upsert([{ ...row, tenant_id: tenantId }], { onConflict: "code,owner_id" })
     .select()
     .single();
 }
@@ -371,7 +391,10 @@ export async function submitMilestoneClaim(
     return { ok: false, invRef: null, error: { message: "Sign in before submitting a claim." } };
   }
 
-  await ensureBetaMembership();
+  const tenantId = await tenantForWrite();
+  if (!tenantId) {
+    return { ok: false, invRef: null, error: { message: NO_WORKSPACE.message } };
+  }
 
   const year = new Date().getFullYear();
   const seq = String(Math.floor(Math.random() * 900) + 100);
@@ -391,7 +414,7 @@ export async function submitMilestoneClaim(
     .insert([{
       ...row,
       owner_id: ownerId,
-      tenant_id: await getCurrentTenantId(),
+      tenant_id: tenantId,
     }]);
 
   if (error) {
@@ -400,4 +423,51 @@ export async function submitMilestoneClaim(
   }
 
   return { ok: true, invRef, error: null };
+}
+
+export interface TenantInvite {
+  id: string;
+  email: string;
+  role: "owner" | "member";
+  created_at?: string;
+}
+
+/** Membership of the signed-in user. RLS limits this to their own rows. */
+export async function fetchMyMembership() {
+  const { data: userResult } = await supabase.auth.getUser();
+  const userId = userResult?.user?.id;
+  if (!userId) return { data: null, error: { message: "Not signed in" } };
+  return supabase
+    .from("tenant_memberships")
+    .select("tenant_id, role")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+}
+
+/** Invites for the caller's tenant. Only an owner can read this list. */
+export async function fetchTenantInvites() {
+  return supabase
+    .from("tenant_invites")
+    .select("id, email, role, created_at")
+    .order("created_at", { ascending: false });
+}
+
+export async function createTenantInvite(email: string, role: "owner" | "member") {
+  const tenantId = await tenantForWrite();
+  if (!tenantId) return { data: null, error: NO_WORKSPACE };
+  const normalized = email.trim().toLowerCase();
+  if (!normalized.includes("@")) {
+    return { data: null, error: { message: "Enter a full email address." } };
+  }
+  return supabase
+    .from("tenant_invites")
+    .insert([{ email: normalized, role, tenant_id: tenantId }])
+    .select("id, email, role, created_at")
+    .single();
+}
+
+export async function deleteTenantInvite(id: string) {
+  return supabase.from("tenant_invites").delete().eq("id", id);
 }
