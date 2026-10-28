@@ -103,7 +103,7 @@ export default function ApprovalsScreen() {
         sub="One signer per envelope. DocuSign sends only after you confirm, and only for a quote that exists in your list."
       />
 
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 2fr) minmax(240px, 1fr)", gap: 16 }}>
+      <div className="es-split">
         <Card style={{ padding: 22 }}>
           <label style={{ display: "block", fontWeight: 600, fontSize: 14 }}>
             Estimate

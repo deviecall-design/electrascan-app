@@ -7,7 +7,7 @@
  */
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Link, Outlet, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { authIsDisabled } from "../../lib/authMode";
 import {
   LayoutDashboard,
@@ -75,15 +75,12 @@ export default function DesktopShell() {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", color: C.text, fontFamily: FONT.body, backgroundColor: C.bg }}>
+    <div className="es-shell" style={{ color: C.text, fontFamily: FONT.body, backgroundColor: C.bg }}>
       <aside
         className="es-sidebar-desktop"
         style={{
           width: 256,
           flexShrink: 0,
-          position: "sticky",
-          top: 0,
-          height: "100vh",
           backgroundColor: C.sidebar,
         }}
       >
@@ -98,18 +95,25 @@ export default function DesktopShell() {
             onClick={() => setDrawerOpen(false)}
             style={{ position: "absolute", inset: 0, backgroundColor: "rgba(0,0,0,0.4)" }}
           />
-          <div style={{ position: "relative", height: "100%", width: 288, backgroundColor: C.sidebar }}>
+          <div className="es-sidebar-scroll" style={{ position: "relative", height: "100%", width: "min(288px, 88vw)", backgroundColor: C.sidebar }}>
             <SidebarBody onNavigate={() => setDrawerOpen(false)} />
           </div>
         </div>
       )}
 
-      <main style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", backgroundColor: C.bg, overflow: "auto" }}>
+      <main className="es-main">
         <TopBar onMenu={() => setDrawerOpen(open => !open)} menuOpen={drawerOpen} />
-        <div style={{ padding: "32px 32px 36px", maxWidth: 1200, width: "100%", margin: "0 auto", flex: 1, boxSizing: "border-box" }}>
+        <div className="es-page">
           <Outlet />
         </div>
       </main>
+      <nav className="es-bottom-nav" aria-label="Primary">
+        <NavLink to="/dashboard" end>Dashboard</NavLink>
+        <NavLink to="/detection">Scans</NavLink>
+        <NavLink to="/estimate">Estimates</NavLink>
+        <NavLink to="/pricing-schedule">Rates</NavLink>
+        <button type="button" onClick={() => setDrawerOpen(true)}>More</button>
+      </nav>
     </div>
   );
 }
@@ -124,7 +128,7 @@ function SidebarBody({ onNavigate }: { onNavigate: () => void }) {
   const initials = tenantInitials({ ...company, name: chipName });
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", padding: "20px 16px", color: C.sidebarText }}>
+    <div className="es-sidebar-scroll" style={{ display: "flex", flexDirection: "column", height: "100%", padding: "20px 16px", color: C.sidebarText, boxSizing: "border-box" }}>
       <div style={{ padding: "0 8px" }}>
         <ElectraScanMark size={36} onDark />
       </div>
@@ -253,13 +257,14 @@ function TopBar({ onMenu, menuOpen }: { onMenu: () => void; menuOpen: boolean })
 
   return (
     <div
+      className="es-topbar"
       style={{
         borderBottom: `1px solid ${C.border}`,
-        padding: "12px 24px",
+        padding: "12px 16px",
         display: "flex",
         alignItems: "center",
         gap: 12,
-        backgroundColor: "rgba(255,255,255,0.9)",
+        backgroundColor: "rgba(255,255,255,0.94)",
         position: "sticky",
         top: 0,
         zIndex: 10,

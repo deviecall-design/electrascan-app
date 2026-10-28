@@ -336,7 +336,7 @@ function StepBar({ step, onStep }: StepBarProps) {
     { n: 4, label: "Sign & order", icon: <Send size={14} /> },
   ];
   return (
-    <div style={{ display: "flex", alignItems: "center", backgroundColor: C.bgCard, border: `1px solid ${C.border}`, borderRadius: RADIUS.lg, padding: 6, marginBottom: 24, gap: 4 }}>
+    <div className="es-stepbar" style={{ display: "flex", alignItems: "center", backgroundColor: C.bgCard, border: `1px solid ${C.border}`, borderRadius: RADIUS.lg, padding: 6, marginBottom: 24, gap: 4 }}>
       {steps.map((s, i) => {
         const active = s.n === step;
         const done = s.n < step;
@@ -645,7 +645,7 @@ function StepDetecting({
   const ready = revealed >= source.length;
 
   return (
-    <div className="anim-in" style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: 24 }}>
+    <div className="anim-in es-split">
       {/* Floor plan */}
       <div style={{ backgroundColor: C.bgPaper, border: `1px solid ${C.border}`, borderRadius: RADIUS.xl, overflow: "hidden", position: "relative" }}>
         <div style={{ padding: "10px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", backgroundColor: C.bg }}>
@@ -1316,7 +1316,7 @@ function StepQuote({
   }
 
   return (
-    <div className="anim-in" style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: 24 }}>
+    <div className="anim-in es-split">
       {/* Letterhead preview */}
       <div style={{ backgroundColor: C.bgCard, border: `1px solid ${C.border}`, borderRadius: RADIUS.xl, overflow: "hidden" }}>
         <div style={{ padding: "10px 16px", borderBottom: `1px solid ${C.border}`, backgroundColor: C.bg, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -1328,6 +1328,7 @@ function StepQuote({
             near-white and would be invisible on this surface. */}
         <div style={{ padding: 40, backgroundColor: C.bgPaper, color: C.paperText }}>
           <div
+            className="es-quote-paper"
             style={{
               backgroundColor: "#fff",
               padding: 36,
@@ -1352,7 +1353,7 @@ function StepQuote({
             </div>
 
             {/* Prepared-for / scope */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginBottom: 24, fontSize: 12 }}>
+            <div className="es-pair" style={{ marginBottom: 24, fontSize: 12 }}>
               <div>
                 <div style={{ fontFamily: FONT.heading, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em", color: C.paperTextMuted, marginBottom: 4 }}>Prepared for</div>
                 {/* Was hardcoded to a fictional client (Bondi Tower Residences,

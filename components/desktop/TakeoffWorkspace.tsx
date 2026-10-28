@@ -4,6 +4,7 @@ import { C, FONT, RADIUS } from "./tokens";
 import { Card } from "../ui/anthropic";
 import { GhostButton, PrimaryButton } from "../ui/anthropic/Button";
 import SourcePlanPreview from "../SourcePlanPreview";
+import PlanViewport from "./PlanViewport";
 import { fetchRateLibrary, type RateRow } from "../../services/supabaseData";
 import type { StoredDetectedItem } from "../../lib/scanRecord";
 import { formatAud } from "../../lib/quoteTotals";
@@ -85,15 +86,16 @@ export default function TakeoffWorkspace({
   }
 
   return (
-    <div className="anim-in" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.4fr) minmax(280px, 0.9fr)", gap: 16, alignItems: "start" }}>
-      <Card style={{ padding: 0, overflow: "hidden" }}>
+    <div className="es-takeoff anim-in">
+      <Card style={{ padding: 0 }}>
         <div style={{ padding: "10px 14px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
           <span style={{ fontFamily: FONT.heading, fontSize: 13, fontWeight: 600 }}>Plan</span>
           <span style={{ fontSize: 12, color: C.textMuted }}>
-            {addGroup ? `Click the plan to add a ${GROUP_LABEL[addGroup].replace(/s$/, "").toLowerCase()}` : "Click a symbol to select its line"}
+            {addGroup ? `Tap the plan to add a ${GROUP_LABEL[addGroup].replace(/s$/, "").toLowerCase()}` : "Pinch to zoom. Tap a symbol to select it."}
           </span>
         </div>
-        <div style={{ position: "relative", minHeight: 360, background: C.bgSoft }} onClick={onPlanClick}>
+        <PlanViewport>
+        <div style={{ position: "relative", minHeight: 320, background: C.bgSoft }} onClick={onPlanClick}>
           <SourcePlanPreview file={file} fileName={fileName} />
           {priced.flatMap(item => (item.marks ?? []).slice(0, Math.max(item.qty, item.status === "rejected" ? 1 : 0)).map((mark, index) => {
             const active = selectedId === item.id;
@@ -112,8 +114,8 @@ export default function TakeoffWorkspace({
                   left: `${mark.x}%`,
                   top: `${mark.y}%`,
                   transform: "translate(-50%, -50%)",
-                  width: 28,
-                  height: 28,
+                  width: 44,
+                  height: 44,
                   borderRadius: 99,
                   border: `2px solid ${active ? C.orange : "#fff"}`,
                   background: rejected ? C.textSubtle : active ? C.orange : "#1f56e6",
@@ -129,8 +131,16 @@ export default function TakeoffWorkspace({
             );
           }))}
         </div>
+        </PlanViewport>
+        {selected && (
+          <div className="es-plan-actions">
+            <button type="button" onClick={() => commit(setStatus(priced, selected.id, "confirmed"))} style={actionStyle(C.orange)}>Confirm</button>
+            <button type="button" aria-label={`Reject ${selected.desc}`} onClick={() => commit(setStatus(priced, selected.id, "rejected"))} style={actionStyle(C.textMuted, true)}>Reject</button>
+          </div>
+        )}
       </Card>
 
+      <div className="es-takeoff-panel">
       <Card style={{ padding: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
           <h2 style={{ margin: 0, fontFamily: FONT.heading, fontSize: 18 }}>Detected items</h2>
@@ -146,7 +156,7 @@ export default function TakeoffWorkspace({
               type="button"
               onClick={() => setAddGroup(current => (current === id ? null : id))}
               style={{
-                minHeight: 36,
+                minHeight: 44,
                 borderRadius: 999,
                 padding: "0 10px",
                 border: `1px solid ${addGroup === id ? C.orange : C.border}`,
@@ -197,10 +207,11 @@ export default function TakeoffWorkspace({
                         <input
                           aria-label={`Count for ${item.desc}`}
                           type="number"
+                          inputMode="numeric"
                           min={0}
                           value={item.qty}
                           onChange={event => commit(setItemQty(priced, item.id, Number(event.target.value)))}
-                          style={{ display: "block", width: 72, minHeight: 40, marginTop: 4, borderRadius: 8, border: `1px solid ${C.border}`, padding: "0 8px" }}
+                          style={{ display: "block", width: 88, minHeight: 44, marginTop: 4, borderRadius: 8, border: `1px solid ${C.border}`, padding: "0 8px", fontSize: 16 }}
                         />
                       </label>
                     </div>
@@ -245,13 +256,14 @@ export default function TakeoffWorkspace({
           )}
         </div>
       </Card>
+      </div>
     </div>
   );
 }
 
 function actionStyle(color: string, ghost = false): React.CSSProperties {
   return {
-    minHeight: 40,
+    minHeight: 44,
     borderRadius: 10,
     padding: "0 12px",
     background: ghost ? "#fff" : color,

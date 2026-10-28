@@ -131,7 +131,7 @@ function MuPdfPreview({ file, fileName }: { file: File; fileName?: string }) {
 
   return (
     <div>
-      <div style={{ overflow: "auto", maxHeight: 520, backgroundColor: "#fff" }}>
+      <div style={{ backgroundColor: "#fff" }}>
         <canvas
           ref={canvasRef}
           style={{ display: "block", width: "100%", height: "auto" }}
@@ -159,7 +159,7 @@ function MuPdfPreview({ file, fileName }: { file: File; fileName?: string }) {
               className="es-link"
               disabled={pageIndex <= 0}
               onClick={() => setPageIndex(i => Math.max(0, i - 1))}
-              style={{ display: "inline-flex", opacity: pageIndex <= 0 ? 0.4 : 1 }}
+              style={{ display: "inline-flex", minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center", opacity: pageIndex <= 0 ? 0.4 : 1 }}
             >
               <ChevronLeft size={14} />
             </button>
@@ -168,7 +168,7 @@ function MuPdfPreview({ file, fileName }: { file: File; fileName?: string }) {
               className="es-link"
               disabled={pageIndex >= pageCount - 1}
               onClick={() => setPageIndex(i => Math.min(pageCount - 1, i + 1))}
-              style={{ display: "inline-flex", opacity: pageIndex >= pageCount - 1 ? 0.4 : 1 }}
+              style={{ display: "inline-flex", minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center", opacity: pageIndex >= pageCount - 1 ? 0.4 : 1 }}
             >
               <ChevronRight size={14} />
             </button>

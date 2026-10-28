@@ -49,9 +49,9 @@ describe("DesktopShell V1 navy chrome", () => {
     renderShell();
     expect(screen.getByText("ElectraScan")).toBeInTheDocument();
     expect(screen.getAllByText(/vesh/i).length).toBeGreaterThan(0);
-    expect(screen.getByRole("link", { name: /scans/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /estimates/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /^rates$/i })).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: /scans/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("link", { name: /estimates/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("link", { name: /^rates$/i }).length).toBeGreaterThan(0);
     expect(screen.queryByText("Vision credits")).not.toBeInTheDocument();
     expect(screen.queryByText(/847/)).not.toBeInTheDocument();
     expect(screen.queryByText(/aries online/i)).not.toBeInTheDocument();

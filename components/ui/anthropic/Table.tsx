@@ -47,11 +47,13 @@ interface TdProps {
   align?: Align;
   mono?: boolean;
   muted?: boolean;
+  label?: string;
 }
 
-export function Td({ children, align = "left", mono, muted }: TdProps) {
+export function Td({ children, align = "left", mono, muted, label }: TdProps) {
   return (
     <td
+      data-label={label}
       style={{
         padding: "14px 20px",
         textAlign: align,

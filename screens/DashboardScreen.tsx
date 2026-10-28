@@ -121,7 +121,7 @@ export default function DashboardScreen() {
         <Kpi label="Avg scan-to-quote" value={loading ? "—" : formatScanToQuote(stats.avgScanToQuoteMs)} hint="Across linked scans" icon={<Clock size={18} />} />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 2fr) minmax(260px, 1fr)", gap: 24 }}>
+      <div className="es-split">
         <Card>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 20px", borderBottom: `1px solid ${C.border}` }}>
             <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Continue where you left off</h2>

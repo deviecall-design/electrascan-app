@@ -147,7 +147,7 @@ export default function MaterialsRequestCard({
             <textarea value={draft.notes} onChange={event => setDraft({ ...draft, notes: event.target.value })} style={{ ...inputStyle, minHeight: 72 }} />
           </label>
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", fontSize: 14 }}>
+            <table className="es-data-table" style={{ width: "100%", fontSize: 14 }}>
               <thead>
                 <tr style={{ textAlign: "left", color: C.textMuted }}>
                   <th>Product</th>
@@ -159,14 +159,14 @@ export default function MaterialsRequestCard({
               <tbody>
                 {draft.lines.map((line, index) => (
                   <tr key={`${line.product}-${index}`}>
-                    <td>{line.product}</td>
-                    <td>
-                      <input aria-label={`Quantity for ${line.product}`} type="number" min={0} value={line.qty} onChange={event => updateLine(index, { qty: Number(event.target.value) })} style={{ ...inputStyle, width: 72 }} />
+                    <td data-label="Product">{line.product}</td>
+                    <td data-label="Qty">
+                      <input aria-label={`Quantity for ${line.product}`} type="number" inputMode="numeric" min={0} value={line.qty} onChange={event => updateLine(index, { qty: Number(event.target.value) })} style={{ ...inputStyle, width: 88 }} />
                     </td>
-                    <td>
+                    <td data-label="Brand">
                       <input aria-label={`Brand for ${line.product}`} value={line.brand} onChange={event => updateLine(index, { brand: event.target.value })} style={inputStyle} />
                     </td>
-                    <td>
+                    <td data-label="Notes">
                       <input aria-label={`Notes for ${line.product}`} value={line.notes} onChange={event => updateLine(index, { notes: event.target.value })} style={inputStyle} />
                     </td>
                   </tr>
