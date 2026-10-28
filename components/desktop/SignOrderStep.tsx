@@ -27,6 +27,8 @@ import {
 } from "../../lib/materialsRequest";
 import { downloadMaterialsPdf } from "../../utils/materialsPdf";
 import { fetchWorkspaceSettings } from "../../services/workspaceSettings";
+import { PLACEHOLDER_PDF_BASE64 } from "../../lib/docusignPlaceholder";
+import { supabase } from "../../services/supabaseClient";
 
 interface Props {
   items: StoredDetectedItem[];
@@ -241,12 +243,19 @@ export default function SignOrderStep({
           estimateRef: quoteRef,
           projectName: jobName,
           estimateValue: totals.total,
-          documentBase64: "",
+          documentBase64: PLACEHOLDER_PDF_BASE64,
         }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || "DocuSign did not send the envelope.");
       setEnvelopeId(json.envelopeId || "sent");
+      void supabase.from("approval_audit").insert({
+        envelope_id: json.envelopeId,
+        estimate_ref: quoteRef,
+        signer_email: signerEmail.trim(),
+        action: "envelope_sent",
+        actor: "system",
+      });
     } catch (err) {
       setSignError(err instanceof Error ? err.message : "Could not send for signature.");
     } finally {

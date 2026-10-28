@@ -18,7 +18,7 @@ import { fetchScanById, insertScan, updateScan, ScanRow } from "../services/supa
 import { buildScanWrite, readDetectedItems, recallScanFile, rememberScanFile, type StoredDetectedItem } from "../lib/scanRecord";
 import { billableItems, canSendQuote, formatVerified, groupTakeoff, takeoffSubtotal, verifiedPercent } from "../lib/takeoff";
 import TakeoffWorkspace from "../components/desktop/TakeoffWorkspace";
-import SignOrderStep from "../components/desktop/SignOrderStep";
+import { approvalsHref } from "../lib/approvalsLink";
 import { fetchWorkspaceSettings } from "../services/workspaceSettings";
 import {
   ArrowLeft,
@@ -311,18 +311,11 @@ export default function ScanDetailScreen() {
         />
       )}
       {step === 4 && (
-        <SignOrderStep
+        <SignHandoff
           reference={savedRef || liveScan?.estimate_ref}
-          onBack={() => setStep(3)}
-          onSaved={ref => setSavedRef(ref)}
-          items={detectedItems}
-          jobName={clientLabel || fileName}
-          clientName={clientLabel}
-          drawingFile={uploadedName || liveScan?.file_name}
-          siteAddress={getActiveCompanyProfile().address || ""}
           scanId={id}
-          marginPct={getActiveCompanyProfile().defaultMargin ?? DEFAULT_MARGIN_PCT}
-          minVerifiedPct={minVerifiedPct}
+          items={detectedItems}
+          onBack={() => setStep(3)}
         />
       )}
 
@@ -1494,6 +1487,35 @@ function StepQuote({
         <GhostButton onClick={() => navigate('/detection/new')} icon={<Plus size={14} />}>New scan</GhostButton>
       </div>
     </div>
+  );
+}
+
+function SignHandoff({
+  reference,
+  scanId,
+  items,
+  onBack,
+}: {
+  reference?: string | null;
+  scanId?: string;
+  items: DetectedItem[];
+  onBack: () => void;
+}) {
+  const navigate = useNavigate();
+  const href = approvalsHref(scanId, reference);
+  return (
+    <Card style={{ padding: 28, maxWidth: 720 }}>
+      <h2 style={{ margin: "0 0 8px", fontFamily: FONT.heading, fontSize: 20 }}>Sign and order</h2>
+      <p style={{ color: C.textMuted, marginTop: 0 }}>
+        {formatVerified(items)}. {reference ? `Quote ${reference} is saved.` : "The quote is not saved yet."} Signature and the materials request are handled on Approvals, so there is one place to send them.
+      </p>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <PrimaryButton icon={<Send size={16} />} onClick={() => navigate(href)}>
+          Open approvals
+        </PrimaryButton>
+        <GhostButton onClick={onBack}>Back to price & send</GhostButton>
+      </div>
+    </Card>
   );
 }
 
