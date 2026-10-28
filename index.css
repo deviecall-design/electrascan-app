@@ -423,8 +423,9 @@ table {
 @media (max-width: 900px) {
   .es-split,
   .es-takeoff,
-  .es-pair {
-    grid-template-columns: minmax(0, 1fr);
+  .es-pair,
+  .es-sign-line {
+    grid-template-columns: minmax(0, 1fr) !important;
   }
   .es-stat-grid { grid-template-columns: 1fr 1fr; }
   .es-quote-paper { padding: 16px !important; }

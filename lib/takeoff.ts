@@ -40,6 +40,7 @@ export interface RateLike {
   rate: number;
   category?: string;
   unit?: string;
+  labour?: number;
 }
 
 const GROUP_WORDS: Record<TakeoffGroupId, string[]> = {
@@ -131,6 +132,15 @@ export interface TakeoffGroup {
   rateCode: string;
   lineTotal: number;
   items: StoredDetectedItem[];
+}
+
+export function costSplit(item: StoredDetectedItem, rates: RateLike[]): { material: number; labour: number } {
+  const priced = rateForItem(item, rates);
+  const hit = rates.find(rate => rate.code.trim().toLowerCase() === priced.code.trim().toLowerCase());
+  if (hit && ((hit.labour || 0) > 0 || hit.rate > 0)) {
+    return { material: hit.rate, labour: hit.labour || 0 };
+  }
+  return { material: item.unitPrice && item.unitPrice > 0 ? item.unitPrice : priced.rate, labour: 0 };
 }
 
 export function rateForItem(item: StoredDetectedItem, rates: RateLike[]): { rate: number; code: string } {

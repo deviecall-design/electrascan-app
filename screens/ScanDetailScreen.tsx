@@ -18,7 +18,7 @@ import { fetchScanById, insertScan, updateScan, ScanRow } from "../services/supa
 import { buildScanWrite, readDetectedItems, recallScanFile, rememberScanFile, type StoredDetectedItem } from "../lib/scanRecord";
 import { billableItems, canSendQuote, formatVerified, groupTakeoff, takeoffSubtotal, verifiedPercent } from "../lib/takeoff";
 import TakeoffWorkspace from "../components/desktop/TakeoffWorkspace";
-import MaterialsRequestCard from "../components/desktop/MaterialsRequestCard";
+import SignOrderStep from "../components/desktop/SignOrderStep";
 import { fetchWorkspaceSettings } from "../services/workspaceSettings";
 import {
   ArrowLeft,
@@ -247,7 +247,7 @@ export default function ScanDetailScreen() {
         {step === 1 && "Drop a PDF floor plan. Detected symbols are priced from your rate library."}
         {step === 2 && (clientLabel || "Confirm each line. Low-confidence items stay off the quote until you confirm them.")}
         {step === 3 && "Price the takeoff and save it. The dashboard and estimates list read this quote."}
-        {step === 4 && "Send the saved quote for signature."}
+        {step === 4 && "Review the breakdown, save the quote if it is not saved yet, then send it for signature or prepare the materials list."}
       </p>
       {persistError && (
         <p style={{ color: C.red, fontSize: 14, margin: "0 0 16px 0" }}>{persistError}</p>
@@ -311,12 +311,18 @@ export default function ScanDetailScreen() {
         />
       )}
       {step === 4 && (
-        <StepSign
+        <SignOrderStep
           reference={savedRef || liveScan?.estimate_ref}
           onBack={() => setStep(3)}
+          onSaved={ref => setSavedRef(ref)}
           items={detectedItems}
           jobName={clientLabel || fileName}
+          clientName={clientLabel}
+          drawingFile={uploadedName || liveScan?.file_name}
           siteAddress={getActiveCompanyProfile().address || ""}
+          scanId={id}
+          marginPct={getActiveCompanyProfile().defaultMargin ?? DEFAULT_MARGIN_PCT}
+          minVerifiedPct={minVerifiedPct}
         />
       )}
 
@@ -1487,57 +1493,6 @@ function StepQuote({
         <GhostButton onClick={onBack} icon={<ArrowLeft size={14} />}>Back to review</GhostButton>
         <GhostButton onClick={() => navigate('/detection/new')} icon={<Plus size={14} />}>New scan</GhostButton>
       </div>
-    </div>
-  );
-}
-
-function StepSign({
-  reference,
-  onBack,
-  items,
-  jobName,
-  siteAddress,
-}: {
-  reference?: string | null;
-  onBack: () => void;
-  items: DetectedItem[];
-  jobName: string;
-  siteAddress: string;
-}) {
-  const navigate = useNavigate();
-  return (
-    <div>
-    <Card style={{ padding: 28, maxWidth: 720 }}>
-      <h2 style={{ margin: "0 0 8px", fontFamily: FONT.heading, fontSize: 20 }}>Sign and order</h2>
-      {reference ? (
-        <>
-          <p style={{ color: C.textMuted, marginTop: 0 }}>
-            Quote <span style={{ fontFamily: FONT.mono }}>{reference}</span> is saved. Send it for signature when the client is ready. Nothing is sent until you confirm on the approvals screen.
-          </p>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <PrimaryButton icon={<Send size={16} />} onClick={() => navigate(`/approvals?estimate=${encodeURIComponent(reference)}`)}>
-              Open approvals
-            </PrimaryButton>
-            <GhostButton onClick={onBack}>Back</GhostButton>
-          </div>
-        </>
-      ) : (
-        <>
-          <p style={{ color: C.textMuted, marginTop: 0 }}>
-            Save the quote on Price &amp; send before requesting a signature.
-          </p>
-          <GhostButton onClick={onBack}>Back to price &amp; send</GhostButton>
-        </>
-      )}
-    </Card>
-    {reference && (
-      <MaterialsRequestCard
-        estimateRef={reference}
-        jobName={jobName}
-        siteAddress={siteAddress}
-        items={items}
-      />
-    )}
     </div>
   );
 }
