@@ -25,7 +25,7 @@ export default function DetectionScreen() {
       <QueryBanner loading={loading} error={error} noun="scans" />
       <PageHeader
         title="Scans"
-        sub="Upload a floor plan and let Claude turn it into a costed estimate."
+        sub="Upload a floor plan and ElectraScan AI will turn it into a costed estimate."
         cta={
           <PrimaryButton
             icon={<Plus size={15} strokeWidth={2.5} />}

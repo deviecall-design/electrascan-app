@@ -8,6 +8,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Outlet, useNavigate } from "react-router-dom";
+import { authIsDisabled } from "../../lib/authMode";
 import {
   LayoutDashboard,
   Scan,
@@ -202,6 +203,8 @@ function SidebarBody({ onNavigate }: { onNavigate: () => void }) {
             <div style={{ fontSize: 12, color: "#94a3b8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {user.email}
             </div>
+          ) : authIsDisabled() ? (
+            <div style={{ fontSize: 12, color: "#94a3b8" }}>Vesh Electrical</div>
           ) : (
             <Link to="/login" onClick={onNavigate} style={{ fontSize: 13, fontWeight: 600, color: "#93c5fd" }}>
               Sign in

@@ -24,7 +24,7 @@
  * bookmarkable URLs, and typed params for free.
  */
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import DesktopShell from "./components/desktop/DesktopShell";
 import LoginScreen from "./components/LoginScreen";
@@ -38,8 +38,14 @@ import VariationReportScreen from "./screens/VariationReportScreen";
 import ApprovalsScreen from "./screens/ApprovalsScreen";
 import ProjectReportsScreen from "./screens/ProjectReportsScreen";
 import SettingsScreen from "./screens/SettingsScreen";
+import { authIsDisabled, loadAuthMode } from "./lib/authMode";
 
 function LoginGate() {
+  if (authIsDisabled()) return <Navigate to="/dashboard" replace />;
+  return <SignedInLoginGate />;
+}
+
+function SignedInLoginGate() {
   const { session, loading } = useAuth();
   const navigate = useNavigate();
   useEffect(() => {
@@ -56,6 +62,18 @@ function LoginGate() {
 }
 
 export default function DesktopApp() {
+  const [ready, setReady] = useState(import.meta.env.MODE === "test");
+  useEffect(() => {
+    if (ready) return;
+    loadAuthMode().finally(() => setReady(true));
+  }, [ready]);
+  if (!ready) {
+    return (
+      <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", color: "#475569" }}>
+        Opening Vesh Electrical…
+      </div>
+    );
+  }
   return (
     <AuthProvider>
     <BrowserRouter>

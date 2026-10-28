@@ -19,6 +19,8 @@ import { inferAnalyzeType } from "./lib/reviewClassification";
 import { resolveLegendEntry } from "./lib/symbol_map";
 import { capQuantitiesToLegend } from "./lib/scanQuote";
 import { supabase } from "./services/supabaseClient";
+import { authIsDisabled } from "./lib/authMode";
+import { publicDetectionFailure } from "./lib/detectionCopy";
 
 // Model used for both detection passes. Kept in one place because model IDs get
 // retired: the previous value (claude-sonnet-4-20250514) was withdrawn and every
@@ -48,16 +50,19 @@ async function callDetect(payload: {
   system: string;
   messages: unknown[];
 }): Promise<Anthropic.Message> {
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
+  const beta = authIsDisabled();
+  let token: string | undefined;
+  if (!beta) {
+    const { data } = await supabase.auth.getSession();
+    token = data.session?.access_token;
+  }
 
-  if (token) {
+  if (token || beta) {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) headers.Authorization = `Bearer ${token}`;
     const res = await fetch("/api/detect", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
+      headers,
       body: JSON.stringify(payload),
     });
 
@@ -65,35 +70,34 @@ async function callDetect(payload: {
     if (res.ok) return JSON.parse(raw) as Anthropic.Message;
 
     let reason = raw.slice(0, 300);
+    let code = "";
     try {
       const parsed = JSON.parse(raw);
       reason = parsed.detail || parsed.error || reason;
+      code = parsed.code || "";
     } catch {
       /* keep the raw text */
     }
 
-    // 500 here means the server has no ANTHROPIC_API_KEY yet. Deploying the
-    // proxy before that variable exists would otherwise take the scanner down,
-    // so fall through to the legacy in-browser path rather than failing. Any
-    // other status is a real error and must surface.
-    const notConfigured = res.status === 500 && /ANTHROPIC_API_KEY/.test(reason);
+    // 500 + DETECTION_NOT_CONFIGURED means the server key is missing. Fall
+    // through to the legacy in-browser key rather than taking the scanner down.
+    const notConfigured =
+      res.status === 500 &&
+      (code === "DETECTION_NOT_CONFIGURED" || /ANTHROPIC_API_KEY/.test(reason));
     if (!notConfigured) {
-      throw new Error(`Detection failed (${res.status}): ${reason}`);
+      console.warn("[ElectraScan] detection error", res.status, reason);
+      throw new Error(publicDetectionFailure(reason));
     }
-    console.warn(
-      "[ElectraScan] /api/detect has no server key — falling back to the in-browser key. " +
-        "Set ANTHROPIC_API_KEY in Vercel to move the key server-side.",
-    );
+    console.warn("[ElectraScan] detection is not configured on the server — trying the in-browser key.");
   }
 
   // Legacy path: key inlined into the bundle by Vite. Retained only so the
-  // scanner keeps working until ANTHROPIC_API_KEY is configured; remove this
-  // branch, and VITE_ANTHROPIC_API_KEY, once the proxy is serving.
+  // scanner keeps working until the server key is configured.
   const browserKey = (import.meta as any).env?.VITE_ANTHROPIC_API_KEY;
   if (!browserKey) {
     throw new Error(
-      token
-        ? "Detection is not configured. Set ANTHROPIC_API_KEY in Vercel."
+      token || beta
+        ? "ElectraScan AI is not configured on the server."
         : "You need to be signed in to run a scan.",
     );
   }

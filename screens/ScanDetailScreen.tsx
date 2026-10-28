@@ -41,6 +41,7 @@ import {
   Flag,
 } from "lucide-react";
 import { detectElectricalComponents, DetectionResult, DetectionPhase } from "../analyze_pdf";
+import { publicDetectionFailure } from "../lib/detectionCopy";
 import { C, FONT, RADIUS } from "../components/desktop/tokens";
 import {
   Card,
@@ -230,7 +231,7 @@ export default function ScanDetailScreen() {
             });
             const { data, error } = await insertScan(payload);
             if (error || !data?.id) {
-              setPersistError(error?.message || "Sign in to save this scan. Detection stays on this screen until you do.");
+              setPersistError(error?.message || "This scan could not be saved.");
               return;
             }
             rememberScanFile(data.id, file);
@@ -367,7 +368,7 @@ function StepUpload({ onNext }: { onNext: (items: DetectedItem[], file: File) =>
       onNext(mapped, file);
     } catch (err: any) {
       console.error("[ElectraScan] Detection failed:", err);
-      setErrorMsg(err?.message ?? "Unknown error during detection.");
+      setErrorMsg(publicDetectionFailure(err?.message ?? ""));
       setUploadState("error");
     }
   }, [onNext]);
@@ -429,7 +430,7 @@ function StepUpload({ onNext }: { onNext: (items: DetectedItem[], file: File) =>
         </div>
         <div>
           <h2 style={{ fontFamily: FONT.heading, fontSize: 20, fontWeight: 600, margin: "0 0 6px 0" }}>
-            Claude Vision is analysing
+            ElectraScan is analysing
           </h2>
           <p style={{ color: C.textMuted, fontStyle: "italic", margin: 0 }}>
             {fileName} — {phaseMsg}
@@ -550,7 +551,7 @@ function StepUpload({ onNext }: { onNext: (items: DetectedItem[], file: File) =>
         Drop your floor plan here
       </h2>
       <p style={{ color: C.textMuted, fontStyle: "italic", margin: 0, maxWidth: 420 }}>
-        PDF or PNG. Claude Vision will detect symbols, map them to your rate library, and draft a quote.
+        PDF or PNG. ElectraScan AI will detect symbols, map them to your rate library, and draft a quote.
       </p>
       <PrimaryButton onClick={() => fileInputRef.current?.click()}>
         Upload floor plan →
@@ -598,7 +599,7 @@ function StepDetecting({
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <Bot size={14} color={C.orange} className={ready ? "" : "pulse"} />
             <span style={{ fontFamily: FONT.heading, fontSize: 12, fontWeight: 500, color: C.textMuted }}>
-              {ready ? "Detection complete" : "Claude Vision analysing"}
+              {ready ? "Detection complete" : "ElectraScan AI analysing"}
               {!ready && <Dots />}
             </span>
           </div>

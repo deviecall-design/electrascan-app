@@ -224,6 +224,12 @@ DECLARE
 BEGIN
   tid := public.get_tenant_id();
   IF tid IS NULL THEN
+    -- Beta writes use the service role, so auth.uid() is null. A row that
+    -- already names a tenant is kept. Do not run this migration while the
+    -- beta is on unless this branch is included.
+    IF NEW.tenant_id IS NOT NULL THEN
+      RETURN NEW;
+    END IF;
     RAISE EXCEPTION 'no tenant membership for this account';
   END IF;
 

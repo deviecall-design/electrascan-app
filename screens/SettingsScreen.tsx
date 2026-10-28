@@ -19,6 +19,7 @@ import {
 } from "../services/supabaseData";
 import { getActiveCompanyProfile } from "../services/companyProfile";
 import { getCurrentTenantId, VESH_TENANT_ID } from "../lib/tenants";
+import { authIsDisabled } from "../lib/authMode";
 import { useToast } from "../contexts/ToastContext";
 
 const EMPTY_FORM: CompanyProfileInput = {
@@ -206,7 +207,7 @@ export default function SettingsScreen() {
         </div>
       </form>
 
-      <WorkspaceInvites />
+      {!authIsDisabled() && <WorkspaceInvites />}
 
       <Footer />
     </div>

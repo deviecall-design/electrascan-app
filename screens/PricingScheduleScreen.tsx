@@ -13,6 +13,7 @@ import {
 import { PrimaryButton, GhostButton } from "../components/ui/anthropic/Button";
 import useSupabaseQuery from "../hooks/useSupabaseQuery";
 import { fetchRateLibrary, upsertRate, deleteRate, type RateRow } from "../services/supabaseData";
+import { authIsDisabled } from "../lib/authMode";
 import { useToast } from "../contexts/ToastContext";
 
 // ─── Rate library data ──────────────────────────────────────────────────
@@ -89,9 +90,10 @@ export default function PricingScheduleScreen() {
   const [query, setQuery] = useState("");
 
   // Local rates state — driven by Supabase, falls back to seed data
+  const beta = authIsDisabled();
   const { data: fetchedRates, isLive, loading, error } = useSupabaseQuery(
     fetchRateLibrary,
-    RATE_LIBRARY_FALLBACK,
+    beta ? undefined : RATE_LIBRARY_FALLBACK,
   );
   const [rates, setRates] = useState<RateRow[] | null>(null);
   // Merge: once live data arrives, use it. Otherwise use the seed fallback.
@@ -295,12 +297,18 @@ export default function PricingScheduleScreen() {
             marginBottom: 12,
           }}
         >
-          Could not load saved rates — showing the Vesh catalogue seed
+          {beta
+            ? "Saved rates could not be loaded. Add SUPABASE_SERVICE_ROLE_KEY on the server, then reload."
+            : "Could not load saved rates — showing the Vesh catalogue seed"}
         </div>
       )}
       <PageHeader
         title="Rate library"
-        sub={`${totalItems} items · ${isLive ? "live from Supabase" : "imported from Vesh Electrical"}`}
+        sub={
+          error && beta
+            ? "The uploaded rate library could not be loaded"
+            : `${totalItems} items · ${isLive ? "live from Supabase" : "imported from Vesh Electrical"}`
+        }
         cta={
           <PrimaryButton icon={<Plus size={14} />} onClick={openAdd}>
             Add rate

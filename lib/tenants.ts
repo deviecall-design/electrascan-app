@@ -1,3 +1,4 @@
+import { authIsDisabled } from "./authMode";
 import { supabase } from "../services/supabaseClient";
 
 export const VESH_TENANT_ID = "00000000-0000-0000-0000-000000000001";
@@ -11,6 +12,7 @@ let _cachedTenantId: string | null = null;
  * Returns null when the caller has no membership. It does not fall back to Vesh.
  */
 export async function getCurrentTenantId(): Promise<string | null> {
+  if (authIsDisabled()) return VESH_TENANT_ID;
   if (_cachedTenantId) return _cachedTenantId;
   const { data, error } = await supabase.rpc("get_tenant_id");
   if (!error && data) {
