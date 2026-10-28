@@ -1270,7 +1270,7 @@ function StepQuote({
         ...persistItems,
         { description: "Takeoff verified", qty: 0, unitPrice: 0, meta: "takeoff", verifiedPct: verifiedPercent(allItems) },
       ],
-      status: "sent",
+      approvalStatus: "ready_for_approval",
       scanId,
       verifiedPct: verifiedPercent(allItems),
     });
@@ -1280,7 +1280,7 @@ function StepQuote({
       return;
     }
     setEstimateRef(result.reference);
-    setSaveMessage(`Saved as ${result.reference}. Dashboard pending value uses this GST-inclusive total.`);
+    setSaveMessage(`Saved as ${result.reference}. It is ready for approval.`);
     if (scanId && scanId !== "new") {
       await updateScan(scanId, { stage: "complete", progress: 100, estimate_ref: result.reference });
     }
@@ -1463,7 +1463,7 @@ function StepQuote({
             onClick={handleSend}
             disabled={saving || source.length === 0 || sendBlocked}
           >
-            {saving ? "Saving…" : "Send to client"}
+            {saving ? "Saving…" : "Save for approval"}
           </PrimaryButton>
           <GhostButton
             icon={<FileDown size={14} />}

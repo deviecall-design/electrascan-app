@@ -4,7 +4,8 @@ import { C, FONT, RADIUS } from "./tokens";
 import { Card } from "../ui/anthropic";
 import { GhostButton, PrimaryButton } from "../ui/anthropic/Button";
 import { fetchRateLibrary, type RateRow } from "../../services/supabaseData";
-import { persistQuoteFromScan } from "../../services/persistQuote";
+import { persistQuoteFromScan, setEstimateApproval } from "../../services/persistQuote";
+import { APPROVAL_LABEL, type ApprovalStatus } from "../../lib/approvalStatus";
 import { downloadEstimatePDF } from "../../utils/estimatePdf";
 import { getActiveCompanyProfile } from "../../services/companyProfile";
 import { computeQuoteTotals, formatAud } from "../../lib/quoteTotals";
@@ -40,8 +41,10 @@ interface Props {
   scanId?: string;
   marginPct: number;
   minVerifiedPct: number | null;
+  approvalStatus?: ApprovalStatus | null;
   onBack: () => void;
   onSaved: (reference: string) => void;
+  onApproval?: (status: ApprovalStatus) => void;
 }
 
 interface OrderLine {
@@ -80,8 +83,10 @@ export default function SignOrderStep({
   scanId,
   marginPct,
   minVerifiedPct,
+  approvalStatus,
   onBack,
   onSaved,
+  onApproval,
 }: Props) {
   const company = getActiveCompanyProfile();
   const [rates, setRates] = useState<RateRow[]>([]);
@@ -95,6 +100,7 @@ export default function SignOrderStep({
   const [signerEmail, setSignerEmail] = useState("");
   const [sending, setSending] = useState(false);
   const [envelopeId, setEnvelopeId] = useState<string | null>(null);
+  const [approval, setApproval] = useState<ApprovalStatus>(approvalStatus || "ready_for_approval");
   const [signError, setSignError] = useState<string | null>(null);
   const [materialsOpen, setMaterialsOpen] = useState(false);
   const [supplierEmail, setSupplierEmail] = useState("");
@@ -104,6 +110,10 @@ export default function SignOrderStep({
   useEffect(() => {
     setQuoteRef(reference || "");
   }, [reference]);
+
+  useEffect(() => {
+    if (approvalStatus) setApproval(approvalStatus);
+  }, [approvalStatus]);
 
   useEffect(() => {
     let cancelled = false;
@@ -185,7 +195,7 @@ export default function SignOrderStep({
         })),
         { description: "Takeoff verified", qty: 0, unitPrice: 0, meta: "takeoff", verifiedPct: verified },
       ],
-      status: "sent",
+      approvalStatus: "ready_for_approval",
       scanId,
       verifiedPct: verified,
     });
@@ -195,7 +205,24 @@ export default function SignOrderStep({
       return;
     }
     setQuoteRef(result.reference);
+    setApproval("ready_for_approval");
+    onApproval?.("ready_for_approval");
     onSaved(result.reference);
+  }
+
+  async function persistApproval(next: ApprovalStatus) {
+    if (!quoteRef) {
+      setSignError("Save the quote before changing its approval status.");
+      return false;
+    }
+    const result = await setEstimateApproval(quoteRef, next);
+    if (result.ok === false) {
+      setSignError(result.error);
+      return false;
+    }
+    setApproval(next);
+    onApproval?.(next);
+    return true;
   }
 
   async function downloadQuote() {
@@ -233,6 +260,16 @@ export default function SignOrderStep({
     }
     setSending(true);
     setSignError(null);
+    const marked = await persistApproval("sent_for_signature");
+    if (!marked) {
+      setSending(false);
+      return;
+    }
+    if (!docusignReady) {
+      setSending(false);
+      setSignError("Marked as sent for signature. DocuSign stays off until DOCUSIGN_PRIVATE_KEY is set.");
+      return;
+    }
     try {
       const res = await fetch("/api/docusign/envelope", {
         method: "POST",
@@ -333,7 +370,7 @@ export default function SignOrderStep({
             Supplier email
             <input aria-label="Supplier email" type="email" value={supplierEmail} placeholder="orders@lawrenceandhanson.com.au" onChange={event => setSupplierEmail(event.target.value)} style={{ ...inputStyle, width: "100%", marginTop: 4 }} />
           </label>
-          <p style={{ fontSize: 13, color: C.textMuted }}>Materials request: {materialStatus}. Signature: {envelopeId ? `sent ${envelopeId}` : "not sent"}.</p>
+          <p style={{ fontSize: 13, color: C.textMuted }}>Approval: {APPROVAL_LABEL[approval]}. Materials request: {materialStatus}. Signature: {envelopeId ? `sent ${envelopeId}` : approval === "sent_for_signature" || approval === "approved" || approval === "materials_sent" ? APPROVAL_LABEL[approval] : "not sent"}.</p>
           {materialsOpen && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               <GhostButton onClick={() => downloadMaterialsPdf({
@@ -341,9 +378,15 @@ export default function SignOrderStep({
               })}>Export PDF</GhostButton>
               <GhostButton onClick={() => downloadCsv(materialLines, jobName, siteAddress)}>Export CSV</GhostButton>
               {mailto ? (
-                <a href={mailto} onClick={() => setMaterialStatus("draft")} style={linkButton}>Open email draft</a>
+                <a href={mailto} style={linkButton}>Open email draft</a>
               ) : (
                 <span style={{ color: C.amber, fontSize: 14 }}>Add the supplier email, then open the draft yourself.</span>
+              )}
+              {quoteRef && (
+                <GhostButton onClick={async () => {
+                  const ok = await persistApproval("materials_sent");
+                  if (ok) setMaterialStatus("sent");
+                }}>Mark materials sent</GhostButton>
               )}
             </div>
           )}
@@ -356,7 +399,11 @@ export default function SignOrderStep({
           <div style={{ fontFamily: FONT.heading, fontSize: 32, fontWeight: 700 }}>${formatAud(totals.total, true)}</div>
           <div style={{ color: C.orange, fontWeight: 600, marginTop: 6 }}>{verifiedLabel}</div>
           <div style={{ marginTop: 8, fontSize: 14 }}>Quote {quoteRef || "not saved yet"}</div>
+          <div style={{ marginTop: 6, fontWeight: 600 }}>{APPROVAL_LABEL[approval]}</div>
         </Card>
+        {quoteRef && approval !== "approved" && approval !== "materials_sent" && (
+          <GhostButton onClick={() => persistApproval("approved")}>Approve / mark signed</GhostButton>
+        )}
         {!quoteRef && (
           <PrimaryButton onClick={saveQuote} disabled={saving || priced.lines.length === 0 || belowMinimum}>
             {saving ? "Saving…" : "Save quote"}
@@ -370,11 +417,11 @@ export default function SignOrderStep({
           Signer email
           <input aria-label="Signer email" type="email" inputMode="email" value={signerEmail} onChange={event => setSignerEmail(event.target.value)} style={{ ...inputStyle, width: "100%", marginTop: 4 }} />
         </label>
-        <PrimaryButton icon={<Send size={16} />} onClick={sendForSignature} disabled={!docusignReady || !quoteRef || sending || Boolean(envelopeId)}>
+        <PrimaryButton icon={<Send size={16} />} onClick={sendForSignature} disabled={!quoteRef || sending || Boolean(envelopeId)}>
           {envelopeId ? "Signature sent" : sending ? "Sending…" : "Send for signature"}
         </PrimaryButton>
         {!docusignReady && (
-          <p style={{ margin: 0, color: C.amber, fontSize: 13 }}>Send for signature needs {docusignMissing.join(", ") || "DOCUSIGN_PRIVATE_KEY"} on Vercel. The button stays off until then.</p>
+          <p style={{ margin: 0, color: C.amber, fontSize: 13 }}>DocuSign needs {docusignMissing.join(", ") || "DOCUSIGN_PRIVATE_KEY"} on Vercel. Sending still marks the quote as sent for signature.</p>
         )}
         {!quoteRef && docusignReady && (
           <p style={{ margin: 0, color: C.textMuted, fontSize: 13 }}>Save the quote, then send it for signature.</p>

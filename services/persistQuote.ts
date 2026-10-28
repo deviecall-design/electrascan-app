@@ -10,6 +10,7 @@
 import { supabase } from "./supabaseClient";
 import { authIsDisabled } from "../lib/authMode";
 import { quotePersistFields } from "../lib/estimateMoney";
+import { estimateStatusFor, type ApprovalStatus } from "../lib/approvalStatus";
 import { updateScan } from "./supabaseData";
 
 export interface PersistQuoteInput {
@@ -19,7 +20,8 @@ export interface PersistQuoteInput {
   subtotal: number;
   marginPct: number;
   lineItems: unknown[];
-  status: "draft" | "sent";
+  status?: "draft" | "sent";
+  approvalStatus?: ApprovalStatus;
   scanId?: string | null;
   verifiedPct?: number | null;
 }
@@ -49,7 +51,8 @@ export async function persistQuoteFromScan(
     client: (input.client || "").trim() || "Client not set",
     project_name: input.projectName ?? null,
     drawing_file: input.drawingFile ?? null,
-    status: input.status,
+    status: input.status || estimateStatusFor(input.approvalStatus || "ready_for_approval"),
+    ...(beta ? { approval_status: input.approvalStatus || "ready_for_approval" } : {}),
     line_items: input.lineItems,
     days_since_sent: 0,
     ...money,
@@ -91,4 +94,18 @@ export async function persistQuoteFromScan(
   }
 
   return { ok: true, reference };
+}
+
+export async function setEstimateApproval(
+  reference: string,
+  approvalStatus: ApprovalStatus,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const res = await fetch(`/api/beta/estimates?reference=${encodeURIComponent(reference)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ approval_status: approvalStatus, reference }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: json.error || "Could not update the approval status." };
+  return { ok: true };
 }

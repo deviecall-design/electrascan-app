@@ -9,6 +9,7 @@ import { linesFromDetected, materialsExGst } from "../lib/variationDiff";
 import { approvalsHref } from "../lib/approvalsLink";
 import { readDetectedItems, type StoredDetectedItem } from "../lib/scanRecord";
 import { formatVerified, verifiedFromEstimate } from "../lib/takeoff";
+import { APPROVAL_LABEL, approvalFromRow, type ApprovalStatus } from "../lib/approvalStatus";
 import { DEFAULT_MARGIN_PCT } from "../lib/quoteTotals";
 import { getActiveCompanyProfile } from "../services/companyProfile";
 import SignOrderStep from "../components/desktop/SignOrderStep";
@@ -29,6 +30,7 @@ export default function ApprovalsScreen() {
   const { data: estimates, loading, error } = useSupabaseQuery(fetchEstimates);
   const { data: scans, loading: scansLoading, error: scansError } = useSupabaseQuery(fetchScans);
   const [materials, setMaterials] = useState<MaterialRequestRow[]>([]);
+  const [approvalOverrides, setApprovalOverrides] = useState<Record<string, ApprovalStatus>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -41,7 +43,9 @@ export default function ApprovalsScreen() {
     return () => { cancelled = true; };
   }, []);
 
-  const awaiting = estimates.filter((row: { status?: string }) => row.status !== "approved");
+  const statusOf = (row: { approval_status?: string | null; status?: string | null; reference?: string | null; ref?: string | null }) =>
+    approvalOverrides[estimateDisplayRef(row)] || approvalFromRow(row);
+  const awaiting = estimates;
   const takeoffs = scans.filter((scan: { estimate_ref?: string | null; detected_items?: unknown }) =>
     !scan.estimate_ref && linesFromDetected(scan.detected_items).length > 0);
 
@@ -92,12 +96,12 @@ export default function ApprovalsScreen() {
         <>
           <div className="es-pair" style={{ marginBottom: 16 }}>
             <Queue
-              title="Awaiting signature"
-              empty="No saved quote is waiting."
-              rows={awaiting.map((row: { id: string; client?: string; value?: number; status?: string; reference?: string; ref?: string }) => ({
+              title="Ready for approval"
+              empty="No saved quote is waiting. Save a priced takeoff and it will land here."
+              rows={awaiting.map((row: { id: string; client?: string; value?: number; status?: string; approval_status?: string; reference?: string; ref?: string }) => ({
                 id: row.id,
                 label: `${estimateDisplayRef(row)} · ${row.client || "Client not set"}`,
-                detail: `${formatQuotedValue(Number(row.value) || 0)} · ${row.status || "draft"} · signature not sent`,
+                detail: `${formatQuotedValue(Number(row.value) || 0)} · ${APPROVAL_LABEL[statusOf(row)]}`,
                 href: approvalsHref(scans.find((scan: { estimate_ref?: string | null }) => scan.estimate_ref === estimateDisplayRef(row))?.id, estimateDisplayRef(row)),
                 active: estimateDisplayRef(row) === reference,
               }))}
@@ -142,6 +146,10 @@ export default function ApprovalsScreen() {
                 scanId={selectedScan?.id}
                 marginPct={typeof selectedEstimate?.margin_pct === "number" ? selectedEstimate.margin_pct : DEFAULT_MARGIN_PCT}
                 minVerifiedPct={null}
+                approvalStatus={selectedEstimate ? statusOf(selectedEstimate) : "ready_for_approval"}
+                onApproval={next => {
+                  if (reference) setApprovalOverrides(current => ({ ...current, [reference]: next }));
+                }}
                 onBack={() => navigate(selectedScan ? `/detection/${selectedScan.id}` : "/estimate")}
                 onSaved={ref => navigate(approvalsHref(selectedScan?.id, ref))}
               />
