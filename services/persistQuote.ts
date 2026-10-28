@@ -21,6 +21,7 @@ export interface PersistQuoteInput {
   lineItems: unknown[];
   status: "draft" | "sent";
   scanId?: string | null;
+  verifiedPct?: number | null;
 }
 
 export type PersistQuoteResult =
@@ -52,6 +53,7 @@ export async function persistQuoteFromScan(
     line_items: input.lineItems,
     days_since_sent: 0,
     ...money,
+    ...(input.verifiedPct == null ? {} : { verified_pct: input.verifiedPct }),
   };
 
   let res: Response;

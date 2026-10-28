@@ -23,6 +23,7 @@ import {
   daysSinceSent,
 } from "../lib/estimateMoney";
 import QueryBanner from "../components/QueryBanner";
+import { verifiedFromEstimate } from "../lib/takeoff";
 
 export default function EstimateScreen() {
   const navigate = useNavigate();
@@ -112,6 +113,7 @@ export default function EstimateScreen() {
                 <Th>Reference</Th>
                 <Th>Client</Th>
                 <Th align="right">Value (inc GST)</Th>
+                <Th>Verified</Th>
                 <Th>Status</Th>
                 <Th align="right">Sent</Th>
               </tr>
@@ -136,6 +138,9 @@ export default function EstimateScreen() {
                     <Td>{e.client}</Td>
                     <Td align="right" mono>
                       <span style={{ fontWeight: 500 }}>{formatQuotedValue(quotedTotalIncGst(e))}</span>
+                    </Td>
+                    <Td>
+                      {verifiedFromEstimate(e) == null ? "—" : `Takeoff ${verifiedFromEstimate(e)}% verified`}
                     </Td>
                     <Td><StatusPill status={e.status} /></Td>
                     <Td align="right" muted>

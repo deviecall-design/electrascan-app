@@ -74,6 +74,8 @@ WHERE u.email = 'you@example.com';
 
 Do not run `20261027120000_scan_flow_and_claims.sql` or `20261027143000_tenant_invites.sql` for the beta. Those files are for when login is turned back on. The live database does not have `tenant_id` on `rate_library`, `scans`, or `estimates`, and it does not have `tenant_invites`. The beta routes work without them.
 
+`20261028120000_takeoff_and_materials.sql` adds `estimates.verified_pct`, `workspace_settings`, and `materials_requests`. Scans still save without it. Apply it before saving the verified-% gate or a materials-request status. The materials PDF, CSV, and draft email work either way, and the email is never sent by the app.
+
 When you set `AUTH_DISABLED=false` and redeploy, apply the SQL in `supabase/migrations/`, including `20261027143000_tenant_invites.sql`:
 
 ```bash

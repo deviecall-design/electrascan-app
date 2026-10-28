@@ -20,6 +20,7 @@ import {
 import { getActiveCompanyProfile } from "../services/companyProfile";
 import { getCurrentTenantId, VESH_TENANT_ID } from "../lib/tenants";
 import { authIsDisabled } from "../lib/authMode";
+import { fetchWorkspaceSettings, saveWorkspaceSettings } from "../services/workspaceSettings";
 import { useToast } from "../contexts/ToastContext";
 
 const EMPTY_FORM: CompanyProfileInput = {
@@ -207,10 +208,82 @@ export default function SettingsScreen() {
         </div>
       </form>
 
+      <TakeoffSettings />
+
       {!authIsDisabled() && <WorkspaceInvites />}
 
       <Footer />
     </div>
+  );
+}
+
+function TakeoffSettings() {
+  const { addToast } = useToast();
+  const [minVerified, setMinVerified] = useState("");
+  const [supplierName, setSupplierName] = useState("Lawrence & Hanson");
+  const [supplierEmail, setSupplierEmail] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchWorkspaceSettings().then(settings => {
+      if (cancelled) return;
+      setMinVerified(settings.minVerifiedPct == null ? "" : String(settings.minVerifiedPct));
+      setSupplierName(settings.supplierName);
+      setSupplierEmail(settings.supplierEmail);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  async function onSave(event: React.FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    const result = await saveWorkspaceSettings({
+      minVerifiedPct: minVerified.trim() === "" ? null : Math.max(0, Math.min(100, Number(minVerified))),
+      supplierName,
+      supplierEmail,
+    });
+    setSaving(false);
+    if (!result.ok) {
+      addToast(result.error || "Could not save workspace settings.", "error");
+      return;
+    }
+    addToast("Workspace settings saved.", "success");
+  }
+
+  return (
+    <Card style={{ maxWidth: 760, marginTop: 18 }}>
+      <form onSubmit={onSave} style={{ padding: 24, display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ fontFamily: FONT.heading, fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted }}>
+          Takeoff and supplier
+        </div>
+        <p style={{ margin: 0, color: C.textMuted, fontSize: 14 }}>
+          Leave the verified minimum blank to allow a quote at any takeoff check. The supplier email is only used to open a draft. Nothing is sent automatically.
+        </p>
+        <label style={{ fontSize: 13, color: C.textMuted }}>
+          Minimum verified % before a quote can be sent
+          <input
+            aria-label="Minimum verified percent"
+            inputMode="numeric"
+            placeholder="Off"
+            value={minVerified}
+            onChange={event => setMinVerified(event.target.value)}
+            style={{ display: "block", width: 160, minHeight: 44, marginTop: 6, borderRadius: RADIUS.md, border: `1px solid ${C.border}`, padding: "0 12px" }}
+          />
+        </label>
+        <label style={{ fontSize: 13, color: C.textMuted }}>
+          Supplier
+          <input aria-label="Supplier name" value={supplierName} onChange={event => setSupplierName(event.target.value)} style={{ display: "block", width: "100%", minHeight: 44, marginTop: 6, borderRadius: RADIUS.md, border: `1px solid ${C.border}`, padding: "0 12px" }} />
+        </label>
+        <label style={{ fontSize: 13, color: C.textMuted }}>
+          Supplier email
+          <input aria-label="Supplier email" type="email" value={supplierEmail} onChange={event => setSupplierEmail(event.target.value)} placeholder="orders@example.com.au" style={{ display: "block", width: "100%", minHeight: 44, marginTop: 6, borderRadius: RADIUS.md, border: `1px solid ${C.border}`, padding: "0 12px" }} />
+        </label>
+        <div>
+          <PrimaryButton type="submit" disabled={saving}>{saving ? "Saving…" : "Save takeoff settings"}</PrimaryButton>
+        </div>
+      </form>
+    </Card>
   );
 }
 

@@ -12,6 +12,16 @@ import {
   VESH_TENANT_ID,
 } from "../_lib/veshAdmin.js";
 
+async function insertQuote(row) {
+  let saved = await insertVesh("estimates", row);
+  if (!saved.ok && missingColumn(saved, "verified_pct")) {
+    const next = { ...row };
+    delete next.verified_pct;
+    saved = await insertVesh("estimates", next);
+  }
+  return saved;
+}
+
 const MAX_ATTEMPTS = 5;
 
 function currentPrefix(now = new Date()) {
@@ -78,6 +88,9 @@ function quotePayload(body) {
       subtotal: Number(body.subtotal) || 0,
       margin_pct: Number(body.margin_pct) || 0,
       value: Number(body.value) || 0,
+      ...(body.verified_pct == null || body.verified_pct === ""
+        ? {}
+        : { verified_pct: Math.max(0, Math.min(100, Math.round(Number(body.verified_pct)))) }),
     },
   };
 }
@@ -116,7 +129,7 @@ export default async function handler(req, res) {
       return;
     }
     const reference = nextReference(prefix, highest(lookup.data, prefix));
-    const saved = await insertVesh("estimates", {
+    const saved = await insertQuote({
       ...parsed.row,
       reference,
       ref: reference,

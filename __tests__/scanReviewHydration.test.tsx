@@ -55,10 +55,11 @@ describe("saved scan review", () => {
     );
 
     expect(await screen.findByText("Kitchen double GPO")).toBeInTheDocument();
-    expect(screen.getByText("GPO-D")).toBeInTheDocument();
+    expect(screen.getByText(/GPO-D/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Confirm" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Flag for site check" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Reject/ })).toBeInTheDocument();
     expect(screen.getByText("Takeoff subtotal (ex GST)")).toBeInTheDocument();
+    expect(screen.getAllByText(/Takeoff 0% verified/).length).toBeGreaterThan(0);
     expect(screen.getAllByText("$480").length).toBeGreaterThan(0);
     expect(screen.queryByText(/Mark Arnesen|Toorak|Bondi/i)).not.toBeInTheDocument();
     await waitFor(() => expect(fetchScanById).toHaveBeenCalledWith("scan-1"));
