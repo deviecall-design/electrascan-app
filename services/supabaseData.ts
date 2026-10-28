@@ -5,7 +5,8 @@
  */
 
 import { supabase } from "./supabaseClient";
-import { getCurrentTenantId, rememberTenantId } from "../lib/tenants";
+import { authIsDisabled } from "../lib/authMode";
+import { getCurrentTenantId, rememberTenantId, VESH_TENANT_ID } from "../lib/tenants";
 import {
   quotedTotalIncGst,
   WIN_RATE_LOOKBACK_DAYS,
@@ -69,7 +70,29 @@ export interface CompanyProfileRow {
 
 // ─── Fetch functions ────────────────────────────────────────────────────
 
+async function betaJson(path: string, init?: RequestInit) {
+  let res: Response;
+  try {
+    res = await fetch(path, {
+      ...init,
+      headers: {
+        ...(init?.body ? { "Content-Type": "application/json" } : {}),
+        ...(init?.headers || {}),
+      },
+    });
+  } catch {
+    return { data: null, error: { message: "Could not reach saved data." } };
+  }
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const message = typeof json?.error === "string" ? json.error : `Request failed (${res.status})`;
+    return { data: null, error: { message } };
+  }
+  return { data: json.data ?? null, error: null };
+}
+
 export async function fetchEstimates() {
+  if (authIsDisabled()) return betaJson("/api/beta/estimates");
   return supabase
     .from("estimates")
     .select("*")
@@ -78,6 +101,7 @@ export async function fetchEstimates() {
 }
 
 export async function fetchScans() {
+  if (authIsDisabled()) return betaJson("/api/beta/scans");
   return supabase
     .from("scans")
     .select("*")
@@ -86,6 +110,7 @@ export async function fetchScans() {
 }
 
 export async function fetchScanById(id: string) {
+  if (authIsDisabled()) return betaJson(`/api/beta/scans?id=${encodeURIComponent(id)}`);
   return supabase
     .from("scans")
     .select("*")
@@ -110,6 +135,7 @@ export async function fetchMilestoneClaimsForProject(projectId: string) {
 }
 
 export async function fetchRateLibrary() {
+  if (authIsDisabled()) return betaJson("/api/beta/rates");
   return supabase
     .from("rate_library")
     .select("*")
@@ -120,6 +146,9 @@ export async function fetchRateLibrary() {
 // ─── Insert functions ───────────────────────────────────────────────────
 
 export async function insertEstimate(row: Omit<EstimateRow, "id" | "created_at">) {
+  if (authIsDisabled()) {
+    return betaJson("/api/beta/estimates", { method: "POST", body: JSON.stringify(row) });
+  }
   const tenantId = await tenantForWrite();
   if (!tenantId) return { data: null, error: NO_WORKSPACE };
   return supabase
@@ -136,6 +165,10 @@ const NO_WORKSPACE = { message: "Sign in to open a workspace before saving." };
  * Does not attach the caller to Vesh unless their email is on tenant_invites.
  */
 export async function provisionWorkspace() {
+  if (authIsDisabled()) {
+    rememberTenantId(VESH_TENANT_ID);
+    return { ok: true as const, tenantId: VESH_TENANT_ID };
+  }
   const { data: sessionData } = await supabase.auth.getSession();
   if (!sessionData.session) return { ok: false as const, error: "Not signed in" };
   const { data, error } = await supabase.rpc("provision_workspace");
@@ -154,6 +187,21 @@ async function tenantForWrite(): Promise<string | null> {
 }
 
 export async function insertScan(row: Partial<ScanRow> & Pick<ScanRow, "file_name">) {
+  if (authIsDisabled()) {
+    return betaJson("/api/beta/scans", {
+      method: "POST",
+      body: JSON.stringify({
+        file_name: row.file_name,
+        client: row.client ?? null,
+        stage: row.stage ?? "review",
+        items_detected: row.items_detected ?? 0,
+        progress: row.progress ?? 0,
+        detected_items: row.detected_items ?? [],
+        risk_flags: row.risk_flags ?? [],
+        estimate_ref: row.estimate_ref ?? null,
+      }),
+    });
+  }
   const tenantId = await tenantForWrite();
   if (!tenantId) return { data: null, error: NO_WORKSPACE };
   return supabase
@@ -174,10 +222,19 @@ export async function insertScan(row: Partial<ScanRow> & Pick<ScanRow, "file_nam
 }
 
 export async function updateScan(id: string, updates: Partial<ScanRow>) {
+  if (authIsDisabled()) {
+    return betaJson(`/api/beta/scans?id=${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(updates),
+    });
+  }
   return supabase.from("scans").update(updates).eq("id", id).select().single();
 }
 
 export async function upsertRate(row: Omit<RateRow, "id" | "synced_at">) {
+  if (authIsDisabled()) {
+    return betaJson("/api/beta/rates", { method: "POST", body: JSON.stringify(row) });
+  }
   const tenantId = await tenantForWrite();
   if (!tenantId) return { data: null, error: NO_WORKSPACE };
   return supabase
@@ -188,6 +245,9 @@ export async function upsertRate(row: Omit<RateRow, "id" | "synced_at">) {
 }
 
 export async function deleteRate(id: string) {
+  if (authIsDisabled()) {
+    return betaJson(`/api/beta/rates?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
   return supabase.from("rate_library").delete().eq("id", id);
 }
 

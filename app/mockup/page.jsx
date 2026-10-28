@@ -408,7 +408,7 @@ function ScansView({ go }) {
   ];
   return (
     <div className="anim-in">
-      <PageHeader title="Scans" sub="Upload a floor plan and let Claude turn it into a costed estimate." cta={<PrimaryButton onClick={() => go('scan')} icon={<Plus size={15} strokeWidth={2.5} />}>New scan</PrimaryButton>} />
+      <PageHeader title="Scans" sub="Upload a floor plan and ElectraScan AI will turn it into a costed estimate." cta={<PrimaryButton onClick={() => go('scan')} icon={<Plus size={15} strokeWidth={2.5} />}>New scan</PrimaryButton>} />
       <Card>
         <table style={{ width: '100%', fontSize: 14 }}>
           <thead>
@@ -542,7 +542,7 @@ function StepUpload({ onNext }) {
         <Upload size={24} />
       </div>
       <h2 style={{ fontFamily: fontHeading, fontSize: 20, fontWeight: 600, margin: 0 }}>Drop your floor plan here</h2>
-      <p style={{ color: C.textMuted, fontStyle: 'italic', margin: 0, maxWidth: 420 }}>PDF, PNG, or DWG. Claude Vision will detect symbols, map them to your rate library, and draft a quote.</p>
+      <p style={{ color: C.textMuted, fontStyle: 'italic', margin: 0, maxWidth: 420 }}>PDF, PNG, or DWG. ElectraScan AI will detect symbols, map them to your rate library, and draft a quote.</p>
       <PrimaryButton onClick={onNext}>Simulate upload →</PrimaryButton>
     </div>
   );
@@ -558,7 +558,7 @@ function StepDetecting({ items: allItems, revealed, onNext, ready }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Bot size={14} color={C.orange} className={ready ? '' : 'pulse'} />
             <span style={{ fontFamily: fontHeading, fontSize: 12, fontWeight: 500, color: C.textMuted }}>
-              {ready ? 'Detection complete' : 'Claude Vision analysing'}
+              {ready ? 'Detection complete' : 'ElectraScan AI analysing'}
               {!ready && <Dots />}
             </span>
           </div>
@@ -814,7 +814,7 @@ function FloorPlan({ items }) {
           </circle>
         </g>
       ))}
-      <text x="490" y="368" fontFamily={fontMono} fontSize="8" fill={C.textSubtle} textAnchor="end" opacity="0.7">analysed by Claude Vision · 0.4.2</text>
+      <text x="490" y="368" fontFamily={fontMono} fontSize="8" fill={C.textSubtle} textAnchor="end" opacity="0.7">analysed by ElectraScan AI · 0.4.2</text>
     </svg>
   );
 }

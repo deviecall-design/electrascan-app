@@ -8,6 +8,7 @@
  */
 
 import { supabase } from "./supabaseClient";
+import { authIsDisabled } from "../lib/authMode";
 import { quotePersistFields } from "../lib/estimateMoney";
 import { updateScan } from "./supabaseData";
 
@@ -29,13 +30,17 @@ export type PersistQuoteResult =
 export async function persistQuoteFromScan(
   input: PersistQuoteInput,
 ): Promise<PersistQuoteResult> {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const token = sessionData.session?.access_token;
-  if (!token) {
-    return {
-      ok: false,
-      error: "Sign in to save this quote so it appears on the Dashboard.",
-    };
+  const beta = authIsDisabled();
+  let token: string | undefined;
+  if (!beta) {
+    const { data: sessionData } = await supabase.auth.getSession();
+    token = sessionData.session?.access_token;
+    if (!token) {
+      return {
+        ok: false,
+        error: "Sign in to save this quote so it appears on the Dashboard.",
+      };
+    }
   }
 
   const money = quotePersistFields(input.subtotal, input.marginPct);
@@ -51,11 +56,11 @@ export async function persistQuoteFromScan(
 
   let res: Response;
   try {
-    res = await fetch("/api/estimates/create", {
+    res = await fetch(beta ? "/api/beta/estimates" : "/api/estimates/create", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
+        ...(!beta && token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify(body),
     });

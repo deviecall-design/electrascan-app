@@ -17,6 +17,8 @@
 //   ANTHROPIC_API_KEY  (required) — server-side only, must NOT be VITE_-prefixed
 //   SUPABASE_URL       (optional) — defaults to the project URL below
 
+import { isAuthDisabled } from './_lib/authMode.js';
+
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://zxeznkuodpseijkvjwxa.supabase.co';
 // Publishable (anon) key — safe in source, same default as api/estimates/create.js.
 // Defaulting it here means ANTHROPIC_API_KEY is the only variable that must be
@@ -50,31 +52,32 @@ export default async function handler(req, res) {
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    // Explicit rather than a confusing 401 from upstream. If this fires, the
-    // env var is missing in Vercel for this environment.
     res.status(500).json({
-      error: 'Detection is not configured: ANTHROPIC_API_KEY is not set on the server.',
+      error: 'ElectraScan AI is not configured on the server.',
+      code: 'DETECTION_NOT_CONFIGURED',
     });
     return;
   }
 
-  const auth = req.headers.authorization || '';
-  if (!auth.startsWith('Bearer ')) {
-    res.status(401).json({ error: 'Sign in before running a scan.' });
-    return;
-  }
+  if (!isAuthDisabled()) {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer ')) {
+      res.status(401).json({ error: 'Sign in before running a scan.' });
+      return;
+    }
 
-  const caller = await verifyCaller(auth);
-  if (!caller) {
-    res.status(401).json({ error: 'Session expired or invalid. Sign in again.' });
-    return;
+    const caller = await verifyCaller(auth);
+    if (!caller) {
+      res.status(401).json({ error: 'Session expired or invalid. Sign in again.' });
+      return;
+    }
   }
 
   const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {};
   const { model, max_tokens: maxTokens, system, messages } = body;
 
   if (!ALLOWED_MODELS.has(model)) {
-    res.status(400).json({ error: `Model not permitted: ${model}` });
+    res.status(400).json({ error: 'ElectraScan AI could not run this scan.' });
     return;
   }
   if (!Array.isArray(messages) || messages.length === 0) {
@@ -112,20 +115,15 @@ export default async function handler(req, res) {
 
     const text = await upstream.text();
     if (!upstream.ok) {
-      // Pass the upstream status and message through so the client can show a
-      // real reason. A retired model id, for example, arrives here as a 404
-      // with not_found_error — which previously surfaced only as "0 components".
-      res.status(upstream.status).json({
-        error: 'Detection request failed upstream.',
-        status: upstream.status,
-        detail: text.slice(0, 1000),
-      });
+      console.error('[ElectraScan] detection upstream', upstream.status, text.slice(0, 500));
+      res.status(502).json({ error: 'ElectraScan AI could not read this plan.' });
       return;
     }
 
     res.setHeader('Content-Type', 'application/json');
     res.status(200).send(text);
   } catch (err) {
-    res.status(502).json({ error: 'Could not reach the detection service.', detail: String(err && err.message) });
+    console.error('[ElectraScan] detection request failed', err && err.message);
+    res.status(502).json({ error: 'ElectraScan AI could not read this plan.' });
   }
 }

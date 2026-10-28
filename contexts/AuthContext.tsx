@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, ReactNode } from
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../services/supabaseClient';
 import { provisionWorkspace } from '../services/supabaseData';
+import { authIsDisabled } from '../lib/authMode';
 import { clearTenantIdCache } from '../lib/tenants';
 
 interface AuthContextType {
@@ -19,6 +20,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (authIsDisabled()) {
+      setSession(null);
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     // getSession used to hang on navigator.locks and leave the app on a
     // loading shell. The client bypasses that lock; this timeout is the
