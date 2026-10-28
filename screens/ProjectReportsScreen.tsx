@@ -201,7 +201,13 @@ export default function ProjectReportsScreen() {
       <PageHeader
         crumb="Project reports"
         title={selected?.project_name || selected?.client || "Project"}
-        sub={[selected?.client, projectKey, "Figures are from this saved quote."].filter(Boolean).join(" · ")}
+        sub={[
+          selected?.client,
+          projectKey,
+          selected?.status === "review"
+            ? "Figures are from this saved takeoff. The quote has not been sent."
+            : "Figures are from this saved quote.",
+        ].filter(Boolean).join(" · ")}
       />
 
       {projects.length > 1 && (
