@@ -5,8 +5,9 @@ import { C, FONT } from "../components/desktop/tokens";
 import { PageHeader, Card, Footer, EmptyState } from "../components/ui/anthropic";
 import { GhostButton } from "../components/ui/anthropic/Button";
 import useSupabaseQuery from "../hooks/useSupabaseQuery";
-import { fetchEstimates, fetchScans, fetchMilestoneClaimsForProject, submitMilestoneClaim, type MilestoneClaimRow } from "../services/supabaseData";
-import { linesFromDetected, linesOf, materialsExGst, takeoffIncGst } from "../lib/variationDiff";
+import { fetchEstimates, fetchRateLibrary, fetchScans, fetchMilestoneClaimsForProject, submitMilestoneClaim, type MilestoneClaimRow } from "../services/supabaseData";
+import { labourExGst, linesFromDetected, linesOf, materialsExGst, takeoffIncGst } from "../lib/variationDiff";
+import type { RateLike } from "../lib/takeoff";
 import { DEFAULT_MARGIN_PCT } from "../lib/quoteTotals";
 import { milestoneAfterSave } from "../lib/progressClaim";
 import { formatQuotedValue } from "../lib/estimateMoney";
@@ -67,28 +68,33 @@ interface ProjectRow {
   reference: string | null;
   ref: string | null;
   items: number;
-  lines: { description: string; qty: number; unitPrice: number }[];
+  labour: number;
+  lines: { description: string; qty: number; unitPrice: number; labourUnit?: number }[];
 }
 
-function projectsFrom(estimates: any[], scans: any[]): ProjectRow[] {
-  const fromEstimates: ProjectRow[] = estimates.map(row => ({
-    id: row.id,
-    client: row.client ?? null,
-    project_name: row.project_name ?? null,
-    value: Number(row.value) || 0,
-    subtotal: Number(row.subtotal) || 0,
-    margin_pct: typeof row.margin_pct === "number" ? row.margin_pct : null,
-    status: row.status || "draft",
-    reference: row.reference ?? null,
-    ref: row.ref ?? null,
-    items: linesOf(row).length,
-    lines: linesOf(row),
-  }));
+function projectsFrom(estimates: any[], scans: any[], rates: RateLike[] = []): ProjectRow[] {
+  const fromEstimates: ProjectRow[] = estimates.map(row => {
+    const lines = linesOf(row);
+    return {
+      id: row.id,
+      client: row.client ?? null,
+      project_name: row.project_name ?? null,
+      value: Number(row.value) || 0,
+      subtotal: Number(row.subtotal) || 0,
+      margin_pct: typeof row.margin_pct === "number" ? row.margin_pct : null,
+      status: row.status || "draft",
+      reference: row.reference ?? null,
+      ref: row.ref ?? null,
+      items: lines.length,
+      labour: labourExGst(lines),
+      lines,
+    };
+  });
   const quotedRefs = new Set(fromEstimates.map(row => row.reference || row.ref).filter(Boolean));
   const fromScans: ProjectRow[] = scans
     .filter(scan => !scan.estimate_ref || !quotedRefs.has(scan.estimate_ref))
     .map(scan => {
-      const lines = linesFromDetected(scan.detected_items);
+      const lines = linesFromDetected(scan.detected_items, rates);
       const subtotal = materialsExGst(lines);
       return {
         id: `scan-${scan.id}`,
@@ -101,6 +107,7 @@ function projectsFrom(estimates: any[], scans: any[]): ProjectRow[] {
         reference: scan.estimate_ref ?? null,
         ref: scan.estimate_ref ?? null,
         items: lines.length,
+        labour: labourExGst(lines),
         lines,
       };
     });
@@ -111,7 +118,11 @@ export default function ProjectReportsScreen() {
   const navigate = useNavigate();
   const { data: estimates, loading, error } = useSupabaseQuery(fetchEstimates);
   const { data: scans, loading: scansLoading, error: scansError } = useSupabaseQuery(fetchScans);
-  const projects = useMemo(() => projectsFrom(estimates, scans), [estimates, scans]);
+  const { data: rates } = useSupabaseQuery(fetchRateLibrary);
+  const projects = useMemo(
+    () => projectsFrom(estimates, scans, rates as RateLike[]),
+    [estimates, scans, rates],
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = projects.find(row => row.id === selectedId) ?? projects[0] ?? null;
   const projectKey = selected ? (selected.reference || selected.ref || selected.project_name || selected.id) : "";
@@ -192,8 +203,9 @@ export default function ProjectReportsScreen() {
     );
   }
 
-  const margin = selected?.margin_pct;
-  const marginLabel = typeof margin === "number" ? `${margin}%` : "—";
+  const fromQuote = selected?.status !== "review";
+  const marginPct = typeof selected?.margin_pct === "number" ? selected.margin_pct : DEFAULT_MARGIN_PCT;
+  const marginDollars = Math.round((Number(selected?.subtotal) || 0) * (marginPct / 100));
 
   return (
     <div className="anim-in">
@@ -236,8 +248,14 @@ export default function ProjectReportsScreen() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 20 }}>
         <Mini label="Contract value" value={pageLoading ? "—" : formatQuotedValue(contract)} hint={selected?.status === "review" ? "Takeoff inc GST, quote not sent" : "Quoted total inc GST"} icon={<DollarSign size={16} />} />
         <Mini label="Materials" value={pageLoading ? "—" : formatQuotedValue(Number(selected?.subtotal) || 0)} hint={`${selected?.items ?? 0} priced lines, ex GST`} icon={<DollarSign size={16} />} />
+        <Mini label="Labour" value={pageLoading ? "—" : formatQuotedValue(Number(selected?.labour) || 0)} hint={selected?.labour ? "Rate-library allowance, ex GST" : "No labour allowance on this takeoff"} icon={<DollarSign size={16} />} />
         <Mini label="Claimed" value={formatQuotedValue(claimedTotal)} hint="Saved claims only" icon={<CheckCircle2 size={16} />} />
-        <Mini label="Quoted margin" value={marginLabel} hint="From the estimate" icon={<Target size={16} />} />
+        <Mini
+          label={fromQuote ? "Quoted margin" : "Takeoff markup"}
+          value={pageLoading ? "—" : formatQuotedValue(marginDollars)}
+          hint={fromQuote ? `${marginPct}% from the estimate` : `${marginPct}% on materials, quote not saved`}
+          icon={<Target size={16} />}
+        />
         <Mini label="Status" value={selected?.status === "approved" ? "Won" : (selected?.status || "—")} hint="Estimate status" icon={<Clock size={16} />} />
       </div>
 
@@ -282,7 +300,9 @@ export default function ProjectReportsScreen() {
           <div key={line.description} style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "10px 0", borderTop: `1px solid ${C.border}` }}>
             <span>
               <span style={{ fontWeight: 600 }}>{line.description}</span>
-              <span style={{ display: "block", color: C.textMuted, fontSize: 13 }}>{line.qty} × {formatQuotedValue(line.unitPrice)}</span>
+              <span style={{ display: "block", color: C.textMuted, fontSize: 13 }}>
+                {line.qty} × {formatQuotedValue(line.unitPrice)} materials · {formatQuotedValue(line.labourUnit ?? 0)} labour each
+              </span>
             </span>
             <span style={{ fontFamily: FONT.mono, fontWeight: 600 }}>{formatQuotedValue(line.qty * line.unitPrice)}</span>
           </div>

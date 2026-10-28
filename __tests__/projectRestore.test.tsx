@@ -19,6 +19,7 @@ const { scan } = vi.hoisted(() => ({
 vi.mock("../services/supabaseData", () => ({
   fetchEstimates: vi.fn().mockResolvedValue({ data: [], error: null }),
   fetchScans: vi.fn().mockResolvedValue({ data: [scan], error: null }),
+  fetchRateLibrary: vi.fn().mockResolvedValue({ data: [], error: null }),
   fetchMilestoneClaimsForProject: vi.fn().mockResolvedValue({ data: [], error: null }),
   submitMilestoneClaim: vi.fn(),
   insertScan: vi.fn().mockResolvedValue({ data: { id: "scan-2" }, error: null }),
@@ -49,6 +50,9 @@ describe("restored project surfaces", () => {
     expect(screen.getByText("Resources")).toBeInTheDocument();
     expect(screen.getByText("Project breakdown")).toBeInTheDocument();
     expect(screen.getByText("Recessed downlight")).toBeInTheDocument();
+    expect(screen.getByText("Takeoff markup")).toBeInTheDocument();
+    expect(screen.getByText(/quote not saved/i)).toBeInTheDocument();
+    expect(screen.getByText("Labour")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Connect" }).length).toBe(2);
   });
 
@@ -59,13 +63,15 @@ describe("restored project surfaces", () => {
         <VariationReportScreen />
       </MemoryRouter>,
     );
-    expect(await screen.findByText(/Mark Arnesen plan.pdf/)).toBeInTheDocument();
+    expect((await screen.findAllByText(/Mark Arnesen plan.pdf/)).length).toBeGreaterThan(0);
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
     await user.upload(input, new File(["%PDF"], "revised.pdf", { type: "application/pdf" }));
     expect(await screen.findByText("Added")).toBeInTheDocument();
     expect(screen.getByText("Removed")).toBeInTheDocument();
     expect(screen.getByText(/Double gpo/i)).toBeInTheDocument();
     expect(screen.getByText("Recessed downlight")).toBeInTheDocument();
+    expect(screen.getByText(/Variation 2/)).toBeInTheDocument();
     expect(screen.getAllByText(/materials/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/labour/).length).toBeGreaterThan(0);
   });
 });

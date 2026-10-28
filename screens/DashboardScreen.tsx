@@ -40,7 +40,7 @@ import QueryBanner from "../components/QueryBanner";
 import { timeGreeting } from "../lib/greeting";
 import { scanListStatus } from "../lib/scanRecord";
 import { attentionFromPipeline } from "../lib/pipelineAttention";
-import { linesFromDetected, materialsExGst } from "../lib/variationDiff";
+import { linesFromDetected, materialsExGst, reviewTakeoffIncGst } from "../lib/variationDiff";
 import { formatAuShortDateTime } from "../lib/dates";
 
 const STATUS_TONE: Record<string, { bg: string; fg: string }> = {
@@ -76,6 +76,8 @@ export default function DashboardScreen() {
     () => computeDashboardMoneyStats(liveEstimates, liveScans),
     [liveEstimates, liveScans],
   );
+  const reviewValue = useMemo(() => reviewTakeoffIncGst(liveScans), [liveScans]);
+  const showReviewTakeoff = !loading && stats.pendingValue <= 0 && reviewValue > 0;
 
   const attention = useMemo(
     () => attentionFromPipeline(liveScans, liveEstimates),
@@ -86,11 +88,13 @@ export default function DashboardScreen() {
     ? "Loading pipeline figures."
     : estimatesError
       ? "Could not load estimates. Pending value stays at zero until a quote is saved from a scan."
-      : ariesPipelineInsight({
-          isLive: estimatesLive,
-          pendingValue: stats.pendingValue,
-          estimateCount: liveEstimates.length,
-        });
+      : showReviewTakeoff
+        ? `Takeoff in review is ${formatQuotedValue(reviewValue)} inc GST. It stays off pending value until a quote is sent.`
+        : ariesPipelineInsight({
+            isLive: estimatesLive,
+            pendingValue: stats.pendingValue,
+            estimateCount: liveEstimates.length,
+          });
 
   const fmtPct = (n: number | null) => (n == null ? "—" : `${n}%`);
   const emptyPipeline = !loading && liveEstimates.length === 0 && liveScans.length === 0;
@@ -117,7 +121,12 @@ export default function DashboardScreen() {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16, marginBottom: 24 }}>
         <Kpi label="Estimates this month" value={loading ? "—" : String(stats.estimatesThisMonth)} hint="This month" icon={<FileText size={18} />} />
-        <Kpi label="Pending value" value={loading ? "—" : formatPipelineKpi(stats.pendingValue)} hint="Sent + viewed, inc GST" icon={<DollarSign size={18} />} />
+        <Kpi
+          label={showReviewTakeoff ? "Takeoff in review" : "Pending value"}
+          value={loading ? "—" : formatPipelineKpi(showReviewTakeoff ? reviewValue : stats.pendingValue)}
+          hint={showReviewTakeoff ? "Not sent for signature" : "Sent + viewed, inc GST"}
+          icon={<DollarSign size={18} />}
+        />
         <Kpi label="Win rate" value={loading ? "—" : fmtPct(stats.winRate)} hint="Closed, last 90 days" icon={<Target size={18} />} accent={C.green} />
         <Kpi label="Avg scan-to-quote" value={loading ? "—" : formatScanToQuote(stats.avgScanToQuoteMs)} hint="Across linked scans" icon={<Clock size={18} />} />
       </div>
