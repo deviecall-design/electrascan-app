@@ -5,10 +5,10 @@ import { PageHeader, Card, Footer, EmptyState } from "../components/ui/anthropic
 import useSupabaseQuery from "../hooks/useSupabaseQuery";
 import { fetchEstimates, fetchScans } from "../services/supabaseData";
 import { estimateDisplayRef, formatQuotedValue } from "../lib/estimateMoney";
-import { linesFromDetected, materialsExGst, verifiedFromEstimate } from "../lib/variationDiff";
+import { linesFromDetected, materialsExGst } from "../lib/variationDiff";
 import { approvalsHref } from "../lib/approvalsLink";
 import { readDetectedItems, type StoredDetectedItem } from "../lib/scanRecord";
-import { formatVerified } from "../lib/takeoff";
+import { formatVerified, verifiedFromEstimate } from "../lib/takeoff";
 import { DEFAULT_MARGIN_PCT } from "../lib/quoteTotals";
 import { getActiveCompanyProfile } from "../services/companyProfile";
 import SignOrderStep from "../components/desktop/SignOrderStep";
