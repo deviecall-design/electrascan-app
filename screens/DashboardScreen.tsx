@@ -40,6 +40,7 @@ import QueryBanner from "../components/QueryBanner";
 import { timeGreeting } from "../lib/greeting";
 import { scanListStatus } from "../lib/scanRecord";
 import { attentionFromPipeline } from "../lib/pipelineAttention";
+import { linesFromDetected, materialsExGst } from "../lib/variationDiff";
 import { formatAuShortDateTime } from "../lib/dates";
 
 const STATUS_TONE: Record<string, { bg: string; fg: string }> = {
@@ -169,7 +170,12 @@ export default function DashboardScreen() {
                           {scan.file_name || "Untitled scan"}
                         </span>
                         <span style={{ fontSize: 13, color: C.textMuted }}>
-                          {[scan.client, scan.items_detected != null ? `${scan.items_detected} items` : null, when !== "—" ? when : null].filter(Boolean).join(" · ")}
+                          {[
+                            scan.client,
+                            scan.items_detected != null ? `${scan.items_detected} items` : null,
+                            formatQuotedValue(materialsExGst(linesFromDetected(scan.detected_items))) + " materials",
+                            when !== "—" ? when : null,
+                          ].filter(Boolean).join(" · ")}
                         </span>
                       </span>
                       <span style={{ borderRadius: 999, padding: "4px 10px", fontSize: 12, fontWeight: 600, background: tone.bg, color: tone.fg }}>{status}</span>
@@ -190,7 +196,7 @@ export default function DashboardScreen() {
             <p style={{ margin: "12px 0 0", fontSize: 16, lineHeight: 1.45 }}>{ariesCopy}</p>
             <button
               type="button"
-              onClick={() => navigate(liveEstimates.length === 0 ? "/detection/new" : "/pricing-schedule")}
+              onClick={() => navigate(liveScans[0]?.id ? `/detection/${liveScans[0].id}` : liveEstimates.length === 0 ? "/detection/new" : "/pricing-schedule")}
               style={{
                 marginTop: 16,
                 minHeight: 44,
@@ -204,7 +210,7 @@ export default function DashboardScreen() {
                 gap: 6,
               }}
             >
-              {liveEstimates.length === 0 ? "Upload plan" : "Review rates"} <ArrowRight size={16} />
+              {liveScans[0]?.id ? "Open takeoff" : liveEstimates.length === 0 ? "Upload plan" : "Review rates"} <ArrowRight size={16} />
             </button>
           </div>
 

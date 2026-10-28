@@ -45,7 +45,8 @@ Set these on the Vercel project `electrascan-app` (Production and Preview) and i
 | `ANTHROPIC_API_KEY` | `/api/detect` only. **Not** `VITE_` prefixed. | Symbol detection without putting the key in the JS bundle. |
 | `VITE_ANTHROPIC_API_KEY` | Browser fallback | Used only when the server key is missing. Remove it once `ANTHROPIC_API_KEY` is set. |
 | `DOCUSIGN_INTEGRATION_KEY`, `DOCUSIGN_ACCOUNT_ID`, `DOCUSIGN_BASE_URI`, `DOCUSIGN_ACCESS_TOKEN` or `DOCUSIGN_PRIVATE_KEY` | DocuSign routes | Sending an envelope. Approvals still list real estimates when these are empty; Send will toast the API error. |
-| `XERO_CLIENT_ID`, `XERO_CLIENT_SECRET`, `XERO_REDIRECT_URI` | `/api/xero/*` | Xero connect. Optional for the takeoff flow. |
+| `XERO_CLIENT_ID`, `XERO_CLIENT_SECRET`, `XERO_REDIRECT_URI` | `/api/xero/*` | Xero Connect. All three are required before Connect leaves the "not connected" state. `XERO_REDIRECT_URI` must match the Xero app, usually `https://electrascan-app.vercel.app/api/xero/callback`. |
+| `MYOB_CLIENT_ID`, `MYOB_CLIENT_SECRET`, `MYOB_REDIRECT_URI` | Accounting Connect | MYOB stays on Connect until these exist. There is no MYOB OAuth handler yet, so the button does not send a request. |
 
 `VITE_` variables are inlined into the public bundle. Do not put the detection secret, the service role key, or the DocuSign private key behind a `VITE_` name.
 

@@ -3,6 +3,9 @@
  * revised scan can be priced and diffed without a separate sample job.
  */
 
+import { readDetectedItems } from "./scanRecord";
+import { computeQuoteTotals, DEFAULT_MARGIN_PCT } from "./quoteTotals";
+
 export interface TakeoffLine {
   description: string;
   qty: number;
@@ -112,7 +115,26 @@ export function diffTakeoffLines(previous: TakeoffLine[], next: TakeoffLine[]): 
 }
 
 export function linesOf(estimate: EstimateForDiff | null | undefined): TakeoffLine[] {
-  return asLines(estimate?.line_items);
+  return asLines(estimate?.line_items).filter(line => line.qty > 0 && line.description !== "Takeoff verified");
+}
+
+/** Priced symbols stored on a scan. Rejected hits are not part of the variation. */
+export function linesFromDetected(raw: unknown): TakeoffLine[] {
+  return readDetectedItems(raw)
+    .filter(item => item.status !== "rejected" && item.qty > 0 && item.desc.trim() && item.desc !== "Takeoff verified")
+    .map(item => ({
+      description: item.desc.trim(),
+      qty: item.qty,
+      unitPrice: typeof item.unitPrice === "number" && item.unitPrice > 0 ? item.unitPrice : 0,
+    }));
+}
+
+export function materialsExGst(lines: TakeoffLine[]): number {
+  return lines.reduce((sum, line) => sum + line.qty * line.unitPrice, 0);
+}
+
+export function takeoffIncGst(lines: TakeoffLine[], marginPct: number = DEFAULT_MARGIN_PCT): number {
+  return computeQuoteTotals(materialsExGst(lines), marginPct).total;
 }
 
 /**
