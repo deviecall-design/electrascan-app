@@ -18,7 +18,7 @@ export default function Card({ children, style }: CardProps) {
         backgroundColor: C.bgCard,
         border: `1px solid ${C.border}`,
         borderRadius: RADIUS.lg,
-        overflow: "hidden",
+        overflow: "visible",
         ...style,
       }}
     >

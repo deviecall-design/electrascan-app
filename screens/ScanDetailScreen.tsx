@@ -16,6 +16,10 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { useNavigate, useParams } from "react-router-dom";
 import { fetchScanById, insertScan, updateScan, ScanRow } from "../services/supabaseData";
 import { buildScanWrite, readDetectedItems, recallScanFile, rememberScanFile, type StoredDetectedItem } from "../lib/scanRecord";
+import { billableItems, canSendQuote, formatVerified, groupTakeoff, takeoffSubtotal, verifiedPercent } from "../lib/takeoff";
+import TakeoffWorkspace from "../components/desktop/TakeoffWorkspace";
+import { approvalsHref } from "../lib/approvalsLink";
+import { fetchWorkspaceSettings } from "../services/workspaceSettings";
 import {
   ArrowLeft,
   ArrowRight,
@@ -73,13 +77,16 @@ import { downloadEstimatePDF } from "../utils/estimatePdf";
 import SourcePlanPreview from "../components/SourcePlanPreview";
 import { ariesMarginSuggestion } from "../lib/ariesSuggestion";
 import { computeQuoteTotals, DEFAULT_MARGIN_PCT, formatAud, lineTotal as qtyRateTotal, roundCents } from "../lib/quoteTotals";
-import { mapDetectionToQuoteItems, quoteVisibleLines, formatQtyRate, type ScanQuoteItem } from "../lib/scanQuote";
+import { mapDetectionToQuoteItems, formatQtyRate, type ScanQuoteItem } from "../lib/scanQuote";
 
 interface DetectedItem extends ScanQuoteItem {
   /** Room / location from the detector — never a hardcoded "Level 2". */
   room?: string;
   /** Raw analyze_pdf ComponentType, when we have one. */
   detectedType?: string;
+  status?: StoredDetectedItem["status"];
+  group?: string;
+  marks?: StoredDetectedItem["marks"];
 }
 
 /** Line total for an item: catalogue price when known, demo rates otherwise. */
@@ -106,6 +113,9 @@ function toStored(items: DetectedItem[]): StoredDetectedItem[] {
     category: item.category,
     room: item.room,
     detectedType: item.detectedType,
+    status: item.status,
+    group: item.group,
+    marks: item.marks,
   }));
 }
 
@@ -146,7 +156,9 @@ export default function ScanDetailScreen() {
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [persistError, setPersistError] = useState<string | null>(null);
   const [savedRef, setSavedRef] = useState<string | null>(null);
+  const [minVerifiedPct, setMinVerifiedPct] = useState<number | null>(null);
   const skipStageRestore = useRef(false);
+  const skipTakeoffSave = useRef(true);
 
   useEffect(() => {
     if (!id || id === "new") return;
@@ -156,7 +168,10 @@ export default function ScanDetailScreen() {
       const row = data as ScanRow;
       setLiveScan(row);
       const restored = readDetectedItems(row.detected_items);
-      if (restored.length) setDetectedItems(restored as DetectedItem[]);
+      if (restored.length) {
+        skipTakeoffSave.current = true;
+        setDetectedItems(restored as DetectedItem[]);
+      }
       const cached = recallScanFile(id);
       if (cached) {
         setSourceFile(cached);
@@ -166,7 +181,7 @@ export default function ScanDetailScreen() {
       }
       if (row.estimate_ref) setSavedRef(row.estimate_ref);
       const stageMap: Record<string, number> = {
-        upload: 1, detecting: 2, review: 2, quote: 3, sign: 4, complete: 3,
+        upload: 1, detecting: 2, review: 2, quote: 3, sign: 4,         complete: 4,
       };
       const persisted = stageMap[row.stage ?? ""];
       if (persisted && !skipStageRestore.current) setStep(persisted);
@@ -183,6 +198,32 @@ export default function ScanDetailScreen() {
   const fileName =
     uploadedName || liveScan?.file_name || (isNew ? "New scan" : "Untitled scan");
   const clientLabel = liveScan?.client ?? "";
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchWorkspaceSettings().then(settings => {
+      if (!cancelled) setMinVerifiedPct(settings.minVerifiedPct);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!id || id === "new" || skipTakeoffSave.current) {
+      skipTakeoffSave.current = false;
+      return;
+    }
+    const handle = window.setTimeout(() => {
+      const stored = toStored(detectedItems);
+      void updateScan(id, {
+        detected_items: stored,
+        items_detected: billableItems(stored).length,
+      }).then(result => {
+        if (result?.error) setPersistError(result.error.message || "This takeoff could not be saved.");
+        else setPersistError(null);
+      });
+    }, 500);
+    return () => window.clearTimeout(handle);
+  }, [detectedItems, id]);
 
   return (
     <div className="anim-in">
@@ -206,7 +247,7 @@ export default function ScanDetailScreen() {
         {step === 1 && "Drop a PDF floor plan. Detected symbols are priced from your rate library."}
         {step === 2 && (clientLabel || "Confirm each line. Low-confidence items stay off the quote until you confirm them.")}
         {step === 3 && "Price the takeoff and save it. The dashboard and estimates list read this quote."}
-        {step === 4 && "Send the saved quote for signature."}
+        {step === 4 && "Review the breakdown, save the quote if it is not saved yet, then send it for signature or prepare the materials list."}
       </p>
       {persistError && (
         <p style={{ color: C.red, fontSize: 14, margin: "0 0 16px 0" }}>{persistError}</p>
@@ -245,6 +286,14 @@ export default function ScanDetailScreen() {
           onNext={() => setStep(3)}
           onBack={() => setStep(1)}
           items={detectedItems}
+          file={sourceFile}
+          fileName={fileName}
+          marginPct={getActiveCompanyProfile().defaultMargin ?? DEFAULT_MARGIN_PCT}
+          minVerifiedPct={minVerifiedPct}
+          onChange={next => {
+            skipTakeoffSave.current = false;
+            setDetectedItems(next as DetectedItem[]);
+          }}
         />
       )}
       {step === 3 && (
@@ -254,6 +303,7 @@ export default function ScanDetailScreen() {
           clientName={clientLabel}
           sourceFileName={uploadedName || liveScan?.file_name}
           scanId={id}
+          minVerifiedPct={minVerifiedPct}
           onSaved={ref => {
             setSavedRef(ref);
             setStep(4);
@@ -261,8 +311,10 @@ export default function ScanDetailScreen() {
         />
       )}
       {step === 4 && (
-        <StepSign
+        <SignHandoff
           reference={savedRef || liveScan?.estimate_ref}
+          scanId={id}
+          items={detectedItems}
           onBack={() => setStep(3)}
         />
       )}
@@ -283,7 +335,7 @@ function StepBar({ step, onStep }: StepBarProps) {
     { n: 4, label: "Sign & order", icon: <Send size={14} /> },
   ];
   return (
-    <div style={{ display: "flex", alignItems: "center", backgroundColor: C.bgCard, border: `1px solid ${C.border}`, borderRadius: RADIUS.lg, padding: 6, marginBottom: 24, gap: 4 }}>
+    <div className="es-stepbar" style={{ display: "flex", alignItems: "center", backgroundColor: C.bgCard, border: `1px solid ${C.border}`, borderRadius: RADIUS.lg, padding: 6, marginBottom: 24, gap: 4 }}>
       {steps.map((s, i) => {
         const active = s.n === step;
         const done = s.n < step;
@@ -592,7 +644,7 @@ function StepDetecting({
   const ready = revealed >= source.length;
 
   return (
-    <div className="anim-in" style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: 24 }}>
+    <div className="anim-in es-split">
       {/* Floor plan */}
       <div style={{ backgroundColor: C.bgPaper, border: `1px solid ${C.border}`, borderRadius: RADIUS.xl, overflow: "hidden", position: "relative" }}>
         <div style={{ padding: "10px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", backgroundColor: C.bg }}>
@@ -1086,174 +1138,39 @@ function buildQueueItem(it: DetectedItem): ReviewQueueItem {
   };
 }
 
-function StepReview({ onNext, onBack, items: propItems }: { onNext: () => void; onBack: () => void; items?: DetectedItem[] }) {
-  const source = propItems ?? [];
-  const sourceKey = source.map(it => `${it.id}:${it.qty}:${it.desc}:${it.conf}:${it.unitPrice ?? ""}`).join("|");
-  const [items, setItems] = useState(
-    source.map(it => ({ ...it, ok: it.conf >= 0.85, flagged: false })),
-  );
-
-  const [reviewQueue, setReviewQueue] = useState<ReviewQueueItem[]>(
-    source.filter(it => shouldQueueForReview(it.conf)).map(buildQueueItem),
-  );
-
-  useEffect(() => {
-    setItems(source.map(it => ({ ...it, ok: it.conf >= 0.85, flagged: false })));
-    setReviewQueue(source.filter(it => shouldQueueForReview(it.conf)).map(buildQueueItem));
-    // Re-seed only when the stored takeoff changes. Local confirm/flag edits stay put.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceKey]);
-
-  const confirm = (id: number) =>
-    setItems(arr => arr.map(i => (i.id === id ? { ...i, ok: true, flagged: false } : i)));
-  const flag = (id: number) =>
-    setItems(arr => arr.map(i => (i.id === id ? { ...i, ok: false, flagged: true } : i)));
-  const acceptAll = () => setItems(arr => arr.map(i => ({ ...i, ok: true, flagged: false })));
-
-  const resolveQueueItem = (id: number, action: ReviewAction, classifyData?: ReviewQueueItem["classifyData"]) => {
-    setReviewQueue(q => q.map(i => i.id === id ? { ...i, resolution: action, classifyData } : i));
-  };
-
-  const resolveQueueItems = (ids: number[], action: ReviewAction, classifyData?: ReviewQueueItem["classifyData"]) => {
-    const idSet = new Set(ids);
-    setReviewQueue(q => q.map(i => {
-      if (!idSet.has(i.id)) return i;
-      const data = action === "classify"
-        ? (classifyData ?? classifyPayload(i.suggestion))
-        : classifyData;
-      return { ...i, resolution: action, classifyData: data };
-    }));
-  };
-
-  // Estimate lock is blocked if any Unrecognised or Unclear items are unresolved
-  const blockingUnresolved = reviewQueue.filter(i =>
-    (i.state === "unrecognised" || i.state === "unclear") && i.resolution === null
-  );
-  const lockBlocked = blockingUnresolved.length > 0;
-  const subtotal = items.reduce((sum, it) => sum + lineTotal(it), 0);
-  const confirmed = items.filter(it => it.ok).length;
-
+function StepReview({
+  onNext,
+  onBack,
+  items: propItems,
+  file,
+  fileName,
+  marginPct,
+  minVerifiedPct,
+  onChange,
+}: {
+  onNext: () => void;
+  onBack: () => void;
+  items?: DetectedItem[];
+  file: File | null;
+  fileName?: string;
+  marginPct: number;
+  minVerifiedPct: number | null;
+  onChange: (items: StoredDetectedItem[]) => void;
+}) {
   return (
-    <div className="anim-in" style={{ display: "grid", gridTemplateColumns: "1fr", gap: 16 }}>
-      {/* Review Queue — appears above component table */}
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-        <GhostButton onClick={acceptAll}>Accept all</GhostButton>
-      </div>
-      <ReviewQueuePanel items={reviewQueue} onResolve={resolveQueueItem} onResolveMany={resolveQueueItems} />
-
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 2fr) minmax(220px, 1fr)", gap: 16, alignItems: "start" }}>
-      <Card>
-        <table style={{ width: "100%", fontSize: 14 }}>
-          <thead>
-            <tr style={{ backgroundColor: C.bg, borderBottom: `1px solid ${C.border}` }}>
-              <Th>Item</Th>
-              <Th>Description</Th>
-              <Th>Matched rate</Th>
-              <Th align="right">Qty</Th>
-              <Th align="right">Unit rate</Th>
-              <Th align="right">Line total</Th>
-              <Th>Confidence</Th>
-              <Th />
-            </tr>
-          </thead>
-          <tbody>
-            {items.map(it => {
-              const total = lineTotal(it);
-              const unit = it.qty > 0 ? total / it.qty : 0;
-              return (
-                <tr key={it.id} className="es-row" style={{ borderTop: `1px solid ${C.border}` }}>
-                  <Td><SymbolBadge symbol={it.symbol} small /></Td>
-                  <Td>{it.desc}</Td>
-                  <Td>
-                    <span style={{ fontFamily: FONT.mono, fontSize: 12, color: C.textMuted }}>
-                      {it.rateCode || "—"}
-                    </span>
-                    <span style={{ color: C.textSubtle, margin: "0 6px" }}>·</span>
-                    <span style={{ fontSize: 13 }}>
-                      {total > 0 ? "Catalogue rate" : "Price required"}
-                    </span>
-                  </Td>
-                  <Td align="right" mono>{it.qty}</Td>
-                  <Td align="right" mono>${Math.round(unit).toLocaleString()}</Td>
-                  <Td align="right" mono><B>${total.toLocaleString()}</B></Td>
-                  <Td><ConfPill c={it.conf} /></Td>
-                  <Td>
-                    {it.ok ? (
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: C.green, fontWeight: 600 }}>
-                        <Check size={16} /> OK
-                      </span>
-                    ) : (
-                      <span style={{ display: "inline-flex", gap: 6, justifyContent: "flex-end" }}>
-                        <button
-                          type="button"
-                          title="Flag for site check"
-                          aria-label="Flag for site check"
-                          onClick={() => flag(it.id)}
-                          style={{
-                            width: 44,
-                            height: 44,
-                            borderRadius: 10,
-                            border: `1px solid ${it.flagged ? C.amber : C.border}`,
-                            color: it.flagged ? C.amber : C.textMuted,
-                            display: "grid",
-                            placeItems: "center",
-                            background: C.bgCard,
-                          }}
-                        >
-                          <Flag size={15} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => confirm(it.id)}
-                          style={{
-                            minHeight: 44,
-                            borderRadius: 10,
-                            background: C.orange,
-                            color: "#fff",
-                            fontWeight: 600,
-                            fontSize: 12,
-                            padding: "0 12px",
-                          }}
-                        >
-                          Confirm
-                        </button>
-                      </span>
-                    )}
-                  </Td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {items.length === 0 && (
-          <p style={{ padding: 24, color: C.textMuted, textAlign: "center" }}>
-            No detected items on this scan yet. Upload a plan to populate the takeoff.
-          </p>
-        )}
-      </Card>
-      <Card style={{ padding: 22, position: "sticky", top: 88 }}>
-        <div style={{ fontSize: 13, color: C.textMuted }}>Takeoff subtotal (ex GST)</div>
-        <div style={{ marginTop: 4, fontSize: 32, fontWeight: 700, fontFamily: FONT.heading }}>
-          ${Math.round(subtotal).toLocaleString("en-AU")}
-        </div>
-        <div style={{ marginTop: 16, height: 8, borderRadius: 99, background: C.bgSoft }}>
-          <div style={{ height: 8, borderRadius: 99, background: C.green, width: items.length ? `${(confirmed / items.length) * 100}%` : "0%" }} />
-        </div>
-        <div style={{ marginTop: 8, fontSize: 14, color: C.textMuted }}>{confirmed} of {items.length} lines confirmed</div>
-        {lockBlocked && (
-          <p style={{ color: C.amber, fontSize: 13 }}>Resolve {blockingUnresolved.length} unrecognised or unclear items before pricing.</p>
-        )}
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 16 }}>
-          <PrimaryButton onClick={lockBlocked ? undefined : onNext} icon={<ArrowRight size={16} />} disabled={lockBlocked}>
-            Build estimate
-          </PrimaryButton>
-          <GhostButton onClick={onBack}>Back</GhostButton>
-        </div>
-      </Card>
-      </div>
-    </div>
+    <TakeoffWorkspace
+      items={propItems ?? []}
+      file={file}
+      fileName={fileName}
+      marginPct={marginPct}
+      minVerifiedPct={minVerifiedPct}
+      onChange={onChange}
+      onNext={onNext}
+      onBack={onBack}
+    />
   );
 }
+
 
 // ─── Step 4: Quote ──────────────────────────────────────────────────────
 function StepQuote({
@@ -1262,6 +1179,7 @@ function StepQuote({
   clientName,
   sourceFileName,
   scanId,
+  minVerifiedPct = null,
   onSaved,
 }: {
   onBack: () => void;
@@ -1269,10 +1187,14 @@ function StepQuote({
   clientName?: string;
   sourceFileName?: string;
   scanId?: string;
+  minVerifiedPct?: number | null;
   onSaved?: (reference: string) => void;
 }) {
   const navigate = useNavigate();
-  const source = propItems ?? [];
+  const allItems = propItems ?? [];
+  const source = billableItems(allItems) as DetectedItem[];
+  const verifiedLabel = formatVerified(allItems);
+  const sendBlocked = !canSendQuote(allItems, minVerifiedPct);
   const company = getActiveCompanyProfile();
   const [estimateRef, setEstimateRef] = useState<string>("…");
   const [saving, setSaving] = useState(false);
@@ -1289,10 +1211,7 @@ function StepQuote({
   }, []);
 
   const marginPct = company.defaultMargin ?? DEFAULT_MARGIN_PCT;
-  const subtotal = useMemo(
-    () => roundCents(source.reduce((sum, it) => sum + lineTotal(it), 0)),
-    [source],
-  );
+  const subtotal = useMemo(() => takeoffSubtotal(allItems), [allItems]);
   const totals = computeQuoteTotals(subtotal, marginPct);
   const ariesCopy = ariesMarginSuggestion({
     clientName,
@@ -1305,13 +1224,17 @@ function StepQuote({
   // drawing — including a "Cabling & conduit" line worth 30% of every job
   // whether or not any cable was detected.
   const groups = useMemo(
-    () => quoteVisibleLines(source.map(it => ({
-      category: it.category,
-      desc: it.desc,
-      qty: it.qty,
-      unitPrice: unitPriceOf(it),
-    }))),
-    [source],
+    () => groupTakeoff(allItems).filter(group => group.count > 0).map(group => ({
+      category: group.label,
+      total: group.lineTotal,
+      lines: group.items.filter(item => item.status !== "rejected" && item.qty > 0).map(item => ({
+        desc: item.desc,
+        qty: item.qty,
+        unitPrice: group.rate,
+        lineTotal: item.qty * group.rate,
+      })),
+    })),
+    [allItems],
   );
 
   // Items detection found but could not price. They are excluded from the
@@ -1330,6 +1253,10 @@ function StepQuote({
   );
 
   async function handleSend() {
+    if (sendBlocked) {
+      setSaveError(`This workspace requires ${minVerifiedPct}% of the takeoff to be verified before a quote can be sent.`);
+      return;
+    }
     setSaving(true);
     setSaveError(null);
     setSaveMessage(null);
@@ -1339,9 +1266,13 @@ function StepQuote({
       drawingFile: sourceFileName || null,
       subtotal: totals.subtotal,
       marginPct: totals.marginPct,
-      lineItems: persistItems,
-      status: "sent",
+      lineItems: [
+        ...persistItems,
+        { description: "Takeoff verified", qty: 0, unitPrice: 0, meta: "takeoff", verifiedPct: verifiedPercent(allItems) },
+      ],
+      approvalStatus: "ready_for_approval",
       scanId,
+      verifiedPct: verifiedPercent(allItems),
     });
     setSaving(false);
     if (result.ok === false) {
@@ -1349,7 +1280,7 @@ function StepQuote({
       return;
     }
     setEstimateRef(result.reference);
-    setSaveMessage(`Saved as ${result.reference}. Dashboard pending value uses this GST-inclusive total.`);
+    setSaveMessage(`Saved as ${result.reference}. It is ready for approval.`);
     if (scanId && scanId !== "new") {
       await updateScan(scanId, { stage: "complete", progress: 100, estimate_ref: result.reference });
     }
@@ -1384,7 +1315,7 @@ function StepQuote({
   }
 
   return (
-    <div className="anim-in" style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: 24 }}>
+    <div className="anim-in es-split">
       {/* Letterhead preview */}
       <div style={{ backgroundColor: C.bgCard, border: `1px solid ${C.border}`, borderRadius: RADIUS.xl, overflow: "hidden" }}>
         <div style={{ padding: "10px 16px", borderBottom: `1px solid ${C.border}`, backgroundColor: C.bg, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -1396,6 +1327,7 @@ function StepQuote({
             near-white and would be invisible on this surface. */}
         <div style={{ padding: 40, backgroundColor: C.bgPaper, color: C.paperText }}>
           <div
+            className="es-quote-paper"
             style={{
               backgroundColor: "#fff",
               padding: 36,
@@ -1420,7 +1352,7 @@ function StepQuote({
             </div>
 
             {/* Prepared-for / scope */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginBottom: 24, fontSize: 12 }}>
+            <div className="es-pair" style={{ marginBottom: 24, fontSize: 12 }}>
               <div>
                 <div style={{ fontFamily: FONT.heading, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em", color: C.paperTextMuted, marginBottom: 4 }}>Prepared for</div>
                 {/* Was hardcoded to a fictional client (Bondi Tower Residences,
@@ -1443,6 +1375,7 @@ function StepQuote({
             </div>
 
             {/* Line items summary */}
+            <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 10 }}>{verifiedLabel}</div>
             <div style={{ fontSize: 11, fontFamily: FONT.mono, color: C.paperTextMuted, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.06em" }}>
               Line items · qty × rate
             </div>
@@ -1492,7 +1425,7 @@ function StepQuote({
             ${formatAud(totals.total, true)}
           </div>
           <div style={{ fontSize: 13, color: C.textMuted, fontStyle: "italic", marginTop: 8 }}>
-            incl. GST · {source.length} {source.length === 1 ? "item" : "items"} · {totals.marginPct}% margin
+            incl. GST · {source.reduce((sum, item) => sum + item.qty, 0)} symbols · {totals.marginPct}% margin
           </div>
 
           {/* Materials/Labour used to be a fixed 55/45 split of the subtotal.
@@ -1528,9 +1461,9 @@ function StepQuote({
           <PrimaryButton
             icon={<Send size={15} />}
             onClick={handleSend}
-            disabled={saving || source.length === 0}
+            disabled={saving || source.length === 0 || sendBlocked}
           >
-            {saving ? "Saving…" : "Send to client"}
+            {saving ? "Saving…" : "Save for approval"}
           </PrimaryButton>
           <GhostButton
             icon={<FileDown size={14} />}
@@ -1557,31 +1490,31 @@ function StepQuote({
   );
 }
 
-function StepSign({ reference, onBack }: { reference?: string | null; onBack: () => void }) {
+function SignHandoff({
+  reference,
+  scanId,
+  items,
+  onBack,
+}: {
+  reference?: string | null;
+  scanId?: string;
+  items: DetectedItem[];
+  onBack: () => void;
+}) {
   const navigate = useNavigate();
+  const href = approvalsHref(scanId, reference);
   return (
-    <Card style={{ padding: 28, maxWidth: 640 }}>
+    <Card style={{ padding: 28, maxWidth: 720 }}>
       <h2 style={{ margin: "0 0 8px", fontFamily: FONT.heading, fontSize: 20 }}>Sign and order</h2>
-      {reference ? (
-        <>
-          <p style={{ color: C.textMuted, marginTop: 0 }}>
-            Quote <span style={{ fontFamily: FONT.mono }}>{reference}</span> is saved. Send it for signature when the client is ready. Nothing is sent until you confirm on the approvals screen.
-          </p>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <PrimaryButton icon={<Send size={16} />} onClick={() => navigate(`/approvals?estimate=${encodeURIComponent(reference)}`)}>
-              Open approvals
-            </PrimaryButton>
-            <GhostButton onClick={onBack}>Back</GhostButton>
-          </div>
-        </>
-      ) : (
-        <>
-          <p style={{ color: C.textMuted, marginTop: 0 }}>
-            Save the quote on Price &amp; send before requesting a signature.
-          </p>
-          <GhostButton onClick={onBack}>Back to price &amp; send</GhostButton>
-        </>
-      )}
+      <p style={{ color: C.textMuted, marginTop: 0 }}>
+        {formatVerified(items)}. {reference ? `Quote ${reference} is saved.` : "The quote is not saved yet."} Signature and the materials request are handled on Approvals, so there is one place to send them.
+      </p>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <PrimaryButton icon={<Send size={16} />} onClick={() => navigate(href)}>
+          Open approvals
+        </PrimaryButton>
+        <GhostButton onClick={onBack}>Back to price & send</GhostButton>
+      </div>
     </Card>
   );
 }

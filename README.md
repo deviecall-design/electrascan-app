@@ -45,7 +45,8 @@ Set these on the Vercel project `electrascan-app` (Production and Preview) and i
 | `ANTHROPIC_API_KEY` | `/api/detect` only. **Not** `VITE_` prefixed. | Symbol detection without putting the key in the JS bundle. |
 | `VITE_ANTHROPIC_API_KEY` | Browser fallback | Used only when the server key is missing. Remove it once `ANTHROPIC_API_KEY` is set. |
 | `DOCUSIGN_INTEGRATION_KEY`, `DOCUSIGN_ACCOUNT_ID`, `DOCUSIGN_BASE_URI`, `DOCUSIGN_ACCESS_TOKEN` or `DOCUSIGN_PRIVATE_KEY` | DocuSign routes | Sending an envelope. Approvals still list real estimates when these are empty; Send will toast the API error. |
-| `XERO_CLIENT_ID`, `XERO_CLIENT_SECRET`, `XERO_REDIRECT_URI` | `/api/xero/*` | Xero connect. Optional for the takeoff flow. |
+| `XERO_CLIENT_ID`, `XERO_CLIENT_SECRET`, `XERO_REDIRECT_URI` | `/api/xero/*` | Xero Connect. All three are required before Connect leaves the "not connected" state. `XERO_REDIRECT_URI` must match the Xero app, usually `https://electrascan-app.vercel.app/api/xero/callback`. |
+| `MYOB_CLIENT_ID`, `MYOB_CLIENT_SECRET`, `MYOB_REDIRECT_URI` | Accounting Connect | MYOB stays on Connect until these exist. There is no MYOB OAuth handler yet, so the button does not send a request. |
 
 `VITE_` variables are inlined into the public bundle. Do not put the detection secret, the service role key, or the DocuSign private key behind a `VITE_` name.
 
@@ -73,6 +74,10 @@ WHERE u.email = 'you@example.com';
 ## Database
 
 Do not run `20261027120000_scan_flow_and_claims.sql` or `20261027143000_tenant_invites.sql` for the beta. Those files are for when login is turned back on. The live database does not have `tenant_id` on `rate_library`, `scans`, or `estimates`, and it does not have `tenant_invites`. The beta routes work without them.
+
+`20261028120000_takeoff_and_materials.sql` adds `estimates.verified_pct`, `workspace_settings`, and `materials_requests`. Scans still save without it. Apply it before saving the verified-% gate or a materials-request status. The materials PDF, CSV, and draft email work either way, and the email is never sent by the app.
+
+`20261028190000_estimate_approval_status.sql` adds `estimates.approval_status`. Saving a priced quote writes `ready_for_approval`. Approvals then moves it to `sent_for_signature`, `approved`, or `materials_sent`. If the column is missing, the older `status` column is still updated. Apply the file in the Supabase SQL editor for project `zxeznkuodpseijkvjwxa`.
 
 When you set `AUTH_DISABLED=false` and redeploy, apply the SQL in `supabase/migrations/`, including `20261027143000_tenant_invites.sql`:
 

@@ -4,13 +4,35 @@ import {
   adminRequest,
   firstRow,
   insertVesh,
+  isUuid,
   missingColumn,
   readBody,
   readVesh,
   requireBeta,
   sendResult,
+  updateVesh,
   VESH_TENANT_ID,
 } from "../_lib/veshAdmin.js";
+
+const APPROVAL_TO_STATUS = {
+  ready_for_approval: "draft",
+  sent_for_signature: "sent",
+  approved: "approved",
+  materials_sent: "approved",
+};
+
+async function insertQuote(row) {
+  let payload = { ...row };
+  let saved = await insertVesh("estimates", payload);
+  for (const column of ["verified_pct", "approval_status"]) {
+    if (!saved.ok && missingColumn(saved, column)) {
+      delete payload[column];
+      payload = { ...payload };
+      saved = await insertVesh("estimates", payload);
+    }
+  }
+  return saved;
+}
 
 const MAX_ATTEMPTS = 5;
 
@@ -62,7 +84,10 @@ async function latestReference(prefix) {
 }
 
 function quotePayload(body) {
-  const status = body.status === "sent" ? "sent" : "draft";
+  const approval = APPROVAL_TO_STATUS[body.approval_status] ? body.approval_status : "ready_for_approval";
+  const status = body.status === "sent" || body.status === "approved" || body.status === "viewed"
+    ? body.status
+    : APPROVAL_TO_STATUS[approval];
   const lineItems = Array.isArray(body.line_items) ? body.line_items : [];
   if (JSON.stringify(lineItems).length > 1_500_000) {
     return { error: "This quote is too large to save." };
@@ -73,11 +98,15 @@ function quotePayload(body) {
       project_name: body.project_name ? String(body.project_name).slice(0, 200) : null,
       drawing_file: body.drawing_file ? String(body.drawing_file).slice(0, 500) : null,
       status,
+      approval_status: approval,
       line_items: lineItems,
       days_since_sent: 0,
       subtotal: Number(body.subtotal) || 0,
       margin_pct: Number(body.margin_pct) || 0,
       value: Number(body.value) || 0,
+      ...(body.verified_pct == null || body.verified_pct === ""
+        ? {}
+        : { verified_pct: Math.max(0, Math.min(100, Math.round(Number(body.verified_pct)))) }),
     },
   };
 }
@@ -94,8 +123,42 @@ export default async function handler(req, res) {
     return;
   }
 
+  if (req.method === "PATCH") {
+    const body = readBody(req);
+    const approval = body.approval_status;
+    if (!APPROVAL_TO_STATUS[approval]) {
+      res.status(400).json({ error: "Choose a valid approval status." });
+      return;
+    }
+    const reference = new URL(req.url || "/", "http://localhost").searchParams.get("reference") || body.reference;
+    const idParam = new URL(req.url || "/", "http://localhost").searchParams.get("id") || req.query?.id;
+    let id = isUuid(idParam) ? idParam : "";
+    if (!id && reference) {
+      const found = await adminRequest(
+        `estimates?select=id&or=(reference.eq.${encodeURIComponent(reference)},ref.eq.${encodeURIComponent(reference)})&limit=1`,
+      );
+      id = firstRow(found)?.id || "";
+    }
+    if (!isUuid(id)) {
+      res.status(404).json({ error: "That quote was not found." });
+      return;
+    }
+    const patch = { approval_status: approval, status: APPROVAL_TO_STATUS[approval] };
+    let saved = await updateVesh("estimates", id, patch);
+    if (!saved.ok && missingColumn(saved, "approval_status")) {
+      saved = await updateVesh("estimates", id, { status: APPROVAL_TO_STATUS[approval] });
+    }
+    const row = firstRow(saved);
+    if (!saved.ok || !row) {
+      sendResult(res, saved.ok ? { ok: false, status: 404, error: "That quote was not found." } : saved, { data: null });
+      return;
+    }
+    res.status(200).json({ data: row, approval_status: approval });
+    return;
+  }
+
   if (req.method !== "POST") {
-    res.setHeader("Allow", "GET, POST");
+    res.setHeader("Allow", "GET, POST, PATCH");
     res.status(405).json({ error: "Method not allowed" });
     return;
   }
@@ -116,7 +179,7 @@ export default async function handler(req, res) {
       return;
     }
     const reference = nextReference(prefix, highest(lookup.data, prefix));
-    const saved = await insertVesh("estimates", {
+    const saved = await insertQuote({
       ...parsed.row,
       reference,
       ref: reference,

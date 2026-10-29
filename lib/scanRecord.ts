@@ -3,6 +3,13 @@
  * Shape matches what ScanDetailScreen keeps in memory after detection.
  */
 
+export type DetectionStatus = "ai" | "confirmed" | "added" | "rejected";
+
+export interface PlanMark {
+  x: number;
+  y: number;
+}
+
 export interface StoredDetectedItem {
   id: number;
   symbol: string;
@@ -13,9 +20,19 @@ export interface StoredDetectedItem {
   x: number;
   y: number;
   unitPrice?: number;
+  /** Catalogue or library material price, ex GST. Omitted falls back to unitPrice. */
+  materialUnit?: number;
+  /** Labour allowance from the rate library, ex GST. Omitted means none was stored. */
+  labourUnit?: number;
   category?: string;
   room?: string;
   detectedType?: string;
+  /** AI-detected until the user confirms, rejects, or adds it. */
+  status?: DetectionStatus;
+  /** Display group such as gpo, downlight, data, smoke, switchboard. */
+  group?: string;
+  /** One plan position per counted symbol. Percent of the preview, 0–100. */
+  marks?: PlanMark[];
 }
 
 export type ScanStage = "upload" | "review" | "quote" | "sign" | "complete";
@@ -57,6 +74,19 @@ function num(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+function readMarks(raw: unknown[]): PlanMark[] {
+  const marks: PlanMark[] = [];
+  raw.forEach(entry => {
+    if (!entry || typeof entry !== "object") return;
+    const mark = entry as Record<string, unknown>;
+    const x = num(mark.x);
+    const y = num(mark.y);
+    if (x == null || y == null) return;
+    marks.push({ x, y });
+  });
+  return marks;
+}
+
 export function readDetectedItems(raw: unknown): StoredDetectedItem[] {
   if (!Array.isArray(raw)) return [];
   const items: StoredDetectedItem[] = [];
@@ -84,9 +114,16 @@ export function readDetectedItems(raw: unknown): StoredDetectedItem[] {
       x: num(record.x) ?? 0,
       y: num(record.y) ?? 0,
       ...(unitPrice != null ? { unitPrice } : {}),
+      ...(num(record.materialUnit) != null ? { materialUnit: num(record.materialUnit) } : {}),
+      ...(num(record.labourUnit) != null ? { labourUnit: num(record.labourUnit) } : {}),
       ...(typeof record.category === "string" ? { category: record.category } : {}),
       ...(typeof record.room === "string" ? { room: record.room } : {}),
       ...(typeof record.detectedType === "string" ? { detectedType: record.detectedType } : {}),
+      ...(record.status === "ai" || record.status === "confirmed" || record.status === "added" || record.status === "rejected"
+        ? { status: record.status }
+        : {}),
+      ...(typeof record.group === "string" ? { group: record.group } : {}),
+      ...(Array.isArray(record.marks) ? { marks: readMarks(record.marks) } : {}),
     });
   });
   return items;

@@ -320,7 +320,7 @@ export default function PricingScheduleScreen() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(4, 1fr)",
+          gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
           gap: 12,
           marginBottom: 18,
         }}
@@ -395,7 +395,7 @@ export default function PricingScheduleScreen() {
 
       {/* Rate table */}
       <Card>
-        <table style={{ width: "100%", fontSize: 14 }}>
+        <table className="es-data-table" style={{ width: "100%", fontSize: 14 }}>
           <thead>
             <tr style={{ backgroundColor: C.bg, borderBottom: `1px solid ${C.border}` }}>
               <Th>Code</Th>
@@ -419,11 +419,11 @@ export default function PricingScheduleScreen() {
                   transition: "opacity 150ms",
                 }}
               >
-                <Td mono>
+                <Td mono label="Code">
                   <span style={{ fontWeight: 500, fontSize: 12 }}>{r.code}</span>
                 </Td>
-                <Td>{r.description}</Td>
-                <Td>
+                <Td label="Description">{r.description}</Td>
+                <Td label="Category">
                   <span
                     style={{
                       fontFamily: FONT.heading,
@@ -438,16 +438,16 @@ export default function PricingScheduleScreen() {
                     {r.category}
                   </span>
                 </Td>
-                <Td muted>
+                <Td muted label="Unit">
                   <span style={{ fontFamily: FONT.mono, fontSize: 12 }}>{r.unit}</span>
                 </Td>
-                <Td align="right" mono>
+                <Td align="right" mono label="Material">
                   ${r.rate}
                 </Td>
-                <Td align="right" mono>
+                <Td align="right" mono label="Labour">
                   ${r.labour}
                 </Td>
-                <Td align="right" mono>
+                <Td align="right" mono label="Total">
                   <B>${r.rate + r.labour}</B>
                 </Td>
                 <Td>
@@ -455,7 +455,7 @@ export default function PricingScheduleScreen() {
                     <button
                       title="Edit rate"
                       onClick={() => openEdit(r)}
-                      style={{ padding: 4, borderRadius: 4, color: C.textSubtle }}
+                      style={{ minWidth: 44, minHeight: 44, borderRadius: 10, color: C.textSubtle }}
                     >
                       <Pencil size={13} />
                     </button>
@@ -464,8 +464,9 @@ export default function PricingScheduleScreen() {
                       onClick={() => handleDelete(r)}
                       disabled={deletingId === r.id}
                       style={{
-                        padding: 4,
-                        borderRadius: 4,
+                        minWidth: 44,
+                        minHeight: 44,
+                        borderRadius: 10,
                         color: C.amber,
                         opacity: deletingId === r.id ? 0.5 : 1,
                       }}

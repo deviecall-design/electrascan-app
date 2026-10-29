@@ -23,6 +23,7 @@ import {
   daysSinceSent,
 } from "../lib/estimateMoney";
 import QueryBanner from "../components/QueryBanner";
+import { verifiedFromEstimate } from "../lib/takeoff";
 
 export default function EstimateScreen() {
   const navigate = useNavigate();
@@ -53,7 +54,7 @@ export default function EstimateScreen() {
       <QueryBanner loading={loading} error={error} noun="estimates" />
 
       {!empty && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 18 }}>
+        <div className="es-stat-grid" style={{ marginBottom: 18 }}>
           <MiniStat label="Drafted"   v={loading ? "—" : String(drafted)} />
           <MiniStat label="Sent"      v={loading ? "—" : String(sentCount)}     tint={C.blue} />
           <MiniStat label="Approved"  v={loading ? "—" : String(approvedCount)} tint={C.green} />
@@ -106,12 +107,13 @@ export default function EstimateScreen() {
         />
       ) : (
         <Card>
-          <table style={{ width: "100%", fontSize: 14 }}>
+          <table className="es-data-table" style={{ width: "100%", fontSize: 14 }}>
             <thead>
               <tr style={{ backgroundColor: C.bg, borderBottom: `1px solid ${C.border}` }}>
                 <Th>Reference</Th>
                 <Th>Client</Th>
                 <Th align="right">Value (inc GST)</Th>
+                <Th>Verified</Th>
                 <Th>Status</Th>
                 <Th align="right">Sent</Th>
               </tr>
@@ -128,17 +130,20 @@ export default function EstimateScreen() {
                       transition: "background-color 120ms",
                     }}
                   >
-                    <Td mono>
+                    <Td mono label="Reference">
                       <span style={{ fontWeight: 500, fontSize: 13, letterSpacing: "-0.01em" }}>
                         {estimateDisplayRef(e)}
                       </span>
                     </Td>
-                    <Td>{e.client}</Td>
-                    <Td align="right" mono>
+                    <Td label="Client">{e.client}</Td>
+                    <Td align="right" mono label="Value">
                       <span style={{ fontWeight: 500 }}>{formatQuotedValue(quotedTotalIncGst(e))}</span>
                     </Td>
-                    <Td><StatusPill status={e.status} /></Td>
-                    <Td align="right" muted>
+                    <Td label="Verified">
+                      {verifiedFromEstimate(e) == null ? "—" : `Takeoff ${verifiedFromEstimate(e)}% verified`}
+                    </Td>
+                    <Td label="Status"><StatusPill status={e.status} /></Td>
+                    <Td align="right" muted label="Sent">
                       <span style={{ fontStyle: "italic", fontSize: 13 }}>
                         {days == null ? "—" : `${days}d ago`}
                       </span>

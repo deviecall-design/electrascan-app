@@ -1,165 +1,227 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Send, Check } from "lucide-react";
 import { C, FONT } from "../components/desktop/tokens";
 import { PageHeader, Card, Footer, EmptyState } from "../components/ui/anthropic";
-import { PrimaryButton } from "../components/ui/anthropic/Button";
 import useSupabaseQuery from "../hooks/useSupabaseQuery";
-import { fetchEstimates } from "../services/supabaseData";
+import { fetchEstimates, fetchScans } from "../services/supabaseData";
 import { estimateDisplayRef, formatQuotedValue } from "../lib/estimateMoney";
-import { supabase } from "../services/supabaseClient";
-import { useToast } from "../contexts/ToastContext";
+import { linesFromDetected, materialsExGst } from "../lib/variationDiff";
+import { approvalsHref } from "../lib/approvalsLink";
+import { readDetectedItems, type StoredDetectedItem } from "../lib/scanRecord";
+import { formatVerified, verifiedFromEstimate } from "../lib/takeoff";
+import { APPROVAL_LABEL, approvalFromRow, type ApprovalStatus } from "../lib/approvalStatus";
+import { DEFAULT_MARGIN_PCT } from "../lib/quoteTotals";
+import { getActiveCompanyProfile } from "../services/companyProfile";
+import SignOrderStep from "../components/desktop/SignOrderStep";
 import QueryBanner from "../components/QueryBanner";
 
-const PLACEHOLDER_PDF_BASE64 =
-  "JVBERi0xLjQKMSAwIG9iago8PAovVHlwZSAvQ2F0YWxvZwovUGFnZXMgMiAwIFIKPj4KZW5kb2JqCjIgMCBvYmoKPDwKL1R5cGUgL1BhZ2VzCi9LaWRzIFszIDAgUl0KL0NvdW50IDEKL01lZGlhQm94IFswIDAgNjEyIDc5Ml0KPj4KZW5kb2JqCjMgMCBvYmoKPDwKL1R5cGUgL1BhZ2UKL1BhcmVudCAyIDAgUgovUmVzb3VyY2VzIDw8Ci9Gb250IDw8Ci9GMSA0IDAgUgo+Pgo+PgovQ29udGVudHMgNSAwIFIKPj4KZW5kb2JqCjQgMCBvYmoKPDwKL1R5cGUgL0ZvbnQKL1N1YnR5cGUgL1R5cGUxCi9CYXNlRm9udCAvSGVsdmV0aWNhCj4+CmVuZG9iago1IDAgb2JqCjw8Ci9MZW5ndGggOTAKPj4Kc3RyZWFtCkJUCi9GMSAxMiBUZgoyMCA3NjAgVGQKKEVsZWN0cmFTY2FuIEVzdGltYXRlIC0gUGxhY2Vob2xkZXIgRG9jdW1lbnQpIFRqCi9zaWcxLyBUagpFVAplbmRzdHJlYW0KZW5kb2JqCnhyZWYKMCA2CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAwOSAwMDAwMCBuIAowMDAwMDAwMDU4IDAwMDAwIG4gCjAwMDAwMDAxMTUgMDAwMDAgbiAKMDAwMDAwMDIxNiAwMDAwMCBuIAowMDAwMDAwMjgwIDAwMDAwIG4gCnRyYWlsZXIKPDwKL1NpemUgNgovUm9vdCAxIDAgUgo+PgpzdGFydHhyZWYKNDIxCiUlRU9G";
+interface MaterialRequestRow {
+  id?: string;
+  estimate_ref?: string | null;
+  job_name?: string | null;
+  status?: string | null;
+}
 
 export default function ApprovalsScreen() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const requested = params.get("estimate");
-  const { addToast } = useToast();
+  const requestedEstimate = params.get("estimate");
+  const requestedScan = params.get("scan");
   const { data: estimates, loading, error } = useSupabaseQuery(fetchEstimates);
-  const selected = useMemo(() => {
-    if (requested) {
-      const match = estimates.find((row: { reference?: string; ref?: string }) =>
-        row.reference === requested || row.ref === requested);
-      if (match) return match;
+  const { data: scans, loading: scansLoading, error: scansError } = useSupabaseQuery(fetchScans);
+  const [materials, setMaterials] = useState<MaterialRequestRow[]>([]);
+  const [approvalOverrides, setApprovalOverrides] = useState<Record<string, ApprovalStatus>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/beta/materials")
+      .then(res => res.json())
+      .then(json => {
+        if (!cancelled && Array.isArray(json?.data)) setMaterials(json.data);
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
+
+  const statusOf = (row: { approval_status?: string | null; status?: string | null; reference?: string | null; ref?: string | null }) =>
+    approvalOverrides[estimateDisplayRef(row)] || approvalFromRow(row);
+  const awaiting = estimates;
+  const takeoffs = scans.filter((scan: { estimate_ref?: string | null; detected_items?: unknown }) =>
+    !scan.estimate_ref && linesFromDetected(scan.detected_items).length > 0);
+
+  const selectedEstimate = useMemo(() => {
+    if (!requestedEstimate) return null;
+    return estimates.find((row: { reference?: string; ref?: string }) =>
+      row.reference === requestedEstimate || row.ref === requestedEstimate) ?? null;
+  }, [estimates, requestedEstimate]);
+
+  const selectedScan = useMemo(() => {
+    if (requestedScan) return scans.find((scan: { id?: string }) => scan.id === requestedScan) ?? null;
+    if (requestedEstimate) {
+      return scans.find((scan: { estimate_ref?: string | null }) => scan.estimate_ref === requestedEstimate) ?? null;
     }
-    return estimates[0] ?? null;
-  }, [estimates, requested]);
+    return takeoffs[0] ?? null;
+  }, [scans, requestedScan, requestedEstimate, takeoffs]);
 
-  const [signerName, setSignerName] = useState("");
-  const [signerEmail, setSignerEmail] = useState("");
-  const [sending, setSending] = useState(false);
-  const [envelopeId, setEnvelopeId] = useState<string | null>(null);
-
-  const reference = selected ? estimateDisplayRef(selected) : "";
-  const projectName = selected?.project_name || selected?.client || "Electrical estimate";
-
-  async function send() {
-    if (!selected) return;
-    if (!signerName.trim() || !signerEmail.trim()) {
-      addToast("Signer name and email are required.", "error");
-      return;
-    }
-    setSending(true);
-    try {
-      const res = await fetch("/api/docusign/envelope", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          signerEmail: signerEmail.trim(),
-          signerName: signerName.trim(),
-          estimateRef: reference,
-          projectName,
-          estimateValue: selected.value ?? 0,
-          documentBase64: PLACEHOLDER_PDF_BASE64,
-        }),
-      });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({ error: `HTTP ${res.status}` })) as { error?: string };
-        throw new Error(errData.error ?? `HTTP ${res.status}`);
-      }
-      const result = await res.json() as { envelopeId: string };
-      setEnvelopeId(result.envelopeId);
-      void supabase.from("approval_audit").insert({
-        envelope_id: result.envelopeId,
-        estimate_ref: reference,
-        signer_email: signerEmail.trim(),
-        action: "envelope_sent",
-        actor: "system",
-      });
-      addToast(`Envelope sent. ID: ${result.envelopeId}`, "success");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown error";
-      addToast(`Could not send envelope: ${message}`, "error");
-    } finally {
-      setSending(false);
-    }
-  }
-
-  if (!loading && estimates.length === 0) {
-    return (
-      <div className="anim-in">
-        <PageHeader crumb="Workflow" title="Approvals" sub="Signing starts from a saved estimate." />
-        <EmptyState
-          title="No estimates to send"
-          body="Save a quote from a scan first. Approvals lists that quote — there is no sample envelope."
-          ctaLabel="Upload plan"
-          onCta={() => navigate("/detection/new")}
-        />
-        <Footer />
-      </div>
-    );
-  }
+  const items = selectedScan
+    ? readDetectedItems(selectedScan.detected_items)
+    : itemsFromEstimate(selectedEstimate);
+  const reference = selectedEstimate ? estimateDisplayRef(selectedEstimate) : (selectedScan?.estimate_ref ?? null);
+  const jobName = selectedScan?.file_name || selectedEstimate?.project_name || selectedEstimate?.client || selectedScan?.client || "Electrical estimate";
+  const verified = items.length ? formatVerified(items) : (
+    selectedEstimate && verifiedFromEstimate(selectedEstimate) != null
+      ? `Takeoff ${verifiedFromEstimate(selectedEstimate)}% verified`
+      : null
+  );
+  const pageLoading = loading || scansLoading;
+  const nothing = !pageLoading && awaiting.length === 0 && takeoffs.length === 0 && !selectedScan && !selectedEstimate;
 
   return (
     <div className="anim-in">
-      <QueryBanner loading={loading} error={error} noun="approvals" />
+      <QueryBanner loading={pageLoading} error={error || scansError} noun="approvals" />
       <PageHeader
-        crumb={reference ? `Estimates / ${reference}` : "Workflow"}
-        title="Send for approval"
-        sub="One signer per envelope. DocuSign sends only after you confirm, and only for a quote that exists in your list."
+        crumb="Workflow"
+        title="Approvals"
+        sub="Quotes waiting for a signature, and materials requests for the supplier. This is the only place those are sent."
       />
 
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 2fr) minmax(240px, 1fr)", gap: 16 }}>
-        <Card style={{ padding: 22 }}>
-          <label style={{ display: "block", fontWeight: 600, fontSize: 14 }}>
-            Estimate
-            <select
-              value={selected?.id || ""}
-              onChange={event => {
-                const next = estimates.find((row: { id: string }) => row.id === event.target.value);
-                if (next) navigate(`/approvals?estimate=${encodeURIComponent(estimateDisplayRef(next))}`);
-              }}
-              style={{ display: "block", width: "100%", minHeight: 44, marginTop: 6, borderRadius: 12, border: `1px solid ${C.border}`, padding: "0 12px" }}
-            >
-              {estimates.map((row: { id: string; client?: string | null; value?: number | null; reference?: string | null; ref?: string | null }) => (
-                <option key={row.id} value={row.id}>
-                  {estimateDisplayRef(row)} · {row.client || "Client not set"} · {formatQuotedValue(Number(row.value) || 0)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label style={{ display: "block", marginTop: 16, fontWeight: 600, fontSize: 14 }}>
-            Signer name
-            <input
-              value={signerName}
-              onChange={event => setSignerName(event.target.value)}
-              placeholder="Name"
-              style={{ display: "block", width: "100%", minHeight: 44, marginTop: 6, borderRadius: 12, border: `1px solid ${C.border}`, padding: "0 12px", boxSizing: "border-box" }}
+      {nothing ? (
+        <EmptyState
+          title="Nothing is waiting"
+          body="Save a quote from a scan, or open Sign and order on a takeoff. It will be listed here."
+          ctaLabel="Upload plan"
+          onCta={() => navigate("/detection/new")}
+        />
+      ) : (
+        <>
+          <div className="es-pair" style={{ marginBottom: 16 }}>
+            <Queue
+              title="Ready for approval"
+              empty="No saved quote is waiting. Save a priced takeoff and it will land here."
+              rows={awaiting.map((row: { id: string; client?: string; value?: number; status?: string; approval_status?: string; reference?: string; ref?: string }) => ({
+                id: row.id,
+                label: `${estimateDisplayRef(row)} · ${row.client || "Client not set"}`,
+                detail: `${formatQuotedValue(Number(row.value) || 0)} · ${APPROVAL_LABEL[statusOf(row)]}`,
+                href: approvalsHref(scans.find((scan: { estimate_ref?: string | null }) => scan.estimate_ref === estimateDisplayRef(row))?.id, estimateDisplayRef(row)),
+                active: estimateDisplayRef(row) === reference,
+              }))}
             />
-          </label>
-          <label style={{ display: "block", marginTop: 16, fontWeight: 600, fontSize: 14 }}>
-            Signer email
-            <input
-              type="email"
-              value={signerEmail}
-              onChange={event => setSignerEmail(event.target.value)}
-              placeholder="name@builder.com.au"
-              style={{ display: "block", width: "100%", minHeight: 44, marginTop: 6, borderRadius: 12, border: `1px solid ${C.border}`, padding: "0 12px", boxSizing: "border-box" }}
+            <Queue
+              title="Materials requests"
+              empty="No materials request has been saved yet. Open a takeoff to prepare one."
+              rows={materials.map(row => ({
+                id: row.id || row.estimate_ref || row.job_name || "request",
+                label: row.job_name || row.estimate_ref || "Materials request",
+                detail: `${row.estimate_ref || "No quote ref"} · ${row.status || "draft"}`,
+                href: row.estimate_ref ? approvalsHref(null, row.estimate_ref) : "/approvals",
+                active: row.estimate_ref === reference,
+              }))}
             />
-          </label>
-          <p style={{ fontSize: 12, color: C.textMuted }}>
-            The envelope uses a one-page placeholder PDF until quote PDF generation is attached to DocuSign. The estimate reference and value are the saved quote.
-          </p>
-        </Card>
+          </div>
 
-        <Card style={{ padding: 22 }}>
-          <h2 style={{ margin: 0, fontSize: 16 }}>Signing order</h2>
-          <p style={{ color: C.textMuted, fontSize: 14 }}>
-            {signerName.trim() || "Signer"} · {envelopeId ? "envelope sent" : "not sent"}
-          </p>
-          {envelopeId && (
-            <p style={{ fontFamily: FONT.mono, fontSize: 12 }}>{envelopeId}</p>
+          {takeoffs.length > 0 && (
+            <Queue
+              title="Takeoffs not yet quoted"
+              empty=""
+              rows={takeoffs.map((scan: { id: string; file_name?: string; client?: string | null; detected_items?: unknown }) => ({
+                id: scan.id,
+                label: scan.file_name || scan.client || "Scan",
+                detail: `${linesFromDetected(scan.detected_items).length} items · ${formatQuotedValue(materialsExGst(linesFromDetected(scan.detected_items)))} materials · signature not sent`,
+                href: approvalsHref(scan.id, null),
+                active: scan.id === selectedScan?.id && !reference,
+              }))}
+            />
           )}
-          <PrimaryButton onClick={send} disabled={sending || !selected || Boolean(envelopeId)} icon={envelopeId ? <Check size={16} /> : <Send size={16} />}>
-            {envelopeId ? "Envelope sent" : sending ? "Sending…" : "Send envelope"}
-          </PrimaryButton>
-        </Card>
-      </div>
+
+          {(selectedScan || selectedEstimate) && (
+            <div style={{ marginTop: 16 }}>
+              {verified && <p style={{ marginTop: 0, color: C.orange, fontWeight: 600 }}>{verified}</p>}
+              <SignOrderStep
+                items={items}
+                reference={reference}
+                jobName={jobName}
+                clientName={selectedScan?.client || selectedEstimate?.client || ""}
+                drawingFile={selectedScan?.file_name || selectedEstimate?.drawing_file}
+                siteAddress={getActiveCompanyProfile().address || ""}
+                scanId={selectedScan?.id}
+                marginPct={typeof selectedEstimate?.margin_pct === "number" ? selectedEstimate.margin_pct : DEFAULT_MARGIN_PCT}
+                minVerifiedPct={null}
+                approvalStatus={selectedEstimate ? statusOf(selectedEstimate) : "ready_for_approval"}
+                onApproval={next => {
+                  if (reference) setApprovalOverrides(current => ({ ...current, [reference]: next }));
+                }}
+                onBack={() => navigate(selectedScan ? `/detection/${selectedScan.id}` : "/estimate")}
+                onSaved={ref => navigate(approvalsHref(selectedScan?.id, ref))}
+              />
+            </div>
+          )}
+        </>
+      )}
       <Footer />
     </div>
+  );
+}
+
+function itemsFromEstimate(estimate: { line_items?: unknown } | null): StoredDetectedItem[] {
+  if (!estimate || !Array.isArray(estimate.line_items)) return [];
+  return estimate.line_items.flatMap((row, index) => {
+    if (!row || typeof row !== "object") return [];
+    const record = row as Record<string, unknown>;
+    if (record.meta === "takeoff") return [];
+    const qty = Number(record.qty);
+    const description = typeof record.description === "string" ? record.description : "";
+    if (!description || !(qty > 0)) return [];
+    const material = Number(record.materialUnit);
+    const labour = Number(record.labourUnit);
+    const unit = Number(record.unitPrice);
+    return [{
+      id: index + 1,
+      symbol: "",
+      qty,
+      desc: description,
+      rateCode: "",
+      conf: 1,
+      x: 0,
+      y: 0,
+      unitPrice: Number.isFinite(material) && Number.isFinite(labour) ? material + labour : (Number.isFinite(unit) ? unit : 0),
+      category: typeof record.category === "string" ? record.category : undefined,
+      status: "confirmed" as const,
+    }];
+  });
+}
+
+function Queue({
+  title,
+  empty,
+  rows,
+}: {
+  title: string;
+  empty: string;
+  rows: { id: string; label: string; detail: string; href: string; active: boolean }[];
+}) {
+  const navigate = useNavigate();
+  return (
+    <Card style={{ padding: 16, marginBottom: 12 }}>
+      <h2 style={{ margin: "0 0 8px", fontFamily: FONT.heading, fontSize: 16 }}>{title}</h2>
+      {rows.length === 0 ? <p style={{ margin: 0, color: C.textMuted, fontSize: 14 }}>{empty}</p> : rows.map(row => (
+        <button
+          key={row.id}
+          type="button"
+          onClick={() => navigate(row.href)}
+          style={{
+            display: "block",
+            width: "100%",
+            textAlign: "left",
+            minHeight: 44,
+            padding: "8px 0",
+            borderTop: `1px solid ${C.border}`,
+            background: row.active ? C.orangeSoft : "transparent",
+          }}
+        >
+          <span style={{ fontWeight: 600 }}>{row.label}</span>
+          <span style={{ display: "block", color: C.textMuted, fontSize: 13 }}>{row.detail}</span>
+        </button>
+      ))}
+    </Card>
   );
 }

@@ -13,6 +13,9 @@ const devApiRoutes: Record<string, string> = {
   '/api/beta/rates': './api/beta/rates.js',
   '/api/beta/scans': './api/beta/scans.js',
   '/api/beta/estimates': './api/beta/estimates.js',
+  '/api/beta/materials': './api/beta/materials.js',
+  '/api/beta/settings': './api/beta/settings.js',
+  '/api/integrations/status': './api/integrations/status.js',
 };
 
 function devApiPlugin() {
