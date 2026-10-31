@@ -26,6 +26,18 @@ const items = [{
   unitPrice: 200,
   status: "confirmed" as const,
   category: "Downlights",
+}, {
+  id: 2,
+  symbol: "FN",
+  qty: 1,
+  desc: "Exhaust fan",
+  rateCode: "",
+  conf: 0.8,
+  x: 12,
+  y: 12,
+  unitPrice: 215,
+  status: "confirmed" as const,
+  category: "Ventilation",
 }];
 
 describe("Sign and order", () => {
@@ -47,6 +59,9 @@ describe("Sign and order", () => {
     expect(screen.getAllByText(/Takeoff 100% verified/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Labour 135/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Materials 240/).length).toBeGreaterThan(0);
+    expect(screen.getByText("Exhaust fan × 1")).toBeInTheDocument();
+    expect(screen.getAllByText("Unpriced").length).toBeGreaterThan(0);
+    expect(screen.getByText("1 item unpriced: add rates to include")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save quote" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Send for signature" })).toBeDisabled();
     expect(screen.getByText(/DOCUSIGN_PRIVATE_KEY/)).toBeInTheDocument();

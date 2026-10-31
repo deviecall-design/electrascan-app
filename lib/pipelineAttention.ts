@@ -1,6 +1,7 @@
 import { readDetectedItems } from "./scanRecord";
 import { formatQuotedValue } from "./estimateMoney";
 import { linesFromDetected, materialsExGst } from "./variationDiff";
+import type { RateLike } from "./takeoff";
 
 export interface AttentionItem {
   id: string;
@@ -12,13 +13,14 @@ export interface AttentionItem {
 export function attentionFromPipeline(
   scans: Array<{ id?: string; file_name?: string; detected_items?: unknown; client?: string | null }>,
   estimates: Array<{ id?: string; reference?: string | null; ref?: string | null; status?: string | null; client?: string | null }>,
+  rates: RateLike[] = [],
 ): AttentionItem[] {
   const items: AttentionItem[] = [];
 
   for (const scan of scans) {
     if (!scan.id) continue;
     const name = scan.file_name || scan.client || "Scan";
-    const lines = linesFromDetected(scan.detected_items);
+    const lines = linesFromDetected(scan.detected_items, rates);
     const unquoted = !("estimate_ref" in scan) || !(scan as { estimate_ref?: string | null }).estimate_ref;
     if (unquoted && lines.length > 0) {
       items.push({

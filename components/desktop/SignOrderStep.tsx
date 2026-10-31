@@ -11,10 +11,13 @@ import { getActiveCompanyProfile } from "../../services/companyProfile";
 import { computeQuoteTotals, formatAud } from "../../lib/quoteTotals";
 import {
   GROUP_LABEL,
-  billableItems,
   costSplit,
   formatVerified,
   groupForItem,
+  isPricedLine,
+  isUnpricedLine,
+  priceTakeoff,
+  unpricedNote,
   verifiedPercent,
   type RateLike,
 } from "../../lib/takeoff";
@@ -56,8 +59,9 @@ interface OrderLine {
 }
 
 function orderLines(items: StoredDetectedItem[], rates: RateLike[]): { lines: OrderLine[]; usingDetected: boolean } {
-  const confirmed = items.filter(item => (item.status === "confirmed" || item.status === "added") && item.qty > 0);
-  const source = confirmed.length > 0 ? confirmed : billableItems(items);
+  const sellable = priceTakeoff(items, rates).filter(item => isPricedLine(item, rates));
+  const confirmed = sellable.filter(item => item.status === "confirmed" || item.status === "added");
+  const source = confirmed.length > 0 ? confirmed : sellable;
   return {
     usingDetected: confirmed.length === 0 && source.length > 0,
     lines: source.map(item => {
@@ -131,7 +135,10 @@ export default function SignOrderStep({
     return () => { cancelled = true; };
   }, []);
 
+  const prepared = useMemo(() => priceTakeoff(items, rates), [items, rates]);
   const priced = useMemo(() => orderLines(items, rates), [items, rates]);
+  const omittedItems = prepared.filter(item => isUnpricedLine(item, rates));
+  const omittedNote = unpricedNote(omittedItems.length);
   const groups = useMemo(() => {
     const map = new Map<string, OrderLine[]>();
     for (const line of priced.lines) {
@@ -241,6 +248,7 @@ export default function SignOrderStep({
           unitPrice: line.materialUnit + line.labourUnit,
         })),
         marginPercent: marginPct,
+        ...(omittedNote ? { exclusionNote: omittedNote } : {}),
       });
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Could not generate the PDF.");
@@ -322,6 +330,15 @@ export default function SignOrderStep({
           {priced.usingDetected && (
             <p style={{ color: C.amber, fontSize: 14 }}>No lines are confirmed yet. Showing the detected counts. Confirm them on review when you can.</p>
           )}
+          {omittedNote && (
+            <p role="status" style={{ color: C.amber, fontWeight: 700, fontSize: 14 }}>{omittedNote}</p>
+          )}
+          {omittedItems.map(item => (
+            <div key={item.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "8px 0", borderTop: `1px solid ${C.border}`, color: C.amber, fontSize: 14 }}>
+              <span>{item.desc} × {item.qty}</span>
+              <span style={{ fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase" }}>Unpriced</span>
+            </div>
+          ))}
           {groups.map(group => (
             <section key={group.category} style={{ marginTop: 16 }}>
               <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700 }}>
@@ -330,7 +347,9 @@ export default function SignOrderStep({
               </div>
               {group.lines.map(line => (
                 <div key={line.description} className="es-sign-line" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.4fr) repeat(3, minmax(72px, auto))", gap: 8, padding: "10px 0", borderTop: `1px solid ${C.border}`, fontSize: 14 }}>
-                  <span>{line.description}</span>
+                  <span>
+                    {line.description}
+                  </span>
                   <span style={{ fontFamily: FONT.mono }}>{line.qty}</span>
                   <span style={{ fontFamily: FONT.mono }}>Labour {formatAud(line.qty * line.labourUnit, true)}</span>
                   <span style={{ fontFamily: FONT.mono }}>Materials {formatAud(line.qty * line.materialUnit, true)}</span>

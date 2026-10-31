@@ -11,7 +11,7 @@ const { scan } = vi.hoisted(() => ({
     stage: "review",
     estimate_ref: null,
     detected_items: [
-      { id: 1, symbol: "LT", qty: 3, desc: "Recessed downlight", rateCode: "", conf: 0.9, x: 10, y: 10, unitPrice: 200 },
+      { id: 1, symbol: "LT", qty: 3, desc: "Recessed downlight", rateCode: "LT-1", conf: 0.9, x: 10, y: 10, unitPrice: 200 },
     ],
   },
 }));
@@ -66,10 +66,10 @@ describe("restored project surfaces", () => {
     expect((await screen.findAllByText(/Mark Arnesen plan.pdf/)).length).toBeGreaterThan(0);
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
     await user.upload(input, new File(["%PDF"], "revised.pdf", { type: "application/pdf" }));
-    expect(await screen.findByText("Added")).toBeInTheDocument();
-    expect(screen.getByText("Removed")).toBeInTheDocument();
-    expect(screen.getByText(/Double gpo/i)).toBeInTheDocument();
+    expect(await screen.findByText("Removed")).toBeInTheDocument();
     expect(screen.getByText("Recessed downlight")).toBeInTheDocument();
+    expect(screen.queryByText("Added")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Double gpo/i)).not.toBeInTheDocument();
     expect(screen.getByText(/Variation 2/)).toBeInTheDocument();
     expect(screen.getAllByText(/materials/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/labour/).length).toBeGreaterThan(0);

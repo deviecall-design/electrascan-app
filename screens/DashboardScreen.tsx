@@ -22,6 +22,7 @@ import { PrimaryButton } from "../components/ui/anthropic/Button";
 import useSupabaseQuery from "../hooks/useSupabaseQuery";
 import {
   fetchEstimates,
+  fetchRateLibrary,
   fetchScans,
   formatScanToQuote,
 } from "../services/supabaseData";
@@ -41,6 +42,7 @@ import { timeGreeting } from "../lib/greeting";
 import { scanListStatus } from "../lib/scanRecord";
 import { attentionFromPipeline } from "../lib/pipelineAttention";
 import { linesFromDetected, materialsExGst, reviewTakeoffIncGst } from "../lib/variationDiff";
+import type { RateLike } from "../lib/takeoff";
 import { formatAuShortDateTime } from "../lib/dates";
 
 const STATUS_TONE: Record<string, { bg: string; fg: string }> = {
@@ -67,8 +69,10 @@ export default function DashboardScreen() {
     loading: scansLoading,
     error: scansError,
   } = useSupabaseQuery(fetchScans);
+  const { data: rates, loading: ratesLoading } = useSupabaseQuery(fetchRateLibrary);
+  const rateRows = rates as RateLike[];
 
-  const loading = estimatesLoading || scansLoading;
+  const loading = estimatesLoading || scansLoading || ratesLoading;
   const loadError = estimatesError || scansError;
   const recentScans = liveScans.slice(0, 5);
 
@@ -76,12 +80,12 @@ export default function DashboardScreen() {
     () => computeDashboardMoneyStats(liveEstimates, liveScans),
     [liveEstimates, liveScans],
   );
-  const reviewValue = useMemo(() => reviewTakeoffIncGst(liveScans), [liveScans]);
+  const reviewValue = useMemo(() => reviewTakeoffIncGst(liveScans, rateRows), [liveScans, rateRows]);
   const showReviewTakeoff = !loading && stats.pendingValue <= 0 && reviewValue > 0;
 
   const attention = useMemo(
-    () => attentionFromPipeline(liveScans, liveEstimates),
-    [liveScans, liveEstimates],
+    () => attentionFromPipeline(liveScans, liveEstimates, rateRows),
+    [liveScans, liveEstimates, rateRows],
   );
 
   const ariesCopy = loading
@@ -182,7 +186,7 @@ export default function DashboardScreen() {
                           {[
                             scan.client,
                             scan.items_detected != null ? `${scan.items_detected} items` : null,
-                            formatQuotedValue(materialsExGst(linesFromDetected(scan.detected_items))) + " materials",
+                            formatQuotedValue(materialsExGst(linesFromDetected(scan.detected_items, rateRows))) + " materials",
                             when !== "—" ? when : null,
                           ].filter(Boolean).join(" · ")}
                         </span>

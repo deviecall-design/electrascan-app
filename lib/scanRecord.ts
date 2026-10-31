@@ -5,6 +5,9 @@
 
 export type DetectionStatus = "ai" | "confirmed" | "added" | "rejected";
 
+/** Where a line's sell price came from. An AI guess is not a sell price. */
+export type PriceSource = "library" | "manual" | "ai";
+
 export interface PlanMark {
   x: number;
   y: number;
@@ -20,6 +23,13 @@ export interface StoredDetectedItem {
   x: number;
   y: number;
   unitPrice?: number;
+  /**
+   * `library` — rate code matched the rate library.
+   * `manual` — the user typed a price or picked a rate so the line is included.
+   * `ai` — unit price is only a detector guess and stays off the quote.
+   * Omitted on older rows: a non-empty rate code still counts as a library match.
+   */
+  priceSource?: PriceSource;
   /** Catalogue or library material price, ex GST. Omitted falls back to unitPrice. */
   materialUnit?: number;
   /** Labour allowance from the rate library, ex GST. Omitted means none was stored. */
@@ -114,6 +124,9 @@ export function readDetectedItems(raw: unknown): StoredDetectedItem[] {
       x: num(record.x) ?? 0,
       y: num(record.y) ?? 0,
       ...(unitPrice != null ? { unitPrice } : {}),
+      ...(record.priceSource === "library" || record.priceSource === "manual" || record.priceSource === "ai"
+        ? { priceSource: record.priceSource }
+        : {}),
       ...(num(record.materialUnit) != null ? { materialUnit: num(record.materialUnit) } : {}),
       ...(num(record.labourUnit) != null ? { labourUnit: num(record.labourUnit) } : {}),
       ...(typeof record.category === "string" ? { category: record.category } : {}),

@@ -120,6 +120,43 @@ export function isBillable(item: StoredDetectedItem): boolean {
   return item.status !== "rejected" && item.qty > 0;
 }
 
+function libraryHit(code: string, rates: RateLike[]): RateLike | undefined {
+  const key = code.trim().toLowerCase();
+  if (!key) return undefined;
+  return rates.find(rate => rate.code.trim().toLowerCase() === key && rate.rate > 0);
+}
+
+/**
+ * A billable line is on the quote when the rate library matched it, or the
+ * user set a price. A unit price with no rate code is an AI guess and is
+ * unpriced. When `rates` is omitted or empty, a stored rate code still counts
+ * — the library is not in hand to re-check it.
+ */
+export function isPricedLine(item: StoredDetectedItem, rates?: RateLike[]): boolean {
+  if (!isBillable(item)) return false;
+  if (item.priceSource === "manual" && (item.unitPrice ?? 0) > 0) return true;
+  const code = (item.rateCode || "").trim();
+  if (!code || !((item.unitPrice ?? 0) > 0)) return false;
+  // Array#filter passes the index as the second argument. Ignore anything
+  // that is not a rate list so a stored rate code still counts.
+  const library = Array.isArray(rates) ? rates : undefined;
+  if (!library || library.length === 0) return true;
+  return Boolean(libraryHit(code, library));
+}
+
+export function isUnpricedLine(item: StoredDetectedItem, rates?: RateLike[]): boolean {
+  return isBillable(item) && !isPricedLine(item, rates);
+}
+
+export function countUnpriced(items: StoredDetectedItem[], rates?: RateLike[]): number {
+  return items.filter(item => isUnpricedLine(item, rates)).length;
+}
+
+export function unpricedNote(count: number): string | null {
+  if (count <= 0) return null;
+  return `${count} ${count === 1 ? "item" : "items"} unpriced: add rates to include`;
+}
+
 export function billableItems(items: StoredDetectedItem[]): StoredDetectedItem[] {
   return items.filter(isBillable);
 }
@@ -160,11 +197,22 @@ export function rateForItem(item: StoredDetectedItem, rates: RateLike[]): { rate
 
 export function priceTakeoff(items: StoredDetectedItem[], rates: RateLike[]): StoredDetectedItem[] {
   return normaliseTakeoff(items).map(item => {
+    if (item.priceSource === "manual" && (item.unitPrice ?? 0) > 0) return item;
+    if (rates.length === 0) return item;
     const priced = rateForItem(item, rates);
+    const hit = libraryHit(priced.code, rates);
+    if (!hit) {
+      return {
+        ...item,
+        rateCode: "",
+        priceSource: "ai",
+      };
+    }
     return {
       ...item,
-      unitPrice: priced.rate,
-      rateCode: item.rateCode || priced.code,
+      unitPrice: hit.rate,
+      rateCode: hit.code,
+      priceSource: "library",
     };
   });
 }
@@ -180,27 +228,28 @@ export function groupTakeoff(items: StoredDetectedItem[]): TakeoffGroup[] {
   return GROUP_ORDER.filter(id => buckets.has(id)).map(id => {
     const rows = buckets.get(id) ?? [];
     const billable = rows.filter(isBillable);
+    const pricedRows = billable.filter(row => isPricedLine(row));
     const count = billable.reduce((sum, row) => sum + row.qty, 0);
-    const rate = billable.find(row => (row.unitPrice ?? 0) > 0)?.unitPrice ?? rows[0]?.unitPrice ?? 0;
-    const rateCode = billable.find(row => row.rateCode)?.rateCode || rows[0]?.rateCode || "";
+    const rate = pricedRows.find(row => (row.unitPrice ?? 0) > 0)?.unitPrice ?? 0;
+    const rateCode = pricedRows.find(row => row.rateCode)?.rateCode || "";
     return {
       id,
       label: GROUP_LABEL[id],
       count,
       rate,
       rateCode,
-      lineTotal: lineTotal(count, rate),
+      lineTotal: roundCents(pricedRows.reduce((sum, row) => sum + lineTotal(row.qty, row.unitPrice ?? 0), 0)),
       items: rows,
     };
   });
 }
 
-export function takeoffSubtotal(items: StoredDetectedItem[]): number {
-  return roundCents(groupTakeoff(items).reduce((sum, group) => sum + group.lineTotal, 0));
+export function takeoffSubtotal(items: StoredDetectedItem[], rates: RateLike[] = []): number {
+  return roundCents(groupTakeoff(priceTakeoff(items, rates)).reduce((sum, group) => sum + group.lineTotal, 0));
 }
 
-export function takeoffTotals(items: StoredDetectedItem[], marginPct: number): QuoteTotals {
-  return computeQuoteTotals(takeoffSubtotal(items), marginPct);
+export function takeoffTotals(items: StoredDetectedItem[], marginPct: number, rates: RateLike[] = []): QuoteTotals {
+  return computeQuoteTotals(takeoffSubtotal(items, rates), marginPct);
 }
 
 /** Share of billable symbols the user has confirmed or added. Empty takeoff is fully verified. */
@@ -273,7 +322,35 @@ export function addSymbol(
     category: GROUP_LABEL[group],
   };
   const priced = rateForItem(draft, rates);
-  return [...items, { ...draft, unitPrice: priced.rate, rateCode: priced.code }];
+  const hit = libraryHit(priced.code, rates);
+  return [...items, {
+    ...draft,
+    unitPrice: hit ? hit.rate : 0,
+    rateCode: hit ? hit.code : "",
+    priceSource: hit ? "library" : "ai",
+  }];
+}
+
+/** Include a line the library did not match, at a price the user typed. */
+export function setManualPrice(items: StoredDetectedItem[], id: number, unitPrice: number): StoredDetectedItem[] {
+  const price = roundCents(Math.max(0, unitPrice));
+  return items.map(item => {
+    if (item.id !== id) return item;
+    if (!(price > 0)) return { ...item, unitPrice: 0, priceSource: "ai" };
+    return { ...item, unitPrice: price, priceSource: "manual" };
+  });
+}
+
+/** Include a line by attaching a rate-library row. */
+export function setLibraryRate(items: StoredDetectedItem[], id: number, rate: RateLike): StoredDetectedItem[] {
+  if (!rate.code.trim() || !(rate.rate > 0)) return items;
+  return items.map(item => item.id === id ? {
+    ...item,
+    unitPrice: rate.rate,
+    rateCode: rate.code,
+    priceSource: "library",
+    ...(typeof rate.labour === "number" ? { labourUnit: rate.labour } : {}),
+  } : item);
 }
 
 export function verifiedFromEstimate(estimate: {

@@ -3,12 +3,12 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { C, FONT } from "../components/desktop/tokens";
 import { PageHeader, Card, Footer, EmptyState } from "../components/ui/anthropic";
 import useSupabaseQuery from "../hooks/useSupabaseQuery";
-import { fetchEstimates, fetchScans } from "../services/supabaseData";
+import { fetchEstimates, fetchRateLibrary, fetchScans } from "../services/supabaseData";
 import { estimateDisplayRef, formatQuotedValue } from "../lib/estimateMoney";
 import { linesFromDetected, materialsExGst } from "../lib/variationDiff";
 import { approvalsHref } from "../lib/approvalsLink";
 import { readDetectedItems, type StoredDetectedItem } from "../lib/scanRecord";
-import { formatVerified, verifiedFromEstimate } from "../lib/takeoff";
+import { formatVerified, verifiedFromEstimate, type RateLike } from "../lib/takeoff";
 import { APPROVAL_LABEL, approvalFromRow, type ApprovalStatus } from "../lib/approvalStatus";
 import { DEFAULT_MARGIN_PCT } from "../lib/quoteTotals";
 import { getActiveCompanyProfile } from "../services/companyProfile";
@@ -29,6 +29,8 @@ export default function ApprovalsScreen() {
   const requestedScan = params.get("scan");
   const { data: estimates, loading, error } = useSupabaseQuery(fetchEstimates);
   const { data: scans, loading: scansLoading, error: scansError } = useSupabaseQuery(fetchScans);
+  const { data: rates } = useSupabaseQuery(fetchRateLibrary);
+  const rateRows = rates as RateLike[];
   const [materials, setMaterials] = useState<MaterialRequestRow[]>([]);
   const [approvalOverrides, setApprovalOverrides] = useState<Record<string, ApprovalStatus>>({});
 
@@ -47,7 +49,7 @@ export default function ApprovalsScreen() {
     approvalOverrides[estimateDisplayRef(row)] || approvalFromRow(row);
   const awaiting = estimates;
   const takeoffs = scans.filter((scan: { estimate_ref?: string | null; detected_items?: unknown }) =>
-    !scan.estimate_ref && linesFromDetected(scan.detected_items).length > 0);
+    !scan.estimate_ref && linesFromDetected(scan.detected_items, rateRows).length > 0);
 
   const selectedEstimate = useMemo(() => {
     if (!requestedEstimate) return null;
@@ -126,7 +128,7 @@ export default function ApprovalsScreen() {
               rows={takeoffs.map((scan: { id: string; file_name?: string; client?: string | null; detected_items?: unknown }) => ({
                 id: scan.id,
                 label: scan.file_name || scan.client || "Scan",
-                detail: `${linesFromDetected(scan.detected_items).length} items · ${formatQuotedValue(materialsExGst(linesFromDetected(scan.detected_items)))} materials · signature not sent`,
+                detail: `${linesFromDetected(scan.detected_items, rateRows).length} items · ${formatQuotedValue(materialsExGst(linesFromDetected(scan.detected_items, rateRows)))} materials · signature not sent`,
                 href: approvalsHref(scan.id, null),
                 active: scan.id === selectedScan?.id && !reference,
               }))}
@@ -179,10 +181,11 @@ function itemsFromEstimate(estimate: { line_items?: unknown } | null): StoredDet
       symbol: "",
       qty,
       desc: description,
-      rateCode: "",
+      rateCode: typeof record.rateCode === "string" ? record.rateCode : "",
       conf: 1,
       x: 0,
       y: 0,
+      priceSource: "manual" as const,
       unitPrice: Number.isFinite(material) && Number.isFinite(labour) ? material + labour : (Number.isFinite(unit) ? unit : 0),
       category: typeof record.category === "string" ? record.category : undefined,
       status: "confirmed" as const,
