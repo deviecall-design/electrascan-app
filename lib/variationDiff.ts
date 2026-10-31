@@ -5,7 +5,7 @@
 
 import { readDetectedItems, type StoredDetectedItem } from "./scanRecord";
 import { computeQuoteTotals, DEFAULT_MARGIN_PCT } from "./quoteTotals";
-import { costSplit, type RateLike } from "./takeoff";
+import { costSplit, isPricedLine, priceTakeoff, type RateLike } from "./takeoff";
 
 export interface TakeoffLine {
   description: string;
@@ -168,10 +168,35 @@ function lineFromItem(item: StoredDetectedItem, rates: RateLike[]): TakeoffLine 
   };
 }
 
-/** Priced symbols stored on a scan. Rejected hits are not part of the variation. */
+function codeInLibrary(code: string, rates: RateLike[]): boolean {
+  const key = code.trim().toLowerCase();
+  if (!key) return false;
+  return rates.some(rate => rate.code.trim().toLowerCase() === key && rate.rate > 0);
+}
+
+/**
+ * Keep a price the scan already stored when its rate code is still in the
+ * library. Only an empty rate code is resolved against the library, so a
+ * keyword match cannot rewrite a saved catalogue price.
+ * An AI guess (no rate code, no user price) stays off the totals.
+ */
+function resolveDetectedPrice(item: StoredDetectedItem, rates: RateLike[]): StoredDetectedItem {
+  if (item.priceSource === "manual" && (item.unitPrice ?? 0) > 0) return item;
+  const code = (item.rateCode || "").trim();
+  if (code && (item.unitPrice ?? 0) > 0 && (rates.length === 0 || codeInLibrary(code, rates))) return item;
+  if (rates.length === 0) return item;
+  return priceTakeoff([item], rates)[0];
+}
+
+/**
+ * Priced symbols stored on a scan. Rejected hits are not part of the variation.
+ * Lines with no rate-library match and no user-set price are AI guesses and
+ * stay out of materials, labour, and GST.
+ */
 export function linesFromDetected(raw: unknown, rates: RateLike[] = []): TakeoffLine[] {
   return readDetectedItems(raw)
-    .filter(item => item.status !== "rejected" && item.qty > 0 && item.desc.trim() && item.desc !== "Takeoff verified")
+    .map(item => resolveDetectedPrice(item, rates))
+    .filter(item => isPricedLine(item, rates) && item.desc.trim() && item.desc !== "Takeoff verified")
     .map(item => lineFromItem(item, rates));
 }
 

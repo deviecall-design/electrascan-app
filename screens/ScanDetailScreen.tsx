@@ -14,9 +14,9 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { fetchScanById, insertScan, updateScan, ScanRow } from "../services/supabaseData";
+import { fetchRateLibrary, fetchScanById, insertScan, updateScan, ScanRow, type RateRow } from "../services/supabaseData";
 import { buildScanWrite, readDetectedItems, recallScanFile, rememberScanFile, type StoredDetectedItem } from "../lib/scanRecord";
-import { billableItems, canSendQuote, formatVerified, groupTakeoff, takeoffSubtotal, verifiedPercent } from "../lib/takeoff";
+import { billableItems, canSendQuote, countUnpriced, formatVerified, groupTakeoff, isPricedLine, isUnpricedLine, priceTakeoff, takeoffSubtotal, unpricedNote, verifiedPercent, type RateLike } from "../lib/takeoff";
 import TakeoffWorkspace from "../components/desktop/TakeoffWorkspace";
 import { approvalsHref } from "../lib/approvalsLink";
 import { fetchWorkspaceSettings } from "../services/workspaceSettings";
@@ -76,7 +76,7 @@ import { persistQuoteFromScan } from "../services/persistQuote";
 import { downloadEstimatePDF } from "../utils/estimatePdf";
 import SourcePlanPreview from "../components/SourcePlanPreview";
 import { ariesMarginSuggestion } from "../lib/ariesSuggestion";
-import { computeQuoteTotals, DEFAULT_MARGIN_PCT, formatAud, lineTotal as qtyRateTotal, roundCents } from "../lib/quoteTotals";
+import { computeQuoteTotals, DEFAULT_MARGIN_PCT, formatAud } from "../lib/quoteTotals";
 import { mapDetectionToQuoteItems, formatQtyRate, type ScanQuoteItem } from "../lib/scanQuote";
 
 interface DetectedItem extends ScanQuoteItem {
@@ -87,16 +87,7 @@ interface DetectedItem extends ScanQuoteItem {
   status?: StoredDetectedItem["status"];
   group?: string;
   marks?: StoredDetectedItem["marks"];
-}
-
-/** Line total for an item: catalogue price when known, demo rates otherwise. */
-function lineTotal(it: DetectedItem): number {
-  return qtyRateTotal(it.qty, unitPriceOf(it));
-}
-
-function unitPriceOf(it: DetectedItem): number {
-  if (typeof it.unitPrice === "number" && it.unitPrice > 0) return it.unitPrice;
-  return 0;
+  priceSource?: StoredDetectedItem["priceSource"];
 }
 
 function toStored(items: DetectedItem[]): StoredDetectedItem[] {
@@ -116,12 +107,8 @@ function toStored(items: DetectedItem[]): StoredDetectedItem[] {
     status: item.status,
     group: item.group,
     marks: item.marks,
+    priceSource: item.priceSource,
   }));
-}
-
-/** True when we have no price at all — surfaced as "Price required" in Review. */
-function isUnpriced(it: DetectedItem): boolean {
-  return lineTotal(it) === 0;
 }
 
 // ─── mapDetectionToItems ─────────────────────────────────────────────────
@@ -1211,8 +1198,19 @@ function StepQuote({
   }, []);
 
   const marginPct = company.defaultMargin ?? DEFAULT_MARGIN_PCT;
-  const subtotal = useMemo(() => takeoffSubtotal(allItems), [allItems]);
+  const [rates, setRates] = useState<RateRow[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetchRateLibrary().then(result => {
+      if (!cancelled && Array.isArray(result?.data)) setRates(result.data as RateRow[]);
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
+  const priced = useMemo(() => priceTakeoff(allItems, rates as RateLike[]), [allItems, rates]);
+  const subtotal = useMemo(() => takeoffSubtotal(priced), [priced]);
   const totals = computeQuoteTotals(subtotal, marginPct);
+  const omitted = countUnpriced(priced);
+  const omittedNote = unpricedNote(omitted);
   const ariesCopy = ariesMarginSuggestion({
     clientName,
     marginPct,
@@ -1224,32 +1222,33 @@ function StepQuote({
   // drawing — including a "Cabling & conduit" line worth 30% of every job
   // whether or not any cable was detected.
   const groups = useMemo(
-    () => groupTakeoff(allItems).filter(group => group.count > 0).map(group => ({
+    () => groupTakeoff(priced).filter(group => group.lineTotal > 0).map(group => ({
       category: group.label,
       total: group.lineTotal,
-      lines: group.items.filter(item => item.status !== "rejected" && item.qty > 0).map(item => ({
+      lines: group.items.filter(item => isPricedLine(item)).map(item => ({
         desc: item.desc,
         qty: item.qty,
-        unitPrice: group.rate,
-        lineTotal: item.qty * group.rate,
+        unitPrice: item.unitPrice ?? 0,
+        lineTotal: item.qty * (item.unitPrice ?? 0),
       })),
     })),
-    [allItems],
+    [priced],
+  );
+  const unpricedLines = useMemo(
+    () => priced.filter(item => isUnpricedLine(item)),
+    [priced],
   );
 
-  // Items detection found but could not price. They are excluded from the
-  // subtotal above, so the quote must say so rather than reading as complete.
-  const unpricedCount = useMemo(() => source.filter(isUnpriced).length, [source]);
-
   const persistItems = useMemo(
-    () => source.map(it => ({
+    () => priced.filter(item => isPricedLine(item)).map(it => ({
       description: it.desc,
       qty: it.qty,
-      unitPrice: unitPriceOf(it),
+      unitPrice: it.unitPrice ?? 0,
       category: it.category,
       symbol: it.symbol,
+      rateCode: it.rateCode,
     })),
-    [source],
+    [priced],
   );
 
   async function handleSend() {
@@ -1298,14 +1297,13 @@ function StepQuote({
         drawingFile: sourceFileName,
         projectName: clientName || sourceFileName || "Electrical estimate",
         clientName,
-        items: source
-          .filter(it => !isUnpriced(it))
-          .map(it => ({
-            description: it.desc,
-            qty: it.qty,
-            unitPrice: unitPriceOf(it),
-          })),
+        items: priced.filter(it => isPricedLine(it)).map(it => ({
+          description: it.desc,
+          qty: it.qty,
+          unitPrice: it.unitPrice ?? 0,
+        })),
         marginPercent: marginPct,
+        ...(omittedNote ? { exclusionNote: omittedNote } : {}),
       });
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Could not generate the PDF.");
@@ -1379,6 +1377,11 @@ function StepQuote({
             <div style={{ fontSize: 11, fontFamily: FONT.mono, color: C.paperTextMuted, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.06em" }}>
               Line items · qty × rate
             </div>
+            {omittedNote && (
+              <div role="status" style={{ marginBottom: 12, padding: "8px 10px", borderRadius: 8, background: "#fffbeb", color: "#92400e", fontWeight: 700, fontSize: 12 }}>
+                {omittedNote}
+              </div>
+            )}
             {groups.length === 0 ? (
               <div style={{ fontSize: 12, color: C.paperTextMuted, fontStyle: "italic", padding: "8px 0" }}>
                 No priced lines yet.
@@ -1399,6 +1402,17 @@ function StepQuote({
                 ))}
               </div>
             ))}
+            {unpricedLines.length > 0 && (
+              <div style={{ marginTop: 8, marginBottom: 8 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#92400e", marginBottom: 4 }}>Not included</div>
+                {unpricedLines.map(item => (
+                  <div key={item.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "4px 0", fontSize: 11, color: "#92400e" }}>
+                    <span>{item.desc} × {item.qty}</span>
+                    <span style={{ fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase" }}>Unpriced</span>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Totals */}
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 18 }}>
@@ -1427,6 +1441,9 @@ function StepQuote({
           <div style={{ fontSize: 13, color: C.textMuted, fontStyle: "italic", marginTop: 8 }}>
             incl. GST · {source.reduce((sum, item) => sum + item.qty, 0)} symbols · {totals.marginPct}% margin
           </div>
+          {omittedNote && (
+            <p role="status" style={{ margin: "12px 0 0", color: C.amber, fontWeight: 700, fontSize: 14 }}>{omittedNote}</p>
+          )}
 
           {/* Materials/Labour used to be a fixed 55/45 split of the subtotal.
               The catalogue gives a single supply-and-install rate per item, so
@@ -1436,9 +1453,9 @@ function StepQuote({
             <MiniStat label="GST"             v={`$${formatAud(totals.gst, true)}`} />
             <MiniStat label="Margin"          v={`$${formatAud(totals.marginAmount, true)}`} tint={C.green} />
             <MiniStat
-              label="Price required"
-              v={String(unpricedCount)}
-              tint={unpricedCount > 0 ? C.orange : undefined}
+              label="Unpriced"
+              v={String(omitted)}
+              tint={omitted > 0 ? C.amber : undefined}
             />
           </div>
         </Card>

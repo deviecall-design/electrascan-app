@@ -38,7 +38,7 @@ describe("variation diff", () => {
 
   it("prices a revised takeoff from the scan and ignores rejected hits", () => {
     const lines = linesFromDetected([
-      { id: 1, symbol: "LT", qty: 3, desc: "Downlight", rateCode: "", conf: 0.9, x: 1, y: 1, unitPrice: 200, status: "confirmed" },
+      { id: 1, symbol: "LT", qty: 3, desc: "Downlight", rateCode: "LT-1", conf: 0.9, x: 1, y: 1, unitPrice: 200, status: "confirmed" },
       { id: 2, symbol: "GPO", qty: 1, desc: "False GPO", rateCode: "", conf: 0.4, x: 1, y: 1, unitPrice: 80, status: "rejected" },
     ]);
     expect(materialsExGst(lines)).toBe(600);
@@ -75,7 +75,7 @@ describe("variation diff", () => {
         client: "Mark Arnesen",
         started_at: "2026-10-02T00:00:00.000Z",
         detected_items: [
-          { id: 1, symbol: "GPO", qty: 1, desc: "Double GPO", rateCode: "", conf: 1, x: 0, y: 0, unitPrice: 120, materialUnit: 85, labourUnit: 45 },
+          { id: 1, symbol: "GPO", qty: 1, desc: "Double GPO", rateCode: "GPO-D", conf: 1, x: 0, y: 0, unitPrice: 120, materialUnit: 85, labourUnit: 45 },
         ],
       },
       {
@@ -89,7 +89,7 @@ describe("variation diff", () => {
         client: "Mark Arnesen",
         started_at: "2026-10-01T00:00:00.000Z",
         detected_items: [
-          { id: 1, symbol: "LT", qty: 2, desc: "Downlight", rateCode: "", conf: 1, x: 0, y: 0, unitPrice: 200, status: "confirmed" },
+          { id: 1, symbol: "LT", qty: 2, desc: "Downlight", rateCode: "LT-1", conf: 1, x: 0, y: 0, unitPrice: 200, status: "confirmed" },
           { id: 2, symbol: "GPO", qty: 1, desc: "False GPO", rateCode: "", conf: 1, x: 0, y: 0, unitPrice: 80, status: "rejected" },
         ],
       },
@@ -111,7 +111,8 @@ describe("variation diff", () => {
       {
         estimate_ref: null,
         detected_items: [
-          { id: 1, symbol: "LT", qty: 1, desc: "Downlight", rateCode: "", conf: 1, x: 0, y: 0, unitPrice: 100 },
+          { id: 1, symbol: "LT", qty: 1, desc: "Downlight", rateCode: "LT-1", conf: 1, x: 0, y: 0, unitPrice: 100 },
+          { id: 9, symbol: "FN", qty: 2, desc: "Exhaust fan", rateCode: "", conf: 1, x: 0, y: 0, unitPrice: 215 },
         ],
       },
       {
@@ -122,5 +123,26 @@ describe("variation diff", () => {
       },
     ]);
     expect(value).toBe(126.5);
+  });
+
+  it("keeps a stored rate price when the library rate differs, and drops an AI guess", () => {
+    const lines = linesFromDetected([
+      { id: 1, symbol: "LT", qty: 2, desc: "Downlight", rateCode: "LT-1", conf: 1, x: 0, y: 0, unitPrice: 200 },
+      { id: 2, symbol: "FN", qty: 1, desc: "Exhaust fan", rateCode: "", conf: 1, x: 0, y: 0, unitPrice: 215 },
+    ], [{ code: "LT-1", description: "LED downlight", rate: 50 }]);
+    expect(lines).toEqual([
+      expect.objectContaining({ description: "Downlight", qty: 2, unitPrice: 200 }),
+    ]);
+    expect(materialsExGst(lines)).toBe(400);
+  });
+
+  it("leaves AI-guessed lines with no rate code out of materials", () => {
+    const lines = linesFromDetected([
+      { id: 1, symbol: "LT", qty: 2, desc: "Downlight", rateCode: "LT-1", conf: 1, x: 0, y: 0, unitPrice: 80 },
+      { id: 2, symbol: "FN", qty: 4, desc: "Exhaust fan", rateCode: "", conf: 1, x: 0, y: 0, unitPrice: 215 },
+      { id: 3, symbol: "EX", qty: 1, desc: "Heated towel rail", rateCode: "", conf: 1, x: 0, y: 0, unitPrice: 450, priceSource: "manual" },
+    ]);
+    expect(lines.map(line => line.description)).toEqual(["Downlight", "Heated towel rail"]);
+    expect(materialsExGst(lines)).toBe(610);
   });
 });

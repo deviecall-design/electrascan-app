@@ -14,13 +14,19 @@ import {
   STATUS_LABEL,
   addSymbol,
   canSendQuote,
+  countUnpriced,
   formatVerified,
   groupTakeoff,
+  isUnpricedLine,
   priceTakeoff,
   setItemQty,
+  setLibraryRate,
+  setManualPrice,
   setStatus,
   takeoffTotals,
+  unpricedNote,
   verifiedPercent,
+  type RateLike,
   type TakeoffGroupId,
 } from "../../lib/takeoff";
 
@@ -65,6 +71,15 @@ export default function TakeoffWorkspace({
   const priced = useMemo(() => priceTakeoff(items, rates), [items, rates]);
   const groups = useMemo(() => groupTakeoff(priced), [priced]);
   const totals = useMemo(() => takeoffTotals(priced, marginPct), [priced, marginPct]);
+  const omitted = countUnpriced(priced);
+  const omittedNote = unpricedNote(omitted);
+
+  useEffect(() => {
+    if (rates.length === 0) return;
+    const before = pricingKey(items);
+    const after = pricingKey(priced);
+    if (before !== after) onChange(priced);
+  }, [items, onChange, priced, rates.length]);
   const verified = verifiedPercent(priced);
   const sendable = canSendQuote(priced, minVerifiedPct);
   const selected = priced.find(item => item.id === selectedId) ?? null;
@@ -147,8 +162,13 @@ export default function TakeoffWorkspace({
           <span style={{ fontFamily: FONT.heading, fontSize: 13, fontWeight: 600, color: C.orange }}>{formatVerified(priced)}</span>
         </div>
         <p style={{ margin: "6px 0 12px", color: C.textMuted, fontSize: 13 }}>
-          Counts use the rate library. Rejected hits stay off the quote.
+          Counts use the rate library. Rejected hits and lines with no rate stay off the quote.
         </p>
+        {omittedNote && (
+          <p role="status" style={{ margin: "0 0 12px", color: C.amber, fontWeight: 700, fontSize: 14 }}>
+            {omittedNote}
+          </p>
+        )}
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
           {GROUP_ORDER.filter(id => id !== "other").map(id => (
             <button
@@ -177,15 +197,19 @@ export default function TakeoffWorkspace({
                 <div>
                   <div style={{ fontWeight: 700 }}>{group.label}</div>
                   <div style={{ fontSize: 12, color: C.textMuted, fontFamily: FONT.mono }}>
-                    {group.count} × {group.rate > 0 ? `$${Math.round(group.rate).toLocaleString("en-AU")}` : "No rate"}
-                    {group.rateCode ? ` · ${group.rateCode}` : ""}
+                    {group.lineTotal > 0
+                      ? `${group.items.filter(isPricedInGroup).reduce((sum, row) => sum + row.qty, 0)} × $${Math.round(group.rate).toLocaleString("en-AU")}${group.rateCode ? ` · ${group.rateCode}` : ""}`
+                      : `${group.count} × Unpriced`}
                   </div>
                 </div>
-                <div style={{ fontFamily: FONT.mono, fontWeight: 700 }}>${Math.round(group.lineTotal).toLocaleString("en-AU")}</div>
+                <div style={{ fontFamily: FONT.mono, fontWeight: 700 }}>
+                  {group.lineTotal > 0 ? `$${Math.round(group.lineTotal).toLocaleString("en-AU")}` : "—"}
+                </div>
               </div>
               {group.items.map(item => {
                 const active = selectedId === item.id;
                 const rejected = item.status === "rejected";
+                const unpriced = isUnpricedLine(item);
                 return (
                   <div
                     key={item.id}
@@ -199,7 +223,10 @@ export default function TakeoffWorkspace({
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                       <div>
-                        <div style={{ fontWeight: 600, textDecoration: rejected ? "line-through" : "none" }}>{item.desc}</div>
+                        <div style={{ fontWeight: 600, textDecoration: rejected ? "line-through" : "none", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                          {item.desc}
+                          {unpriced && <UnpricedBadge />}
+                        </div>
                         <div style={{ fontSize: 12, color: C.textMuted }}>{STATUS_LABEL[item.status || "ai"]}</div>
                       </div>
                       <label style={{ fontSize: 12, color: C.textMuted }}>
@@ -215,6 +242,14 @@ export default function TakeoffWorkspace({
                         />
                       </label>
                     </div>
+                    {unpriced && (
+                      <IncludeUnpriced
+                        item={item}
+                        rates={rates}
+                        onPrice={price => commit(setManualPrice(priced, item.id, price))}
+                        onRate={rate => commit(setLibraryRate(priced, item.id, rate))}
+                      />
+                    )}
                     <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                       <button type="button" onClick={() => commit(setStatus(priced, item.id, "confirmed"))} style={actionStyle(C.orange)}>
                         Confirm
@@ -244,6 +279,9 @@ export default function TakeoffWorkspace({
             <span style={{ fontFamily: FONT.mono }}>${formatAud(totals.total, true)}</span>
           </div>
           <div style={{ marginTop: 8, fontSize: 13, color: C.textMuted }}>{formatVerified(priced)}</div>
+          {omittedNote && (
+            <p role="status" style={{ color: C.amber, fontWeight: 700, fontSize: 14 }}>{omittedNote}</p>
+          )}
           {minVerifiedPct != null && !sendable && (
             <p style={{ color: C.amber, fontSize: 13 }}>This workspace asks for {minVerifiedPct}% verified before a quote can be sent. This takeoff is {verified}%.</p>
           )}
@@ -257,6 +295,95 @@ export default function TakeoffWorkspace({
         </div>
       </Card>
       </div>
+    </div>
+  );
+}
+
+function isPricedInGroup(item: StoredDetectedItem): boolean {
+  return !isUnpricedLine(item) && item.status !== "rejected" && item.qty > 0;
+}
+
+function pricingKey(rows: StoredDetectedItem[]): string {
+  return rows.map(row => `${row.id}:${row.rateCode}:${row.unitPrice ?? ""}:${row.priceSource ?? ""}`).join("|");
+}
+
+function UnpricedBadge() {
+  return (
+    <span style={{
+      display: "inline-flex",
+      alignItems: "center",
+      fontSize: 11,
+      fontWeight: 700,
+      letterSpacing: "0.04em",
+      textTransform: "uppercase",
+      color: C.amber,
+      background: C.amberSoft,
+      border: `1px solid ${C.amber}`,
+      borderRadius: 999,
+      padding: "1px 8px",
+    }}>
+      Unpriced
+    </span>
+  );
+}
+
+function IncludeUnpriced({
+  item,
+  rates,
+  onPrice,
+  onRate,
+}: {
+  item: StoredDetectedItem;
+  rates: RateRow[];
+  onPrice: (price: number) => void;
+  onRate: (rate: RateLike) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const price = Number(draft);
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8, alignItems: "flex-end" }}>
+      <label style={{ fontSize: 12, color: C.textMuted }}>
+        Price
+        <input
+          aria-label={`Price for ${item.desc}`}
+          type="number"
+          min={0}
+          inputMode="decimal"
+          value={draft}
+          placeholder="Set price"
+          onChange={event => setDraft(event.target.value)}
+          style={{ display: "block", width: 110, minHeight: 44, marginTop: 4, borderRadius: 8, border: `1px solid ${C.border}`, padding: "0 8px", fontSize: 16 }}
+        />
+      </label>
+      <button
+        type="button"
+        disabled={!(price > 0)}
+        onClick={() => onPrice(price)}
+        style={actionStyle(C.orange)}
+      >
+        Include
+      </button>
+      {rates.length > 0 && (
+        <label style={{ fontSize: 12, color: C.textMuted }}>
+          Rate
+          <select
+            aria-label={`Rate for ${item.desc}`}
+            defaultValue=""
+            onChange={event => {
+              const rate = rates.find(row => row.code === event.target.value);
+              if (rate && rate.rate > 0) onRate(rate);
+            }}
+            style={{ display: "block", minHeight: 44, marginTop: 4, borderRadius: 8, border: `1px solid ${C.border}`, background: C.bgCard, color: C.text, fontSize: 14 }}
+          >
+            <option value="">Add rate</option>
+            {rates.filter(rate => rate.rate > 0 && rate.code).map(rate => (
+              <option key={rate.id || rate.code} value={rate.code}>
+                {rate.code} · {rate.description}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
     </div>
   );
 }

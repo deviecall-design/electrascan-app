@@ -34,6 +34,8 @@ export interface EstimatePDFInput {
   clientName?: string;             // "Linda Habak Design"
   items: EstimateLineItem[];
   marginPercent: number;           // 15
+  /** Shown under the totals when takeoff lines were left off the quote. */
+  exclusionNote?: string;
 }
 
 export interface VariationPDFInput {
@@ -390,7 +392,14 @@ export async function generateEstimatePDF(input: EstimatePDFInput): Promise<Blob
   const afterTableY = drawEstimateTable(doc, afterProjectY, input.items);
 
   const subtotal = input.items.reduce((s, i) => s + qtyRateTotal(i.qty, i.unitPrice), 0);
-  drawTotals(doc, afterTableY, subtotal, input.marginPercent);
+  const afterTotalsY = drawTotals(doc, afterTableY, subtotal, input.marginPercent);
+  if (input.exclusionNote) {
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(8);
+    doc.setTextColor(...hexToRgb(C.amber));
+    const note = doc.splitTextToSize(input.exclusionNote, PAGE.width - PAGE.marginX * 2);
+    doc.text(note, PAGE.marginX, afterTotalsY + 4);
+  }
 
   drawFooter(doc, input.company);
 
