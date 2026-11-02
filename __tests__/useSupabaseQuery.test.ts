@@ -87,4 +87,20 @@ describe('useSupabaseQuery', () => {
     renderHook(() => useSupabaseQuery(fetcher));
     await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
   });
+
+  it('fetches again when reload is called and keeps the error message', async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce({ data: null, error: { message: 'Could not reach saved data.' } })
+      .mockResolvedValueOnce({ data: [{ id: 'live-1' }], error: null });
+    const { result } = renderHook(() => useSupabaseQuery(fetcher));
+
+    await waitFor(() => expect(result.current.error).toBe(true));
+    expect(result.current.errorMessage).toBe('Could not reach saved data.');
+
+    result.current.reload();
+    await waitFor(() => expect(result.current.isLive).toBe(true));
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(result.current.data).toEqual([{ id: 'live-1' }]);
+    expect(result.current.errorMessage).toBeNull();
+  });
 });
