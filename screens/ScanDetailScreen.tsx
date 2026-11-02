@@ -16,6 +16,8 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { useNavigate, useParams } from "react-router-dom";
 import { fetchScanById, insertScan, updateScan, ScanRow } from "../services/supabaseData";
 import { buildScanWrite, readDetectedItems, recallScanFile, rememberScanFile, type StoredDetectedItem } from "../lib/scanRecord";
+import { publicScanFailure } from "../lib/scanFailure";
+import ScanFailure from "../components/ScanFailure";
 import { billableItems, canSendQuote, formatVerified, groupTakeoff, takeoffSubtotal, verifiedPercent } from "../lib/takeoff";
 import TakeoffWorkspace from "../components/desktop/TakeoffWorkspace";
 import { approvalsHref } from "../lib/approvalsLink";
@@ -158,6 +160,8 @@ export default function ScanDetailScreen() {
   const [uploadedName, setUploadedName] = useState<string>("");
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [persistError, setPersistError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [savedRef, setSavedRef] = useState<string | null>(null);
   const [minVerifiedPct, setMinVerifiedPct] = useState<number | null>(null);
   const [scanLoading, setScanLoading] = useState(Boolean(id && id !== "new"));
@@ -167,17 +171,20 @@ export default function ScanDetailScreen() {
   useEffect(() => {
     if (!id || id === "new") {
       setScanLoading(false);
+      setLoadError(null);
       return;
     }
     setScanLoading(true);
+    setLoadError(null);
     let cancelled = false;
-    fetchScanById(id).then(({ data }) => {
+    fetchScanById(id).then(({ data, error }) => {
       if (cancelled) return;
-      if (!data) {
-        setPersistError("This takeoff could not be loaded.");
+      if (error || !data) {
+        setLoadError(error?.message || "This scan could not be opened.");
         setScanLoading(false);
         return;
       }
+      setLoadError(null);
       const row = data as ScanRow;
       setLiveScan(row);
       const restored = readDetectedItems(row.detected_items);
@@ -202,11 +209,11 @@ export default function ScanDetailScreen() {
       setScanLoading(false);
     }).catch(() => {
       if (cancelled) return;
-      setPersistError("This takeoff could not be loaded.");
+      setLoadError("This scan could not be opened.");
       setScanLoading(false);
     });
     return () => { cancelled = true; };
-  }, [id]);
+  }, [id, loadAttempt]);
 
   const isNew = id === "new";
   // Prefer the name of the file the user actually uploaded this session, then
@@ -243,6 +250,34 @@ export default function ScanDetailScreen() {
     return () => window.clearTimeout(handle);
   }, [detectedItems, id]);
 
+  const retrySave = async () => {
+    const stored = toStored(detectedItems);
+    if (!id || id === "new") {
+      const payload = buildScanWrite({
+        fileName: uploadedName || fileName,
+        client: clientLabel || null,
+        stage: "review",
+        items: stored,
+      });
+      const { data, error } = await insertScan(payload);
+      if (error || !data?.id) {
+        setPersistError(error?.message || "This scan could not be saved.");
+        return;
+      }
+      setPersistError(null);
+      if (sourceFile) rememberScanFile(data.id, sourceFile);
+      skipStageRestore.current = true;
+      navigate(`/detection/${data.id}`, { replace: true });
+      return;
+    }
+    const result = await updateScan(id, {
+      detected_items: stored,
+      items_detected: billableItems(stored).length,
+    });
+    if (result?.error) setPersistError(result.error.message || "This takeoff could not be saved.");
+    else setPersistError(null);
+  };
+
   return (
     <div className="anim-in es-flow">
       <button
@@ -254,6 +289,14 @@ export default function ScanDetailScreen() {
         <ArrowLeft size={14} /> Back to scans
       </button>
 
+      {loadError && !liveScan ? (
+        <ScanFailure
+          title="This scan could not be opened"
+          body={publicScanFailure(loadError, "The scan did not come back. Try again in a moment.")}
+          onRetry={() => setLoadAttempt(n => n + 1)}
+        />
+      ) : (
+      <>
       <div className="es-scan-title" style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 6 }}>
         <h1 style={{ fontFamily: FONT.heading, fontSize: 26, fontWeight: 600, letterSpacing: "-0.02em", margin: 0, minWidth: 0, overflowWrap: "anywhere" }}>
           {scanLoading ? "Loading takeoff" : fileName}
@@ -273,7 +316,13 @@ export default function ScanDetailScreen() {
         </p>
       )}
       {persistError && (
-        <p role="alert" style={{ color: C.red, fontSize: 14, margin: "0 0 16px 0" }}>{persistError}</p>
+        <div style={{ marginBottom: 16 }}>
+          <ScanFailure
+            title="This scan could not be saved"
+            body={publicScanFailure(persistError, "This scan could not be saved. Try again in a moment.")}
+            onRetry={retrySave}
+          />
+        </div>
       )}
 
       {scanLoading ? (
@@ -363,7 +412,8 @@ export default function ScanDetailScreen() {
           onBack={() => setStep(3)}
         />
       )}
-
+      </>
+      )}
       </>
       )}
 
