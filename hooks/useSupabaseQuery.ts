@@ -25,20 +25,33 @@ interface QueryState<T> {
   loading: boolean;
   isLive: boolean;
   error: boolean;
+  errorMessage: string | null;
 }
 
 const DEFAULT_TIMEOUT_MS = 12000;
+
+function failureMessage(error: unknown): string | null {
+  if (!error) return null;
+  if (typeof error === "string") return error;
+  if (typeof error === "object" && error && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+    return typeof message === "string" ? message : null;
+  }
+  return null;
+}
 
 export default function useSupabaseQuery<T>(
   fetcher: () => Promise<SupabaseResult<T>>,
   fallback?: T[],
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
-): QueryState<T> {
+): QueryState<T> & { reload: () => void } {
+  const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<QueryState<T>>({
     data: [],
     loading: true,
     isLive: false,
     error: false,
+    errorMessage: null,
   });
 
   useEffect(() => {
@@ -59,6 +72,7 @@ export default function useSupabaseQuery<T>(
         loading: false,
         isLive: false,
         error: true,
+        errorMessage: "This took too long to load.",
       });
     }, timeoutMs);
 
@@ -70,17 +84,19 @@ export default function useSupabaseQuery<T>(
             loading: false,
             isLive: false,
             error: true,
+            errorMessage: failureMessage(error),
           });
         } else {
-          finish({ data, loading: false, isLive: true, error: false });
+          finish({ data, loading: false, isLive: true, error: false, errorMessage: null });
         }
       })
-      .catch(() => {
+      .catch((err: unknown) => {
         finish({
           data: fallback ?? [],
           loading: false,
           isLive: false,
           error: true,
+          errorMessage: failureMessage(err),
         });
       });
 
@@ -88,7 +104,17 @@ export default function useSupabaseQuery<T>(
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, []); // intentional: fetch once on mount
+  }, [attempt]); // refetch only when reload() bumps the attempt
 
-  return state;
+  const reload = () => {
+    setState(prev => ({
+      ...prev,
+      loading: true,
+      error: false,
+      errorMessage: null,
+    }));
+    setAttempt(n => n + 1);
+  };
+
+  return { ...state, reload };
 }

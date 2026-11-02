@@ -9,20 +9,22 @@ import {
   EmptyState,
 } from "../components/ui/anthropic";
 import { scanListStatus } from "../lib/scanRecord";
+import { publicScanFailure } from "../lib/scanFailure";
 import { PrimaryButton } from "../components/ui/anthropic/Button";
 import useSupabaseQuery from "../hooks/useSupabaseQuery";
 import { fetchScans } from "../services/supabaseData";
 import QueryBanner from "../components/QueryBanner";
+import ScanFailure from "../components/ScanFailure";
 import { formatAuShortDateTime } from "../lib/dates";
 
 export default function DetectionScreen() {
   const navigate = useNavigate();
 
-  const { data: liveScans, loading, error } = useSupabaseQuery(fetchScans);
+  const { data: liveScans, loading, error, errorMessage, reload } = useSupabaseQuery(fetchScans);
 
   return (
     <div className="anim-in">
-      <QueryBanner loading={loading} error={error} noun="scans" />
+      {!error && <QueryBanner loading={loading} error={false} noun="scans" />}
       <PageHeader
         title="Scans"
         sub="Upload a floor plan and ElectraScan AI will turn it into a costed estimate."
@@ -42,6 +44,16 @@ export default function DetectionScreen() {
             Loading scans…
           </div>
         </Card>
+      ) : error ? (
+        <ScanFailure
+          title="Scans could not be loaded"
+          body={publicScanFailure(
+            errorMessage,
+            "The scan list did not come back. Nothing on this page is sample data. Try again in a moment.",
+          )}
+          onRetry={reload}
+          retryTone="ghost"
+        />
       ) : liveScans.length === 0 ? (
         <EmptyState
           title="No scans yet"

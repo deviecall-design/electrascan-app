@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { publicDetectionFailure } from "../lib/detectionCopy";
+import { resetRateLimits } from "../api/_lib/rateLimit.js";
 import { isAuthDisabled } from "../api/_lib/authMode.js";
 import rates from "../api/beta/rates.js";
 import scans from "../api/beta/scans.js";
@@ -35,6 +36,7 @@ afterEach(() => {
   process.env.AUTH_DISABLED = savedEnv.AUTH_DISABLED;
   process.env.SUPABASE_SERVICE_ROLE_KEY = savedEnv.SUPABASE_SERVICE_ROLE_KEY;
   process.env.ANTHROPIC_API_KEY = savedEnv.ANTHROPIC_API_KEY;
+  resetRateLimits();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
