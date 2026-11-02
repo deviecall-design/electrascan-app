@@ -126,6 +126,9 @@ function isUnpriced(it: DetectedItem): boolean {
   return lineTotal(it) === 0;
 }
 
+/** Green that clears WCAG AA as text on white and as white text on this fill. */
+const AA_GREEN = "#047857";
+
 // ─── mapDetectionToItems ─────────────────────────────────────────────────
 function mapDetectionToItems(detection: DetectionResult | null | undefined): DetectedItem[] {
   if (!detection || !Array.isArray(detection.components) || detection.components.length === 0) {
@@ -161,19 +164,24 @@ export default function ScanDetailScreen() {
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [savedRef, setSavedRef] = useState<string | null>(null);
   const [minVerifiedPct, setMinVerifiedPct] = useState<number | null>(null);
+  const [scanLoading, setScanLoading] = useState(Boolean(id && id !== "new"));
   const skipStageRestore = useRef(false);
   const skipTakeoffSave = useRef(true);
 
   useEffect(() => {
     if (!id || id === "new") {
+      setScanLoading(false);
       setLoadError(null);
       return;
     }
+    setScanLoading(true);
+    setLoadError(null);
     let cancelled = false;
     fetchScanById(id).then(({ data, error }) => {
       if (cancelled) return;
       if (error || !data) {
         setLoadError(error?.message || "This scan could not be opened.");
+        setScanLoading(false);
         return;
       }
       setLoadError(null);
@@ -198,6 +206,11 @@ export default function ScanDetailScreen() {
       const persisted = stageMap[row.stage ?? ""];
       if (persisted && !skipStageRestore.current) setStep(persisted);
       skipStageRestore.current = false;
+      setScanLoading(false);
+    }).catch(() => {
+      if (cancelled) return;
+      setLoadError("This scan could not be opened.");
+      setScanLoading(false);
     });
     return () => { cancelled = true; };
   }, [id, loadAttempt]);
@@ -266,8 +279,9 @@ export default function ScanDetailScreen() {
   };
 
   return (
-    <div className="anim-in">
+    <div className="anim-in es-flow">
       <button
+        type="button"
         className="es-link"
         onClick={() => navigate("/detection")}
         style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: C.textMuted, fontFamily: FONT.heading, marginBottom: 16 }}
@@ -283,20 +297,24 @@ export default function ScanDetailScreen() {
         />
       ) : (
       <>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 6 }}>
-        <h1 style={{ fontFamily: FONT.heading, fontSize: 26, fontWeight: 600, letterSpacing: "-0.02em", margin: 0 }}>
-          {fileName}
+      <div className="es-scan-title" style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 6 }}>
+        <h1 style={{ fontFamily: FONT.heading, fontSize: 26, fontWeight: 600, letterSpacing: "-0.02em", margin: 0, minWidth: 0, overflowWrap: "anywhere" }}>
+          {scanLoading ? "Loading takeoff" : fileName}
         </h1>
-        <span style={{ fontFamily: FONT.mono, fontSize: 13, color: C.textSubtle }}>
-          {isNew ? "new" : (id ?? "")}
-        </span>
+        {!scanLoading && (
+          <span style={{ fontFamily: FONT.mono, fontSize: 13, color: C.textMuted, flexShrink: 0 }}>
+            {isNew ? "new" : (id ?? "")}
+          </span>
+        )}
       </div>
-      <p style={{ color: C.textMuted, margin: "0 0 8px 0" }}>
-        {step === 1 && "Drop a PDF floor plan. Detected symbols are priced from your rate library."}
-        {step === 2 && (clientLabel || "Confirm each line. Low-confidence items stay off the quote until you confirm them.")}
-        {step === 3 && "Price the takeoff and save it. The dashboard and estimates list read this quote."}
-        {step === 4 && "Review the breakdown, save the quote if it is not saved yet, then send it for signature or prepare the materials list."}
-      </p>
+      {!scanLoading && (
+        <p style={{ color: C.textMuted, margin: "0 0 8px 0" }}>
+          {step === 1 && "Drop a PDF floor plan. Detected symbols are priced from your rate library."}
+          {step === 2 && (clientLabel || "Confirm each line. Low-confidence items stay off the quote until you confirm them.")}
+          {step === 3 && "Price the takeoff and save it. The dashboard and estimates list read this quote."}
+          {step === 4 && "Review the breakdown, save the quote if it is not saved yet, then send it for signature or prepare the materials list."}
+        </p>
+      )}
       {persistError && (
         <div style={{ marginBottom: 16 }}>
           <ScanFailure
@@ -307,6 +325,28 @@ export default function ScanDetailScreen() {
         </div>
       )}
 
+      {scanLoading ? (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            backgroundColor: C.bgCard,
+            border: `1px solid ${C.border}`,
+            borderRadius: RADIUS.xl,
+            padding: "48px 24px",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 12,
+            textAlign: "center",
+          }}
+        >
+          <Loader2 size={28} className="spin" color={C.orange} aria-hidden="true" />
+          <h2 style={{ fontFamily: FONT.heading, fontSize: 20, fontWeight: 600, margin: 0 }}>Loading this takeoff</h2>
+          <p style={{ color: C.textMuted, margin: 0 }}>Saved detections will appear here in a moment.</p>
+        </div>
+      ) : (
+      <>
       <StepBar step={step} onStep={setStep} />
 
       {step === 1 && (
@@ -374,6 +414,8 @@ export default function ScanDetailScreen() {
       )}
       </>
       )}
+      </>
+      )}
 
       <Footer />
     </div>
@@ -398,6 +440,9 @@ function StepBar({ step, onStep }: StepBarProps) {
         return (
           <button
             key={s.n}
+            type="button"
+            aria-current={active ? "step" : undefined}
+            aria-label={done ? `${s.label}, completed` : active ? `${s.label}, current step` : s.label}
             onClick={() => onStep(s.n)}
             style={{
               flex: 1,
@@ -408,29 +453,32 @@ function StepBar({ step, onStep }: StepBarProps) {
               padding: "10px 14px",
               borderRadius: 7,
               backgroundColor: active ? C.orange : "transparent",
-              color: active ? "#fff" : done ? C.text : C.textSubtle,
+              color: active ? "#fff" : done ? C.text : C.textMuted,
               fontFamily: FONT.heading,
               fontSize: 13,
               fontWeight: 500,
               transition: "background-color 180ms",
+              minWidth: 0,
             }}
           >
             <span
+              aria-hidden="true"
               style={{
                 width: 20, height: 20, borderRadius: "50%",
-                backgroundColor: active ? "rgba(255,255,255,0.22)" : done ? C.green : C.borderSoft,
-                color: active ? "#fff" : done ? "#fff" : C.textSubtle,
+                backgroundColor: active ? "rgba(255,255,255,0.22)" : done ? AA_GREEN : C.borderSoft,
+                color: active ? "#fff" : done ? "#fff" : C.textMuted,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 fontSize: 11,
                 fontWeight: 600,
+                flexShrink: 0,
               }}
             >
               {done ? <Check size={11} strokeWidth={3} /> : s.n}
             </span>
-            <span>{s.label}</span>
-            {i < steps.length - 1 && <ChevronRight size={14} style={{ marginLeft: 8, opacity: 0.4 }} />}
+            <span className="es-step-label">{s.label}</span>
+            {i < steps.length - 1 && <ChevronRight className="es-step-chevron" size={14} aria-hidden="true" style={{ marginLeft: 8, opacity: 0.4, flexShrink: 0 }} />}
           </button>
         );
       })}
@@ -782,9 +830,9 @@ type ConfidenceState = "recognised" | "low_confidence" | "unrecognised" | "uncle
 const CONF_TONE: Record<string, { icon: React.ReactNode; color: string; bg: string; border: string }> = {
   green: {
     icon: <Check size={11} strokeWidth={3} />,
-    color: C.green,
+    color: AA_GREEN,
     bg: C.greenSoft,
-    border: C.green,
+    border: AA_GREEN,
   },
   amber: {
     icon: <AlertTriangle size={11} />,
@@ -800,9 +848,9 @@ const CONF_TONE: Record<string, { icon: React.ReactNode; color: string; bg: stri
   },
   red: {
     icon: <HelpCircle size={11} />,
-    color: C.red,
+    color: "#9f1239",
     bg: C.redSoft,
-    border: C.red,
+    border: "#9f1239",
   },
 };
 
@@ -1252,7 +1300,7 @@ function StepQuote({
   const verifiedLabel = formatVerified(allItems);
   const sendBlocked = !canSendQuote(allItems, minVerifiedPct);
   const company = getActiveCompanyProfile();
-  const [estimateRef, setEstimateRef] = useState<string>("…");
+  const [estimateRef, setEstimateRef] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
@@ -1349,7 +1397,7 @@ function StepQuote({
     try {
       await downloadEstimatePDF({
         company,
-        estimateNumber: estimateRef === "…" ? "EST-DRAFT" : estimateRef,
+        estimateNumber: estimateRef || "EST-DRAFT",
         date: new Date().toLocaleDateString("en-AU"),
         drawingFile: sourceFileName,
         projectName: clientName || sourceFileName || "Electrical estimate",
@@ -1370,18 +1418,26 @@ function StepQuote({
     }
   }
 
+  const blockReason = source.length === 0
+    ? "No billable lines on this quote yet. Confirm items on the takeoff first."
+    : sendBlocked
+      ? `This workspace requires ${minVerifiedPct}% of the takeoff to be verified before a quote can be sent.`
+      : null;
+
   return (
-    <div className="anim-in es-split">
+    <div className="anim-in es-split es-quote" role="region" aria-label="Quote">
       {/* Letterhead preview */}
-      <div style={{ backgroundColor: C.bgCard, border: `1px solid ${C.border}`, borderRadius: RADIUS.xl, overflow: "hidden" }}>
-        <div style={{ padding: "10px 16px", borderBottom: `1px solid ${C.border}`, backgroundColor: C.bg, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ backgroundColor: C.bgCard, border: `1px solid ${C.border}`, borderRadius: RADIUS.xl, overflow: "hidden", minWidth: 0 }}>
+        <div style={{ padding: "10px 16px", borderBottom: `1px solid ${C.border}`, backgroundColor: C.bg, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span style={{ fontFamily: FONT.heading, fontSize: 12, fontWeight: 500, color: C.textMuted }}>Preview</span>
-          <span style={{ fontFamily: FONT.mono, fontSize: 11, color: C.textSubtle }}>{estimateRef}.pdf</span>
+          <span role="status" style={{ fontFamily: FONT.mono, fontSize: 12, color: C.textMuted, overflowWrap: "anywhere" }}>
+            {estimateRef ? `${estimateRef}.pdf` : "Loading estimate number"}
+          </span>
         </div>
         {/* The quote preview is a document, so it stays on light paper even in
             the navy theme. Pin the text colour here: the inherited `C.text` is
             near-white and would be invisible on this surface. */}
-        <div style={{ padding: 40, backgroundColor: C.bgPaper, color: C.paperText }}>
+        <div className="es-quote-frame">
           <div
             className="es-quote-paper"
             style={{
@@ -1389,21 +1445,24 @@ function StepQuote({
               padding: 36,
               boxShadow: "0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04)",
               minHeight: 540,
+              boxSizing: "border-box",
             }}
           >
             {/* Letterhead header */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28, paddingBottom: 16, borderBottom: `2px solid ${C.paperText}` }}>
-              <div>
-                <div style={{ fontFamily: FONT.heading, fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em" }}>
+            <div className="es-quote-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 28, paddingBottom: 16, borderBottom: `2px solid ${C.paperText}` }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontFamily: FONT.heading, fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em", overflowWrap: "anywhere" }}>
                   {company.name.replace(" Pty Ltd", "").replace(" Services", "")}
                 </div>
-                <div style={{ fontSize: 12, color: C.paperTextMuted, fontStyle: "italic", marginTop: 2 }}>
+                <div style={{ fontSize: 12, color: C.paperTextMuted, fontStyle: "italic", marginTop: 2, overflowWrap: "anywhere" }}>
                   Licensed electrical contractor · NSW Lic. {company.licence}
                 </div>
               </div>
               <div style={{ textAlign: "right" }}>
                 <div style={{ fontFamily: FONT.heading, fontSize: 11, color: C.paperTextMuted, textTransform: "uppercase", letterSpacing: "0.1em" }}>Estimate</div>
-                <div style={{ fontFamily: FONT.mono, fontSize: 14, fontWeight: 500 }}>{estimateRef}</div>
+                <div style={{ fontFamily: FONT.mono, fontSize: 14, fontWeight: 500, whiteSpace: estimateRef ? "nowrap" : "normal" }}>
+                  {estimateRef ?? "Loading estimate number"}
+                </div>
               </div>
             </div>
 
@@ -1436,19 +1495,20 @@ function StepQuote({
               Line items · qty × rate
             </div>
             {groups.length === 0 ? (
-              <div style={{ fontSize: 12, color: C.paperTextMuted, fontStyle: "italic", padding: "8px 0" }}>
-                No priced lines yet.
+              <div className="es-empty" role="status" aria-label="No priced lines yet.">
+                <p style={{ margin: 0, fontWeight: 600, color: C.paperText }}>No priced lines yet.</p>
+                <p style={{ margin: "6px 0 0", color: C.paperTextMuted, fontSize: 13 }}>Confirm items on the takeoff and they will show on this quote.</p>
               </div>
             ) : groups.map(group => (
               <div key={group.category} style={{ marginBottom: 10 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 12, fontWeight: 600 }}>
+                <div className="es-quote-line" style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", padding: "6px 0", fontSize: 12, fontWeight: 600 }}>
                   <span>{group.category}</span>
-                  <span style={{ fontFamily: FONT.mono }}>${Math.round(group.total).toLocaleString()}</span>
+                  <span style={{ fontFamily: FONT.mono, marginLeft: "auto", whiteSpace: "nowrap" }}>${Math.round(group.total).toLocaleString()}</span>
                 </div>
                 {group.lines.map((line, i) => (
-                  <div key={`${line.desc}-${i}`} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0 3px 12px", borderBottom: `1px solid ${C.border}`, fontSize: 11, color: C.paperTextMuted }}>
-                    <span>{line.desc}</span>
-                    <span style={{ fontFamily: FONT.mono }}>
+                  <div key={`${line.desc}-${i}`} className="es-quote-line" style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", padding: "3px 0 3px 12px", borderBottom: `1px solid ${C.border}`, fontSize: 11, color: C.paperTextMuted }}>
+                    <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{line.desc}</span>
+                    <span style={{ fontFamily: FONT.mono, marginLeft: "auto", whiteSpace: "nowrap" }}>
                       {formatQtyRate(line.qty, line.unitPrice)} = ${Math.round(line.lineTotal).toLocaleString()}
                     </span>
                   </div>
@@ -1458,7 +1518,7 @@ function StepQuote({
 
             {/* Totals */}
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 18 }}>
-              <div style={{ width: 220, fontSize: 12 }}>
+              <div className="es-quote-totals" style={{ width: "100%", maxWidth: 220, fontSize: 12 }}>
                 <LetterRow l="Subtotal"     v={`$${formatAud(totals.subtotal)}`} />
                 <LetterRow l={`Margin (${totals.marginPct}%)`} v={`$${formatAud(totals.marginAmount)}`} />
                 <LetterRow l={`GST (${totals.gstRatePct}%)`}    v={`$${formatAud(totals.gst)}`} />
@@ -1476,8 +1536,8 @@ function StepQuote({
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         {/* Quoted total */}
         <Card style={{ padding: 20 }}>
-          <div style={{ fontFamily: FONT.heading, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textSubtle, marginBottom: 6 }}>Quoted total</div>
-          <div style={{ fontFamily: FONT.heading, fontSize: 36, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1 }}>
+          <div style={{ fontFamily: FONT.heading, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textMuted, marginBottom: 6 }}>Quoted total</div>
+          <div className="es-quote-total" style={{ fontFamily: FONT.heading, fontSize: 36, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1, overflowWrap: "anywhere" }}>
             ${formatAud(totals.total, true)}
           </div>
           <div style={{ fontSize: 13, color: C.textMuted, fontStyle: "italic", marginTop: 8 }}>
@@ -1490,7 +1550,7 @@ function StepQuote({
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 20 }}>
             <MiniStat label="Subtotal ex GST" v={`$${formatAud(totals.subtotal, true)}`} />
             <MiniStat label="GST"             v={`$${formatAud(totals.gst, true)}`} />
-            <MiniStat label="Margin"          v={`$${formatAud(totals.marginAmount, true)}`} tint={C.green} />
+            <MiniStat label="Margin"          v={`$${formatAud(totals.marginAmount, true)}`} tint={AA_GREEN} />
             <MiniStat
               label="Price required"
               v={String(unpricedCount)}
@@ -1513,11 +1573,18 @@ function StepQuote({
         </Card>
 
         {/* Actions */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div className="es-quote-actions" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {blockReason && (
+            <p id="quote-block-reason" role="status" aria-label={blockReason ?? undefined} style={{ margin: 0, fontSize: 13, color: source.length === 0 ? C.textMuted : C.amber }}>
+              {blockReason}
+            </p>
+          )}
           <PrimaryButton
             icon={<Send size={15} />}
             onClick={handleSend}
             disabled={saving || source.length === 0 || sendBlocked}
+            ariaBusy={saving}
+            ariaDescribedBy={blockReason ? "quote-block-reason" : undefined}
           >
             {saving ? "Saving…" : "Save for approval"}
           </PrimaryButton>
@@ -1525,14 +1592,15 @@ function StepQuote({
             icon={<FileDown size={14} />}
             onClick={handleDownloadPdf}
             disabled={pdfBusy || source.length === 0}
+            ariaBusy={pdfBusy}
           >
             {pdfBusy ? "Preparing PDF…" : "Download PDF"}
           </GhostButton>
           {saveMessage && (
-            <p style={{ margin: 0, fontSize: 13, color: C.green, fontStyle: "italic" }}>{saveMessage}</p>
+            <p role="status" style={{ margin: 0, fontSize: 13, color: AA_GREEN, fontStyle: "italic" }}>{saveMessage}</p>
           )}
           {saveError && (
-            <p style={{ margin: 0, fontSize: 13, color: C.red, fontStyle: "italic" }}>{saveError}</p>
+            <p role="alert" style={{ margin: 0, fontSize: 13, color: C.red, fontStyle: "italic" }}>{saveError}</p>
           )}
           <GhostButton icon={<Copy size={14} />} disabled>
             Duplicate as template
