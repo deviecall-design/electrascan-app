@@ -31,7 +31,7 @@ export default function MiniStat({ label, v, tint }: MiniStatProps) {
           fontWeight: 600,
           textTransform: "uppercase",
           letterSpacing: "0.08em",
-          color: C.textSubtle,
+          color: C.textMuted,
           marginBottom: 4,
         }}
       >

@@ -18,14 +18,18 @@ interface ButtonProps {
   onClick?: () => void;
   disabled?: boolean;
   type?: "button" | "submit";
+  ariaBusy?: boolean;
+  ariaDescribedBy?: string;
 }
 
-export function PrimaryButton({ children, icon, onClick, disabled, type = "button" }: ButtonProps) {
+export function PrimaryButton({ children, icon, onClick, disabled, type = "button", ariaBusy, ariaDescribedBy }: ButtonProps) {
   return (
     <button
       type={type}
       onClick={onClick}
       disabled={disabled}
+      aria-busy={ariaBusy || undefined}
+      aria-describedby={ariaDescribedBy}
       className="es-btn-primary"
       style={{
         fontFamily: FONT.heading,
@@ -50,12 +54,14 @@ export function PrimaryButton({ children, icon, onClick, disabled, type = "butto
   );
 }
 
-export function GhostButton({ children, icon, onClick, disabled, type = "button" }: ButtonProps) {
+export function GhostButton({ children, icon, onClick, disabled, type = "button", ariaBusy, ariaDescribedBy }: ButtonProps) {
   return (
     <button
       type={type}
       onClick={onClick}
       disabled={disabled}
+      aria-busy={ariaBusy || undefined}
+      aria-describedby={ariaDescribedBy}
       className="es-btn-ghost"
       style={{
         fontFamily: FONT.heading,

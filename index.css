@@ -510,3 +510,58 @@ table {
     min-height: 44px;
   }
 }
+
+/* Scan flow: takeoff, verification, and quote. The global reset removes
+   outlines, so keyboard focus is drawn here and only while using a keyboard. */
+.es-flow :focus-visible {
+  outline: 2px solid var(--es-orange-dark);
+  outline-offset: 2px;
+}
+.es-flow button:focus:not(:focus-visible),
+.es-flow a:focus:not(:focus-visible),
+.es-flow input:focus:not(:focus-visible),
+.es-flow select:focus:not(:focus-visible) {
+  outline: none;
+}
+.es-empty {
+  border: 1px dashed var(--es-border);
+  border-radius: 12px;
+  background: var(--es-bg-soft);
+  padding: 20px 16px;
+  text-align: center;
+}
+.es-plan-canvas { min-height: 320px; }
+.es-quote-frame {
+  padding: 40px;
+  background: var(--es-bg-paper);
+  color: var(--es-text);
+  box-sizing: border-box;
+}
+
+@media (max-width: 480px) {
+  .es-stepbar > button {
+    flex: 1 1 calc(50% - 8px);
+    min-width: 0;
+    padding: 8px 6px;
+  }
+  .es-step-chevron { display: none !important; }
+  .es-step-label { line-height: 1.25; }
+  .es-scan-title {
+    flex-direction: column;
+    align-items: flex-start !important;
+  }
+  .es-scan-title h1 { font-size: 22px !important; }
+  .es-plan-canvas,
+  .es-plan-stage,
+  .es-plan-stage-clip {
+    min-height: 220px;
+  }
+  .es-quote-frame { padding: 12px; }
+  .es-quote-paper {
+    padding: 14px !important;
+    min-height: 0 !important;
+  }
+  .es-quote-total { font-size: 28px !important; }
+  .es-item-main { flex-direction: column !important; align-items: stretch !important; }
+  .es-item-main input { max-width: 120px; }
+}
