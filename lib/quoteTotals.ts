@@ -34,7 +34,7 @@ export function computeQuoteTotals(
   gstRate: number = AU_GST_RATE,
 ): QuoteTotals {
   const safeSub = Math.max(0, subtotal);
-  const safeMargin = Math.max(0, marginPct);
+  const safeMargin = Math.min(100, Math.max(0, Number.isFinite(marginPct) ? marginPct : 0));
   const safeGst = Math.max(0, gstRate);
   const marginAmount = roundCents(safeSub * (safeMargin / 100));
   const exGst = roundCents(safeSub + marginAmount);

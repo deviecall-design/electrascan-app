@@ -368,7 +368,7 @@ function DashboardView({ go }) {
           <div style={{ marginTop: 20, padding: 18, backgroundColor: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 10 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <Sparkles size={14} color={C.orange} />
-              <span style={{ fontFamily: fontHeading, fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.textMuted }}>Aries insight</span>
+              <span style={{ fontFamily: fontHeading, fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.textMuted }}>ElectraScan insight</span>
             </div>
             <p style={{ margin: 0, fontSize: 15, lineHeight: 1.65 }}>
               Your GPO rates are <B>14% below</B> regional average. Reviewing the top 5 could add <span style={{ color: C.green, fontStyle: 'italic' }}>~$3,200</span> to April's pipeline.
@@ -755,7 +755,7 @@ function StepQuote({ items: detectedItems, onBack }) {
         <div style={{ backgroundColor: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
             <Sparkles size={14} color={C.orange} />
-            <span style={{ fontFamily: fontHeading, fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.textMuted }}>Aries suggests</span>
+            <span style={{ fontFamily: fontHeading, fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.textMuted }}>ElectraScan suggests</span>
           </div>
           <p style={{ margin: 0, fontSize: 14, lineHeight: 1.65 }}>
             Bondi Tower's last 3 quotes closed at <B>15–22%</B> margin. Your current <B>18%</B> sits in the sweet spot — I wouldn't push it.

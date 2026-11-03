@@ -21,6 +21,7 @@ import { getActiveCompanyProfile } from "../services/companyProfile";
 import { getCurrentTenantId, VESH_TENANT_ID } from "../lib/tenants";
 import { authIsDisabled } from "../lib/authMode";
 import { fetchWorkspaceSettings, saveWorkspaceSettings } from "../services/workspaceSettings";
+import { loadDefaultMargin } from "../lib/margin";
 import AssembliesCard from "../components/desktop/AssembliesCard";
 import { useToast } from "../contexts/ToastContext";
 
@@ -222,6 +223,7 @@ export default function SettingsScreen() {
 function TakeoffSettings() {
   const { addToast } = useToast();
   const [minVerified, setMinVerified] = useState("");
+  const [defaultMargin, setDefaultMargin] = useState(() => String(loadDefaultMargin()));
   const [supplierName, setSupplierName] = useState("Lawrence & Hanson");
   const [supplierEmail, setSupplierEmail] = useState("");
   const [saving, setSaving] = useState(false);
@@ -231,6 +233,7 @@ function TakeoffSettings() {
     fetchWorkspaceSettings().then(settings => {
       if (cancelled) return;
       setMinVerified(settings.minVerifiedPct == null ? "" : String(settings.minVerifiedPct));
+      if (typeof settings.defaultMarginPct === "number") setDefaultMargin(String(settings.defaultMarginPct));
       setSupplierName(settings.supplierName);
       setSupplierEmail(settings.supplierEmail);
     });
@@ -244,13 +247,16 @@ function TakeoffSettings() {
       minVerifiedPct: minVerified.trim() === "" ? null : Math.max(0, Math.min(100, Number(minVerified))),
       supplierName,
       supplierEmail,
+      defaultMarginPct: Number(defaultMargin),
     });
     setSaving(false);
     if (!result.ok) {
       addToast(result.error || "Could not save workspace settings.", "error");
       return;
     }
-    addToast("Workspace settings saved.", "success");
+    addToast(result.marginStored === false
+      ? "Saved in this browser. Apply the margin migration to share the default."
+      : "Workspace settings saved.", "success");
   }
 
   return (
@@ -261,6 +267,19 @@ function TakeoffSettings() {
         </div>
         <p style={{ margin: 0, color: C.textMuted, fontSize: 14 }}>
           Leave the verified minimum blank to allow a quote at any takeoff check. The supplier email is only used to open a draft. Nothing is sent automatically.
+        </p>
+        <label style={{ fontSize: 13, color: C.textMuted }}>
+          Default quote margin %
+          <input
+            aria-label="Default quote margin percent"
+            inputMode="decimal"
+            value={defaultMargin}
+            onChange={event => setDefaultMargin(event.target.value)}
+            style={{ display: "block", width: 160, minHeight: 44, marginTop: 6, borderRadius: RADIUS.md, border: `1px solid ${C.border}`, padding: "0 12px", fontSize: 16 }}
+          />
+        </label>
+        <p style={{ margin: 0, color: C.textMuted, fontSize: 13 }}>
+          New quotes start here. A saved or signed quote keeps the margin it was saved with. 0 to 100%.
         </p>
         <label style={{ fontSize: 13, color: C.textMuted }}>
           Minimum verified % before a quote can be sent

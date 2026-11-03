@@ -34,6 +34,12 @@ describe("ariesMarginSuggestion", () => {
     const text = ariesMarginSuggestion({ clientName: "Sirius", marginPct: 15 });
     expect(text).toContain("15%");
   });
+
+  it("uses the margin it is given instead of a fixed 15", () => {
+    const text = ariesMarginSuggestion({ clientName: "Sirius", marginPct: 22 });
+    expect(text).toContain("22%");
+    expect(text).toContain("above the typical");
+  });
 });
 
 describe("ariesPipelineInsight", () => {
