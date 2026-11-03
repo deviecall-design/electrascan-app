@@ -12,12 +12,14 @@ import { computeQuoteTotals, formatAud } from "../../lib/quoteTotals";
 import {
   GROUP_LABEL,
   billableItems,
-  costSplit,
   formatVerified,
   groupForItem,
   verifiedPercent,
   type RateLike,
 } from "../../lib/takeoff";
+import { loadAssemblies, loadLabourRate } from "../../lib/assemblies";
+import { priceItem } from "../../lib/quoteSource";
+import { newSupplierToken, supplierPath, SUPPLIERS } from "../../lib/supplierLink";
 import type { StoredDetectedItem } from "../../lib/scanRecord";
 import {
   DEFAULT_SUPPLIER_NAME,
@@ -61,13 +63,13 @@ function orderLines(items: StoredDetectedItem[], rates: RateLike[]): { lines: Or
   return {
     usingDetected: confirmed.length === 0 && source.length > 0,
     lines: source.map(item => {
-      const split = costSplit(item, rates);
+      const quote = priceItem(item, rates, loadAssemblies(), loadLabourRate());
       return {
         description: item.desc || "Item",
         category: item.category || GROUP_LABEL[groupForItem(item)],
         qty: item.qty,
-        materialUnit: split.material,
-        labourUnit: split.labour,
+        materialUnit: quote.materialUnit,
+        labourUnit: quote.labourUnit,
       };
     }),
   };
@@ -106,6 +108,9 @@ export default function SignOrderStep({
   const [supplierEmail, setSupplierEmail] = useState("");
   const [materialLines, setMaterialLines] = useState<MaterialLine[]>([]);
   const [materialStatus, setMaterialStatus] = useState<MaterialStatus>("draft");
+  const [supplierName, setSupplierName] = useState<string>(DEFAULT_SUPPLIER_NAME);
+  const [supplierLink, setSupplierLink] = useState<string | null>(null);
+  const [supplierNote, setSupplierNote] = useState<string | null>(null);
 
   useEffect(() => {
     setQuoteRef(reference || "");
@@ -352,7 +357,7 @@ export default function SignOrderStep({
         <Card style={{ padding: 22 }}>
           <h2 style={{ margin: "0 0 8px", fontFamily: FONT.heading, fontSize: 18 }}>Materials</h2>
           <p style={{ margin: "0 0 12px", color: C.textMuted, fontSize: 14 }}>
-            Products and quantities for {DEFAULT_SUPPLIER_NAME}. The cost is our rate-library estimate. {DEFAULT_SUPPLIER_NAME} prices it on trade terms. Nothing is emailed until you send the draft yourself.
+            Products and quantities only. The quote price is the assembly sell, or the rate code when the line has one. Nothing is emailed until you send it. The supplier link prices this request only.
           </p>
           <div style={{ fontWeight: 700, marginBottom: 8 }}>Estimated materials {formatAud(materialLines.reduce((sum, line) => sum + line.qty * (materialCost.get(line.product) || 0), 0), true)}</div>
           {materialLines.map((line, index) => (
@@ -366,6 +371,12 @@ export default function SignOrderStep({
               <input aria-label={`Notes for ${line.product}`} value={line.notes} placeholder="Notes" onChange={event => updateMaterial(index, { notes: event.target.value })} style={inputStyle} />
             </div>
           ))}
+          <label style={{ display: "block", marginTop: 12, fontSize: 13, color: C.textMuted }}>
+            Supplier
+            <select aria-label="Supplier" value={supplierName} onChange={event => setSupplierName(event.target.value)} style={{ ...inputStyle, width: "100%", marginTop: 4 }}>
+              {SUPPLIERS.map(name => <option key={name}>{name}</option>)}
+            </select>
+          </label>
           <label style={{ display: "block", marginTop: 12, fontSize: 13, color: C.textMuted }}>
             Supplier email
             <input aria-label="Supplier email" type="email" value={supplierEmail} placeholder="orders@lawrenceandhanson.com.au" onChange={event => setSupplierEmail(event.target.value)} style={{ ...inputStyle, width: "100%", marginTop: 4 }} />
@@ -388,6 +399,9 @@ export default function SignOrderStep({
                   if (ok) setMaterialStatus("sent");
                 }}>Mark materials sent</GhostButton>
               )}
+              <GhostButton onClick={() => void createSupplierLink()}>Create supplier link</GhostButton>
+              {supplierLink && <a href={supplierLink} style={linkButton}>Open supplier link</a>}
+              {supplierNote && <span style={{ color: C.textMuted, fontSize: 13 }}>{supplierNote}</span>}
             </div>
           )}
         </Card>
@@ -437,6 +451,28 @@ export default function SignOrderStep({
       </div>
     </div>
   );
+
+  async function createSupplierLink() {
+    const token = newSupplierToken();
+    const path = supplierPath(token);
+    setSupplierLink(path);
+    setSupplierNote("Link created. Send it yourself. Nothing was emailed.");
+    const res = await fetch("/api/supplier", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        token,
+        estimate_ref: quoteRef || null,
+        job_name: jobName,
+        supplier_name: supplierName,
+        lines: materialLines,
+      }),
+    }).catch(() => null);
+    if (!res || !res.ok) {
+      const body = res ? await res.json().catch(() => ({})) : {};
+      setSupplierNote(body.error || "The link is on this page. Saving it needs the new migration.");
+    }
+  }
 
   function updateMaterial(index: number, patch: Partial<MaterialLine>) {
     setMaterialLines(current => current.map((line, i) => (i === index ? { ...line, ...patch } : line)));

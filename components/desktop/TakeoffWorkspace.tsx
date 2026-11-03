@@ -16,13 +16,18 @@ import {
   canSendQuote,
   formatVerified,
   groupTakeoff,
-  priceTakeoff,
   setItemQty,
   setStatus,
   takeoffTotals,
   verifiedPercent,
   type TakeoffGroupId,
 } from "../../lib/takeoff";
+import { loadAssemblies, loadLabourRate } from "../../lib/assemblies";
+import { priceItem } from "../../lib/quoteSource";
+import { legendFlags } from "../../lib/legendMatch";
+import { scanRecap, type DetectionCorrection } from "../../lib/reviewQueue";
+import { recallPlanContext } from "../../lib/planContext";
+import ConfidenceReviewQueue from "./ConfidenceReviewQueue";
 
 /** Slate that stays above 4.5:1 for white symbol text when a hit is rejected. */
 const REJECTED_MARK = "#475569";
@@ -74,7 +79,15 @@ export default function TakeoffWorkspace({
     if (addGroup) planRef.current?.focus();
   }, [addGroup]);
 
-  const priced = useMemo(() => priceTakeoff(items, rates), [items, rates]);
+  const assemblies = loadAssemblies();
+  const labourRate = loadLabourRate();
+  const priced = useMemo(() => items.map(item => {
+    const quote = priceItem(item, rates, assemblies, labourRate);
+    return { ...item, unitPrice: quote.sellUnit, materialUnit: quote.materialUnit, labourUnit: quote.labourUnit };
+  }), [items, rates, assemblies, labourRate]);
+  const plan = recallPlanContext(fileName);
+  const flags = legendFlags([...(plan?.legend ?? []), ...(plan?.schedules ?? [])], priced);
+  const recap = scanRecap(priced, { pageCount: plan?.pageCount, flags });
   const groups = useMemo(() => groupTakeoff(priced), [priced]);
   const totals = useMemo(() => takeoffTotals(priced, marginPct), [priced, marginPct]);
   const verified = verifiedPercent(priced);
@@ -82,7 +95,10 @@ export default function TakeoffWorkspace({
   const selected = priced.find(item => item.id === selectedId) ?? null;
 
   function commit(next: StoredDetectedItem[]) {
-    onChange(priceTakeoff(next, rates));
+    onChange(next.map(item => {
+      const quote = priceItem(item, rates, assemblies, labourRate);
+      return { ...item, unitPrice: quote.sellUnit, materialUnit: quote.materialUnit, labourUnit: quote.labourUnit };
+    }));
   }
 
   function placeAt(x: number, y: number) {
@@ -200,7 +216,7 @@ export default function TakeoffWorkspace({
           <span role="status" style={{ fontFamily: FONT.heading, fontSize: 13, fontWeight: 600, color: C.orange }}>{formatVerified(priced)}</span>
         </div>
         <p style={{ margin: "6px 0 12px", color: C.textMuted, fontSize: 13 }}>
-          Counts use the rate library. Rejected hits stay off the quote.
+          Prices come from assemblies, or from a rate code when the line has one. Rejected hits stay off the quote.
         </p>
         {ratesState === "loading" && (
           <p role="status" style={{ margin: "0 0 12px", color: C.textMuted, fontSize: 13 }}>Checking the rate library…</p>
@@ -242,6 +258,16 @@ export default function TakeoffWorkspace({
             </button>
           ))}
         </div>
+        <ConfidenceReviewQueue
+          items={priced}
+          flags={flags}
+          onConfirm={(item, correction) => { void storeCorrection(correction); commit(setStatus(priced, item.id, "confirmed")); }}
+          onReject={(item, correction) => { void storeCorrection(correction); commit(setStatus(priced, item.id, "rejected")); }}
+          onFix={(item, correction) => {
+            void storeCorrection(correction);
+            commit(priced.map(row => row.id === item.id ? { ...row, desc: correction.correctedDesc, qty: correction.correctedQty, status: "confirmed" as const } : row));
+          }}
+        />
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {groups.map(group => (
             <section key={group.id} aria-label={group.label} style={{ border: `1px solid ${C.border}`, borderRadius: RADIUS.lg, overflow: "hidden" }}>
@@ -332,6 +358,12 @@ export default function TakeoffWorkspace({
             <span style={{ fontFamily: FONT.mono }}>${formatAud(totals.total, true)}</span>
           </div>
           <div style={{ marginTop: 8, fontSize: 13, color: C.textMuted }}>{formatVerified(priced)}</div>
+          <div style={{ marginTop: 12, fontSize: 13, color: C.textMuted }}>
+            <div style={{ fontWeight: 700, color: C.text }}>Scan recap</div>
+            <div>{recap.pagesRead == null ? "Pages read were not stored on this scan." : `${recap.pagesRead} pages read.`}</div>
+            <div>{recap.detected} items · {recap.confirmed} confirmed · {recap.rejected} rejected · {recap.waiting} still to review.</div>
+            {recap.anomalies.length === 0 ? <div>No legend anomalies.</div> : recap.anomalies.slice(0, 6).map(line => <div key={line}>{line}</div>)}
+          </div>
           {selected && <p style={{ fontSize: 12, color: C.textMuted }}>Selected: {selected.desc}</p>}
           {showContinue && (
             <div className="es-takeoff-actions" style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
@@ -345,6 +377,29 @@ export default function TakeoffWorkspace({
       </div>
     </div>
   );
+}
+
+function storeCorrection(correction: DetectionCorrection) {
+  try {
+    const saved = JSON.parse(localStorage.getItem("es-corrections") || "[]");
+    saved.push(correction);
+    localStorage.setItem("es-corrections", JSON.stringify(saved));
+  } catch {
+    /* ignore */
+  }
+  fetch("/api/beta/records?kind=corrections", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      item_id: correction.itemId,
+      symbol: correction.symbol,
+      original_desc: correction.originalDesc,
+      original_qty: correction.originalQty,
+      corrected_desc: correction.correctedDesc,
+      corrected_qty: correction.correctedQty,
+      action: correction.action,
+    }),
+  }).catch(() => undefined);
 }
 
 function actionStyle(color: string, ghost = false): React.CSSProperties {

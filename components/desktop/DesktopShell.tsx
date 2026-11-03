@@ -18,6 +18,7 @@ import {
   GitCompare,
   CheckCircle2,
   FolderKanban,
+  Briefcase,
   Bell,
   Plus,
   Search,
@@ -60,6 +61,7 @@ const NAV: { grp: string; items: NavEntry[] }[] = [
     items: [
       { path: "/variation-report", label: "Variations", icon: <GitCompare size={18} /> },
       { path: "/projects", label: "Project reports", icon: <FolderKanban size={18} /> },
+      { path: "/jobs", label: "Jobs", icon: <Briefcase size={18} /> },
     ],
   },
   {

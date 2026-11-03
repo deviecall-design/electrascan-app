@@ -16,6 +16,8 @@ const devApiRoutes: Record<string, string> = {
   '/api/beta/materials': './api/beta/materials.js',
   '/api/beta/settings': './api/beta/settings.js',
   '/api/integrations/status': './api/integrations/status.js',
+  '/api/beta/records': './api/beta/records.js',
+  '/api/supplier': './api/supplier/index.js',
 };
 
 function devApiPlugin() {
@@ -24,8 +26,10 @@ function devApiPlugin() {
     configureServer(server: { middlewares: { use: Function }; ssrLoadModule: (id: string) => Promise<{ default: Function }> }) {
       server.middlewares.use(async (req: any, res: any, next: Function) => {
         const pathname = (req.url || '').split('?')[0];
-        const file = devApiRoutes[pathname];
+        const supplierToken = pathname.startsWith('/api/supplier/') ? decodeURIComponent(pathname.slice('/api/supplier/'.length)) : '';
+        const file = supplierToken ? './api/supplier/[token].js' : devApiRoutes[pathname];
         if (!file) return next();
+        if (supplierToken) req.headers['x-supplier-token'] = supplierToken;
         try {
           const raw = await new Promise<string>((resolve, reject) => {
             const chunks: Buffer[] = [];

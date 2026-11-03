@@ -80,6 +80,7 @@ import SourcePlanPreview from "../components/SourcePlanPreview";
 import { ariesMarginSuggestion } from "../lib/ariesSuggestion";
 import { computeQuoteTotals, DEFAULT_MARGIN_PCT, formatAud, lineTotal as qtyRateTotal, roundCents } from "../lib/quoteTotals";
 import { mapDetectionToQuoteItems, formatQtyRate, type ScanQuoteItem } from "../lib/scanQuote";
+import { rememberPlanContext, recallPlanContext } from "../lib/planContext";
 
 interface DetectedItem extends ScanQuoteItem {
   /** Room / location from the detector — never a hardcoded "Level 2". */
@@ -358,12 +359,16 @@ export default function ScanDetailScreen() {
             setUploadedName(file.name);
             setStep(2);
             setPersistError(null);
-            const payload = buildScanWrite({
-              fileName: file.name,
-              client: clientLabel || null,
-              stage: "review",
-              items: toStored(nextItems),
-            });
+            const context = recallPlanContext(file.name);
+            const payload = {
+              ...buildScanWrite({
+                fileName: file.name,
+                client: clientLabel || null,
+                stage: "review",
+                items: toStored(nextItems),
+              }),
+              risk_flags: context ? [{ type: "plan_context", ...context }] : [],
+            };
             const { data, error } = await insertScan(payload);
             if (error || !data?.id) {
               setPersistError(error?.message || "This scan could not be saved.");
@@ -521,6 +526,26 @@ function StepUpload({ onNext }: { onNext: (items: DetectedItem[], file: File) =>
         setPhaseMsg(p.message);
       });
       const mapped = mapDetectionToItems(result);
+      rememberPlanContext(file.name, {
+        pageCount: result.page_count ?? null,
+        legend: (result.legend_items || []).map(row => ({
+          symbol: row.mapped_type || "",
+          description: row.symbol_description || "",
+          quantity: row.quantity,
+          inScope: row.in_electrical_scope,
+          kind: "legend" as const,
+        })),
+        schedules: (result.legend_items || [])
+          .filter(row => /schedule|board|db/i.test(`${row.symbol_description} ${row.notes}`))
+          .map(row => ({
+            symbol: row.mapped_type || "DB",
+            description: row.symbol_description || "",
+            quantity: row.quantity,
+            inScope: row.in_electrical_scope,
+            kind: "schedule" as const,
+          })),
+        notes: (result.legend_items || []).map(row => row.notes).filter(Boolean),
+      });
       onNext(mapped, file);
     } catch (err: any) {
       console.error("[ElectraScan] Detection failed:", err);

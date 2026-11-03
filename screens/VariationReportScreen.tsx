@@ -17,6 +17,7 @@ import {
   type VariationLine,
 } from "../lib/variationDiff";
 import { formatQuotedValue } from "../lib/estimateMoney";
+import { draftInvoice, toMyobCsv, toXeroCsv } from "../lib/invoiceExport";
 import QueryBanner from "../components/QueryBanner";
 
 const TONE: Record<string, { bg: string; fg: string; label: string }> = {
@@ -147,6 +148,36 @@ export default function VariationReportScreen() {
                   event.target.value = "";
                 }}
               />
+              {latest && (
+                <PrimaryButton onClick={() => {
+                  const invoice = draftInvoice({
+                    source: "variation",
+                    sourceRef: latest.scan.file_name || "variation",
+                    jobName: versions[0].scan.client || versions[0].scan.file_name || "Variation",
+                    clientName: versions[0].scan.client || "",
+                    description: `Variation ${versions.length}`,
+                    amountExGst: Math.abs(materialNet + labourNet),
+                  });
+                  downloadCsvFile("variation-xero.csv", toXeroCsv([invoice]));
+                  downloadCsvFile("variation-myob.csv", toMyobCsv([invoice]));
+                  fetch("/api/beta/records?kind=invoices", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      source: "variation",
+                      source_ref: invoice.sourceRef,
+                      job_name: invoice.jobName,
+                      client_name: invoice.clientName,
+                      amount: invoice.amount,
+                      tax: invoice.tax,
+                      status: "draft",
+                      lines: invoice.lines,
+                    }),
+                  }).catch(() => undefined);
+                }}>
+                  Draft variation invoice
+                </PrimaryButton>
+              )}
               <PrimaryButton disabled={busy} onClick={() => fileRef.current?.click()}>
                 {busy ? "Reading revised plan…" : "Upload revised plan"}
               </PrimaryButton>
@@ -234,6 +265,16 @@ function ChangeRow({ line }: { line: VariationLine }) {
       </span>
     </div>
   );
+}
+
+function downloadCsvFile(name: string, contents: string) {
+  const blob = new Blob([contents], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function Stat({ label, value }: { label: string; value: string }) {

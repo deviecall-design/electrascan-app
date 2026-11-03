@@ -38,6 +38,8 @@ import VariationReportScreen from "./screens/VariationReportScreen";
 import ApprovalsScreen from "./screens/ApprovalsScreen";
 import ProjectReportsScreen from "./screens/ProjectReportsScreen";
 import SettingsScreen from "./screens/SettingsScreen";
+import JobsScreen from "./screens/JobsScreen";
+import SupplierPortal from "./screens/SupplierPortal";
 import { authIsDisabled, loadAuthMode } from "./lib/authMode";
 
 function LoginGate() {
@@ -79,6 +81,7 @@ export default function DesktopApp() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<LoginGate />} />
+        <Route path="/supplier/:token" element={<SupplierPortal />} />
         <Route element={<DesktopShell />}>
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard"         element={<DashboardScreen />} />
@@ -90,6 +93,7 @@ export default function DesktopApp() {
           <Route path="/variation-report"  element={<VariationReportScreen />} />
           <Route path="/approvals"         element={<ApprovalsScreen />} />
           <Route path="/projects"          element={<ProjectReportsScreen />} />
+          <Route path="/jobs"              element={<JobsScreen />} />
           <Route path="/settings"          element={<SettingsScreen />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
