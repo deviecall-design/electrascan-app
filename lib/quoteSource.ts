@@ -35,12 +35,16 @@ export function priceItem(
     unitPrice?: number;
     materialUnit?: number;
     labourUnit?: number;
+    manualPrice?: boolean;
     qty?: number;
   },
   rates: RateLike[] = [],
   assemblies: Assembly[] = [],
   labourRate: number = DEFAULT_LABOUR_RATE,
 ): QuotePrice {
+  if (item.manualPrice && typeof item.unitPrice === "number" && item.unitPrice > 0) {
+    return storedPrice(item);
+  }
   const code = (item.rateCode || "").trim().toLowerCase();
   if (code) {
     const hit = rates.find(rate => rate.code.trim().toLowerCase() === code && rate.rate > 0);

@@ -20,6 +20,8 @@ export interface StoredDetectedItem {
   x: number;
   y: number;
   unitPrice?: number;
+  /** The contractor typed this price. It wins over an assembly or rate code. */
+  manualPrice?: boolean;
   /** Catalogue or library material price, ex GST. Omitted falls back to unitPrice. */
   materialUnit?: number;
   /** Labour allowance from the rate library, ex GST. Omitted means none was stored. */
@@ -114,6 +116,7 @@ export function readDetectedItems(raw: unknown): StoredDetectedItem[] {
       x: num(record.x) ?? 0,
       y: num(record.y) ?? 0,
       ...(unitPrice != null ? { unitPrice } : {}),
+      ...(record.manualPrice === true ? { manualPrice: true } : {}),
       ...(num(record.materialUnit) != null ? { materialUnit: num(record.materialUnit) } : {}),
       ...(num(record.labourUnit) != null ? { labourUnit: num(record.labourUnit) } : {}),
       ...(typeof record.category === "string" ? { category: record.category } : {}),

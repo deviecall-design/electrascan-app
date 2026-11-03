@@ -7,7 +7,7 @@ import SourcePlanPreview from "../SourcePlanPreview";
 import PlanViewport from "./PlanViewport";
 import { fetchRateLibrary, type RateRow } from "../../services/supabaseData";
 import type { StoredDetectedItem } from "../../lib/scanRecord";
-import { formatAud } from "../../lib/quoteTotals";
+import { computeQuoteTotals, formatAud } from "../../lib/quoteTotals";
 import {
   GROUP_LABEL,
   GROUP_ORDER,
@@ -15,15 +15,14 @@ import {
   addSymbol,
   canSendQuote,
   formatVerified,
-  groupTakeoff,
   setItemQty,
   setStatus,
-  takeoffTotals,
   verifiedPercent,
   type TakeoffGroupId,
 } from "../../lib/takeoff";
-import { loadAssemblies, loadLabourRate } from "../../lib/assemblies";
+import { loadAssemblies, loadLabourRate, type Assembly } from "../../lib/assemblies";
 import { priceItem } from "../../lib/quoteSource";
+import { takeoffRundown } from "../../lib/takeoffRundown";
 import { legendFlags } from "../../lib/legendMatch";
 import { scanRecap, type DetectionCorrection } from "../../lib/reviewQueue";
 import { recallPlanContext } from "../../lib/planContext";
@@ -57,6 +56,8 @@ export default function TakeoffWorkspace({
   const [ratesState, setRatesState] = useState<"loading" | "ready" | "unavailable">("loading");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [addGroup, setAddGroup] = useState<TakeoffGroupId | null>(null);
+  const [planOpen, setPlanOpen] = useState(false);
+  const [priceDraft, setPriceDraft] = useState<Record<number, string>>({});
   const planRef = useRef<HTMLDivElement>(null);
   const addButtonRefs = useRef<Partial<Record<TakeoffGroupId, HTMLButtonElement | null>>>({});
 
@@ -81,15 +82,20 @@ export default function TakeoffWorkspace({
 
   const assemblies = loadAssemblies();
   const labourRate = loadLabourRate();
-  const priced = useMemo(() => items.map(item => {
-    const quote = priceItem(item, rates, assemblies, labourRate);
-    return { ...item, unitPrice: quote.sellUnit, materialUnit: quote.materialUnit, labourUnit: quote.labourUnit };
-  }), [items, rates, assemblies, labourRate]);
+  const rundown = useMemo(
+    () => takeoffRundown(items, rates, assemblies, labourRate),
+    [items, rates, assemblies, labourRate],
+  );
+  const priced = useMemo(() => rundown.groups.flatMap(group => group.rows.map(row => ({
+    ...row.item,
+    unitPrice: row.quote.sellUnit,
+    materialUnit: row.quote.materialUnit,
+    labourUnit: row.quote.labourUnit,
+  }))), [rundown]);
   const plan = recallPlanContext(fileName);
   const flags = legendFlags([...(plan?.legend ?? []), ...(plan?.schedules ?? [])], priced);
   const recap = scanRecap(priced, { pageCount: plan?.pageCount, flags });
-  const groups = useMemo(() => groupTakeoff(priced), [priced]);
-  const totals = useMemo(() => takeoffTotals(priced, marginPct), [priced, marginPct]);
+  const totals = useMemo(() => computeQuoteTotals(rundown.total, marginPct), [rundown.total, marginPct]);
   const verified = verifiedPercent(priced);
   const sendable = canSendQuote(priced, minVerifiedPct);
   const selected = priced.find(item => item.id === selectedId) ?? null;
@@ -147,76 +153,106 @@ export default function TakeoffWorkspace({
     ? `Tap the plan to add a ${GROUP_LABEL[addGroup].replace(/s$/, "").toLowerCase()}, or press Enter. Escape cancels.`
     : "Pinch to zoom. Tap a symbol to select it.";
 
+  const planVisible = planOpen || addGroup != null;
+
+  function assignAssembly(itemId: number, assembly: Assembly) {
+    commit(priced.map(row => row.id === itemId ? {
+      ...row,
+      manualPrice: true,
+      rateCode: "",
+      unitPrice: assembly.sellPrice,
+      group: row.group,
+    } : row));
+  }
+
+  function assignRate(itemId: number, code: string) {
+    commit(priced.map(row => row.id === itemId ? { ...row, manualPrice: false, rateCode: code } : row));
+  }
+
+  function assignTypedPrice(itemId: number) {
+    const amount = Number(priceDraft[itemId]);
+    if (!(amount > 0)) return;
+    commit(priced.map(row => row.id === itemId ? { ...row, manualPrice: true, rateCode: "", unitPrice: amount } : row));
+  }
+
+  const planCard = (
+    <Card style={{ padding: 0 }}>
+      <div className="es-plan-toolbar" style={{ padding: "10px 14px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <span style={{ fontFamily: FONT.heading, fontSize: 13, fontWeight: 600 }}>Plan</span>
+        <span style={{ fontSize: 12, color: C.textMuted }}>{addHint}</span>
+      </div>
+      <PlanViewport>
+      <div
+        ref={planRef}
+        className="es-plan-canvas"
+        role="group"
+        tabIndex={addGroup ? 0 : -1}
+        aria-label={addGroup ? `Plan, placing ${GROUP_LABEL[addGroup]}. Enter places the symbol. Escape cancels.` : "Plan"}
+        style={{ position: "relative", background: C.bgSoft }}
+        onClick={onPlanClick}
+      >
+        <SourcePlanPreview file={file} fileName={fileName} />
+        {priced.flatMap(item => (item.marks ?? []).slice(0, Math.max(item.qty, item.status === "rejected" ? 1 : 0)).map((mark, index) => {
+          const active = selectedId === item.id;
+          const rejected = item.status === "rejected";
+          return (
+            <button
+              key={`${item.id}-${index}`}
+              type="button"
+              aria-label={`${item.desc} symbol ${index + 1}${rejected ? ", rejected" : ""}`}
+              aria-pressed={active}
+              onClick={event => {
+                event.stopPropagation();
+                setSelectedId(item.id);
+              }}
+              style={{
+                position: "absolute",
+                left: `${mark.x}%`,
+                top: `${mark.y}%`,
+                transform: "translate(-50%, -50%)",
+                width: 44,
+                height: 44,
+                borderRadius: 99,
+                border: `2px solid ${active ? C.orange : rejected ? "#334155" : "#fff"}`,
+                background: rejected ? REJECTED_MARK : active ? C.orange : "#1f56e6",
+                color: "#fff",
+                fontSize: 10,
+                fontWeight: 700,
+                boxShadow: active ? "0 0 0 4px rgba(31,86,230,0.25)" : "0 1px 3px rgba(15,23,42,0.25)",
+              }}
+            >
+              {item.symbol.slice(0, 3)}
+            </button>
+          );
+        }))}
+      </div>
+      </PlanViewport>
+      {selected && (
+        <div className="es-plan-actions">
+          <button type="button" aria-label={`Confirm ${selected.desc} on the plan`} onClick={() => commit(setStatus(priced, selected.id, "confirmed"))} style={actionStyle(C.orange)}>Confirm</button>
+          <button type="button" aria-label={`Reject ${selected.desc} on the plan`} onClick={() => commit(setStatus(priced, selected.id, "rejected"))} style={actionStyle(C.textMuted, true)}>Reject</button>
+        </div>
+      )}
+    </Card>
+  );
+
   return (
     <div className="es-takeoff anim-in" role="region" aria-label="Takeoff" onKeyDown={onWorkspaceKeyDown}>
-      <Card style={{ padding: 0 }}>
-        <div className="es-plan-toolbar" style={{ padding: "10px 14px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <span style={{ fontFamily: FONT.heading, fontSize: 13, fontWeight: 600 }}>Plan</span>
-          <span style={{ fontSize: 12, color: C.textMuted }}>{addHint}</span>
-        </div>
-        <PlanViewport>
-        <div
-          ref={planRef}
-          className="es-plan-canvas"
-          role="group"
-          tabIndex={addGroup ? 0 : -1}
-          aria-label={addGroup ? `Plan, placing ${GROUP_LABEL[addGroup]}. Enter places the symbol. Escape cancels.` : "Plan"}
-          style={{ position: "relative", background: C.bgSoft }}
-          onClick={onPlanClick}
-        >
-          <SourcePlanPreview file={file} fileName={fileName} />
-          {priced.flatMap(item => (item.marks ?? []).slice(0, Math.max(item.qty, item.status === "rejected" ? 1 : 0)).map((mark, index) => {
-            const active = selectedId === item.id;
-            const rejected = item.status === "rejected";
-            return (
-              <button
-                key={`${item.id}-${index}`}
-                type="button"
-                aria-label={`${item.desc} symbol ${index + 1}${rejected ? ", rejected" : ""}`}
-                aria-pressed={active}
-                onClick={event => {
-                  event.stopPropagation();
-                  setSelectedId(item.id);
-                }}
-                style={{
-                  position: "absolute",
-                  left: `${mark.x}%`,
-                  top: `${mark.y}%`,
-                  transform: "translate(-50%, -50%)",
-                  width: 44,
-                  height: 44,
-                  borderRadius: 99,
-                  border: `2px solid ${active ? C.orange : rejected ? "#334155" : "#fff"}`,
-                  background: rejected ? REJECTED_MARK : active ? C.orange : "#1f56e6",
-                  color: "#fff",
-                  fontSize: 10,
-                  fontWeight: 700,
-                  boxShadow: active ? "0 0 0 4px rgba(31,86,230,0.25)" : "0 1px 3px rgba(15,23,42,0.25)",
-                }}
-              >
-                {item.symbol.slice(0, 3)}
-              </button>
-            );
-          }))}
-        </div>
-        </PlanViewport>
-        {selected && (
-          <div className="es-plan-actions">
-            <button type="button" aria-label={`Confirm ${selected.desc} on the plan`} onClick={() => commit(setStatus(priced, selected.id, "confirmed"))} style={actionStyle(C.orange)}>Confirm</button>
-            <button type="button" aria-label={`Reject ${selected.desc} on the plan`} onClick={() => commit(setStatus(priced, selected.id, "rejected"))} style={actionStyle(C.textMuted, true)}>Reject</button>
-          </div>
-        )}
-      </Card>
-
       <div className="es-takeoff-panel">
       <Card style={{ padding: 16 }}>
         <section>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
-          <h2 style={{ margin: 0, fontFamily: FONT.heading, fontSize: 18 }}>Detected items</h2>
+          <h2 style={{ margin: 0, fontFamily: FONT.heading, fontSize: 18 }}>Scanned items</h2>
           <span role="status" style={{ fontFamily: FONT.heading, fontSize: 13, fontWeight: 600, color: C.orange }}>{formatVerified(priced)}</span>
         </div>
-        <p style={{ margin: "6px 0 12px", color: C.textMuted, fontSize: 13 }}>
-          Prices come from assemblies, or from a rate code when the line has one. Rejected hits stay off the quote.
+        <div className="es-stat-grid" style={{ margin: "12px 0" }}>
+          <SummaryStat label="Items scanned" value={String(rundown.scanned)} />
+          <SummaryStat label="Priced" value={String(rundown.priced)} />
+          <SummaryStat label="Not priced" value={String(rundown.unpriced)} tone={rundown.unpriced > 0 ? C.amber : C.green} />
+          <SummaryStat label="Total ex GST" value={`$${formatAud(rundown.total, true)}`} />
+        </div>
+        <p style={{ margin: "0 0 12px", color: C.textMuted, fontSize: 13 }}>
+          A line is priced when it has an assembly, a rate code, or a price. Rejected hits stay off the quote.
         </p>
         {ratesState === "loading" && (
           <p role="status" style={{ margin: "0 0 12px", color: C.textMuted, fontSize: 13 }}>Checking the rate library…</p>
@@ -268,20 +304,61 @@ export default function TakeoffWorkspace({
             commit(priced.map(row => row.id === item.id ? { ...row, desc: correction.correctedDesc, qty: correction.correctedQty, status: "confirmed" as const } : row));
           }}
         />
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {groups.map(group => (
-            <section key={group.id} aria-label={group.label} style={{ border: `1px solid ${C.border}`, borderRadius: RADIUS.lg, overflow: "hidden" }}>
-              <div className="es-group-head" style={{ padding: "10px 12px", background: C.bg, display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 8, alignItems: "center" }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 700 }}>{group.label}</div>
-                  <div style={{ fontSize: 12, color: C.textMuted, fontFamily: FONT.mono, overflowWrap: "anywhere" }}>
-                    {group.count} × {group.rate > 0 ? `$${Math.round(group.rate).toLocaleString("en-AU")}` : "No rate"}
-                    {group.rateCode ? ` · ${group.rateCode}` : ""}
-                  </div>
+        {rundown.gaps.length > 0 && (
+          <section aria-label="Not priced" style={{ border: `1px solid ${C.amber}`, borderRadius: RADIUS.lg, padding: 12, marginBottom: 16, background: C.amberSoft }}>
+            <h3 style={{ margin: "0 0 4px", fontSize: 16 }}>Not priced</h3>
+            <p style={{ margin: "0 0 10px", color: C.textMuted, fontSize: 13 }}>
+              These lines have no assembly, rate, or price. Assign one and they join the quote.
+            </p>
+            {rundown.gaps.map(row => (
+              <div key={row.item.id} style={{ padding: "10px 0", borderTop: `1px solid ${C.border}` }}>
+                <div style={{ fontWeight: 700 }}>{row.item.desc}</div>
+                <div style={{ fontSize: 13, color: C.textMuted }}>Qty {row.item.qty} · {row.category}</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+                  <select
+                    aria-label={`Assembly for ${row.item.desc}`}
+                    defaultValue=""
+                    onChange={event => {
+                      const assembly = assemblies.find(candidate => candidate.id === event.target.value);
+                      if (assembly) assignAssembly(row.item.id, assembly);
+                    }}
+                    style={fieldStyle}
+                  >
+                    <option value="">Assign assembly</option>
+                    {assemblies.map(assembly => <option key={assembly.id} value={assembly.id}>{assembly.name}</option>)}
+                  </select>
+                  <select
+                    aria-label={`Rate for ${row.item.desc}`}
+                    defaultValue=""
+                    onChange={event => { if (event.target.value) assignRate(row.item.id, event.target.value); }}
+                    style={fieldStyle}
+                  >
+                    <option value="">Assign rate</option>
+                    {rates.map(rate => <option key={rate.code} value={rate.code}>{rate.code} · {rate.description}</option>)}
+                  </select>
+                  <input
+                    aria-label={`Price for ${row.item.desc}`}
+                    inputMode="decimal"
+                    placeholder="Price"
+                    value={priceDraft[row.item.id] ?? ""}
+                    onChange={event => setPriceDraft(current => ({ ...current, [row.item.id]: event.target.value }))}
+                    style={{ ...fieldStyle, width: 110 }}
+                  />
+                  <button type="button" onClick={() => assignTypedPrice(row.item.id)} style={actionStyle(C.orange)}>Use price</button>
                 </div>
-                <div style={{ fontFamily: FONT.mono, fontWeight: 700 }}>${Math.round(group.lineTotal).toLocaleString("en-AU")}</div>
               </div>
-              {group.items.map(item => {
+            ))}
+          </section>
+        )}
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {rundown.groups.map(group => (
+            <section key={group.category} aria-label={group.category} style={{ border: `1px solid ${C.border}`, borderRadius: RADIUS.lg, overflow: "hidden" }}>
+              <div className="es-group-head" style={{ padding: "10px 12px", background: C.bg, display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                <div style={{ fontWeight: 700 }}>{group.category}</div>
+                <div style={{ fontFamily: FONT.mono, fontWeight: 700 }}>${formatAud(group.total, true)}</div>
+              </div>
+              {group.rows.map(row => {
+                const item = row.item;
                 const active = selectedId === item.id;
                 const rejected = item.status === "rejected";
                 const countId = `takeoff-count-${item.id}`;
@@ -298,7 +375,7 @@ export default function TakeoffWorkspace({
                       <button
                         type="button"
                         aria-pressed={active}
-                        onClick={() => setSelectedId(item.id)}
+                        onClick={() => { setSelectedId(item.id); if (file) setPlanOpen(true); }}
                         style={{
                           flex: 1,
                           minWidth: 0,
@@ -310,7 +387,13 @@ export default function TakeoffWorkspace({
                         }}
                       >
                         <div style={{ fontWeight: 600, textDecoration: rejected ? "line-through" : "none", overflowWrap: "anywhere" }}>{item.desc}</div>
-                        <div style={{ fontSize: 12, color: C.textMuted }}>{STATUS_LABEL[item.status || "ai"]}</div>
+                        <div style={{ fontSize: 12, color: C.textMuted }}>
+                          {STATUS_LABEL[item.status || "ai"]}
+                          {item.rateCode ? ` · ${item.rateCode}` : ""}
+                          {" · "}
+                          {item.qty} × {row.priced ? `$${formatAud(row.quote.sellUnit, true)}` : "No price"}
+                          {row.priced ? ` · $${formatAud(row.lineTotal, true)}` : ""}
+                        </div>
                       </button>
                       <label htmlFor={countId} style={{ fontSize: 12, color: C.textMuted, flexShrink: 0 }}>
                         Count
@@ -339,7 +422,7 @@ export default function TakeoffWorkspace({
               })}
             </section>
           ))}
-          {groups.length === 0 && (
+          {rundown.groups.length === 0 && (
             <div className="es-empty" role="status" aria-label="No detected items on this scan yet.">
               <p style={{ margin: 0, fontFamily: FONT.heading, fontWeight: 600, color: C.text }}>No detected items on this scan yet.</p>
               <p style={{ margin: "6px 0 0", color: C.textMuted, fontSize: 14 }}>Upload a plan, or add a symbol above, to populate the takeoff.</p>
@@ -375,6 +458,17 @@ export default function TakeoffWorkspace({
         </section>
       </Card>
       </div>
+      {file && !addGroup && (
+        <button
+          type="button"
+          aria-expanded={planOpen}
+          onClick={() => setPlanOpen(open => !open)}
+          style={{ ...actionStyle(C.text, true), alignSelf: "flex-start" }}
+        >
+          {planOpen ? "Hide plan" : "View on plan"}
+        </button>
+      )}
+      {planVisible && (file || addGroup) ? planCard : null}
     </div>
   );
 }
@@ -401,6 +495,25 @@ function storeCorrection(correction: DetectionCorrection) {
     }),
   }).catch(() => undefined);
 }
+
+function SummaryStat({ label, value, tone }: { label: string; value: string; tone?: string }) {
+  return (
+    <div style={{ padding: 12, borderRadius: 12, border: `1px solid ${C.border}`, background: C.bgCard }}>
+      <div style={{ fontSize: 12, color: C.textMuted }}>{label}</div>
+      <div style={{ marginTop: 4, fontSize: 22, fontWeight: 800, color: tone || C.text }}>{value}</div>
+    </div>
+  );
+}
+
+const fieldStyle: React.CSSProperties = {
+  minHeight: 44,
+  borderRadius: 10,
+  border: `1px solid ${C.border}`,
+  padding: "0 10px",
+  fontSize: 16,
+  background: C.bg,
+  color: C.text,
+};
 
 function actionStyle(color: string, ghost = false): React.CSSProperties {
   return {
