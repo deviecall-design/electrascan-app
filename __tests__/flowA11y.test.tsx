@@ -102,8 +102,8 @@ describe("takeoff, verification, and quote accessibility", () => {
     expect(screen.getByRole("button", { name: "Add GPOs" })).toHaveAttribute("aria-pressed", "true");
     const plan = screen.getByRole("group", { name: /placing GPOs/i });
     fireEvent.keyDown(plan, { key: "Enter" });
-    expect(await screen.findByRole("button", { name: "Confirm GPO on the plan" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Confirm GPO" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Confirm GPO" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "View on plan" })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Add Downlights" }));
     expect(screen.getByRole("button", { name: "Add Downlights" })).toHaveAttribute("aria-pressed", "true");

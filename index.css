@@ -395,10 +395,10 @@ table {
   align-items: start;
 }
 .es-takeoff {
-  display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.9fr);
+  display: flex;
+  flex-direction: column;
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
 }
 .es-pair {
   display: grid;
@@ -413,10 +413,7 @@ table {
 
 @media (min-width: 901px) {
   .es-takeoff-panel {
-    max-height: calc(100dvh - 150px);
-    overflow: auto;
-    position: sticky;
-    top: 12px;
+    min-width: 0;
   }
 }
 
