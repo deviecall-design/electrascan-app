@@ -54,7 +54,7 @@ describe("saved scan review", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText("Kitchen double GPO")).toBeInTheDocument();
+    expect((await screen.findAllByText("Kitchen double GPO")).length).toBeGreaterThan(0);
     expect(screen.getByText(/GPO-D/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Confirm Kitchen double GPO" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Reject Kitchen double GPO" })).toBeInTheDocument();

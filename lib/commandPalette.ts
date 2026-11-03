@@ -75,6 +75,13 @@ export const STATIC_PALETTE_ITEMS: PaletteItem[] = [
     keywords: ["diff", "variation"],
   },
   {
+    id: "nav-jobs",
+    group: "Navigate",
+    label: "Jobs",
+    to: "/jobs",
+    keywords: ["tracker", "margin", "actual", "cost"],
+  },
+  {
     id: "nav-projects",
     group: "Navigate",
     label: "Project Reports",

@@ -21,6 +21,7 @@ import { getActiveCompanyProfile } from "../services/companyProfile";
 import { getCurrentTenantId, VESH_TENANT_ID } from "../lib/tenants";
 import { authIsDisabled } from "../lib/authMode";
 import { fetchWorkspaceSettings, saveWorkspaceSettings } from "../services/workspaceSettings";
+import AssembliesCard from "../components/desktop/AssembliesCard";
 import { useToast } from "../contexts/ToastContext";
 
 const EMPTY_FORM: CompanyProfileInput = {
@@ -212,6 +213,7 @@ export default function SettingsScreen() {
 
       {!authIsDisabled() && <WorkspaceInvites />}
 
+      <AssembliesCard />
       <Footer />
     </div>
   );

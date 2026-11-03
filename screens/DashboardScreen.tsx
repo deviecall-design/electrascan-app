@@ -22,6 +22,7 @@ import { PrimaryButton } from "../components/ui/anthropic/Button";
 import useSupabaseQuery from "../hooks/useSupabaseQuery";
 import {
   fetchEstimates,
+  fetchRateLibrary,
   fetchScans,
   formatScanToQuote,
 } from "../services/supabaseData";
@@ -38,9 +39,11 @@ import {
 import { ariesPipelineInsight } from "../lib/ariesSuggestion";
 import QueryBanner from "../components/QueryBanner";
 import { timeGreeting } from "../lib/greeting";
-import { scanListStatus } from "../lib/scanRecord";
+import { readDetectedItems, scanListStatus } from "../lib/scanRecord";
 import { attentionFromPipeline } from "../lib/pipelineAttention";
-import { linesFromDetected, materialsExGst, reviewTakeoffIncGst } from "../lib/variationDiff";
+import { loadAssemblies, loadLabourRate } from "../lib/assemblies";
+import { priceItem } from "../lib/quoteSource";
+import { computeQuoteTotals, DEFAULT_MARGIN_PCT } from "../lib/quoteTotals";
 import { formatAuShortDateTime } from "../lib/dates";
 
 const STATUS_TONE: Record<string, { bg: string; fg: string }> = {
@@ -76,7 +79,20 @@ export default function DashboardScreen() {
     () => computeDashboardMoneyStats(liveEstimates, liveScans),
     [liveEstimates, liveScans],
   );
-  const reviewValue = useMemo(() => reviewTakeoffIncGst(liveScans), [liveScans]);
+  const { data: rates } = useSupabaseQuery(fetchRateLibrary);
+  const reviewValue = useMemo(() => {
+    const assemblies = loadAssemblies();
+    const labourRate = loadLabourRate();
+    const subtotal = liveScans
+      .filter((scan: { estimate_ref?: string | null }) => !scan.estimate_ref)
+      .reduce((sum: number, scan: { detected_items?: unknown }) => {
+        const sell = readDetectedItems(scan.detected_items)
+          .filter(item => item.status !== "rejected" && item.qty > 0)
+          .reduce((lineSum, item) => lineSum + item.qty * priceItem(item, rates, assemblies, labourRate).sellUnit, 0);
+        return sum + sell;
+      }, 0);
+    return computeQuoteTotals(subtotal, DEFAULT_MARGIN_PCT).total;
+  }, [liveScans, rates]);
   const showReviewTakeoff = !loading && stats.pendingValue <= 0 && reviewValue > 0;
 
   const attention = useMemo(
@@ -182,7 +198,7 @@ export default function DashboardScreen() {
                           {[
                             scan.client,
                             scan.items_detected != null ? `${scan.items_detected} items` : null,
-                            formatQuotedValue(materialsExGst(linesFromDetected(scan.detected_items))) + " materials",
+                            formatQuotedValue(readDetectedItems(scan.detected_items).filter((item: { status?: string; qty: number }) => item.status !== "rejected" && item.qty > 0).reduce((sum: number, item: { qty: number; rateCode?: string; desc: string; unitPrice?: number; symbol?: string }) => sum + item.qty * priceItem(item, rates, loadAssemblies(), loadLabourRate()).sellUnit, 0)) + " sell",
                             when !== "—" ? when : null,
                           ].filter(Boolean).join(" · ")}
                         </span>

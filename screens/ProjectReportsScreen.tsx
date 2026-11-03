@@ -6,8 +6,12 @@ import { PageHeader, Card, Footer, EmptyState } from "../components/ui/anthropic
 import { GhostButton } from "../components/ui/anthropic/Button";
 import useSupabaseQuery from "../hooks/useSupabaseQuery";
 import { fetchEstimates, fetchRateLibrary, fetchScans, fetchMilestoneClaimsForProject, submitMilestoneClaim, type MilestoneClaimRow } from "../services/supabaseData";
-import { labourExGst, linesFromDetected, linesOf, materialsExGst, takeoffIncGst } from "../lib/variationDiff";
+import { labourExGst, linesOf, takeoffIncGst } from "../lib/variationDiff";
 import type { RateLike } from "../lib/takeoff";
+import { loadAssemblies, loadLabourRate } from "../lib/assemblies";
+import { priceItem } from "../lib/quoteSource";
+import { readDetectedItems } from "../lib/scanRecord";
+import { draftInvoice, toMyobCsv, toXeroCsv, type DraftInvoice } from "../lib/invoiceExport";
 import { DEFAULT_MARGIN_PCT } from "../lib/quoteTotals";
 import { milestoneAfterSave } from "../lib/progressClaim";
 import { formatQuotedValue } from "../lib/estimateMoney";
@@ -94,8 +98,15 @@ function projectsFrom(estimates: any[], scans: any[], rates: RateLike[] = []): P
   const fromScans: ProjectRow[] = scans
     .filter(scan => !scan.estimate_ref || !quotedRefs.has(scan.estimate_ref))
     .map(scan => {
-      const lines = linesFromDetected(scan.detected_items, rates);
-      const subtotal = materialsExGst(lines);
+      const assemblies = loadAssemblies();
+      const labourRate = loadLabourRate();
+      const lines = readDetectedItems(scan.detected_items)
+        .filter(item => item.status !== "rejected" && item.qty > 0 && item.desc.trim())
+        .map(item => {
+          const quote = priceItem(item, rates, assemblies, labourRate);
+          return { description: item.desc.trim(), qty: item.qty, unitPrice: quote.sellUnit, labourUnit: quote.labourUnit };
+        });
+      const subtotal = lines.reduce((sum, line) => sum + line.qty * line.unitPrice, 0);
       return {
         id: `scan-${scan.id}`,
         client: scan.client ?? null,
@@ -107,7 +118,7 @@ function projectsFrom(estimates: any[], scans: any[], rates: RateLike[] = []): P
         reference: scan.estimate_ref ?? null,
         ref: scan.estimate_ref ?? null,
         items: lines.length,
-        labour: labourExGst(lines),
+        labour: lines.reduce((sum, line) => sum + line.qty * (line.labourUnit ?? 0), 0),
         lines,
       };
     });
@@ -154,6 +165,7 @@ export default function ProjectReportsScreen() {
 
   const [submitting, setSubmitting] = useState<string | null>(null);
   const [claimError, setClaimError] = useState<string | null>(null);
+  const [invoices, setInvoices] = useState<DraftInvoice[]>([]);
 
   const claimedTotal = milestones
     .filter(milestone => milestone.status !== "pending")
@@ -177,6 +189,29 @@ export default function ProjectReportsScreen() {
       ...prev,
       [projectKey]: milestones.map(row => row.id === milestone.id ? next : row),
     }));
+    const invoice = draftInvoice({
+      source: "milestone",
+      sourceRef: milestone.id,
+      jobName: selected?.project_name || projectKey,
+      clientName: selected?.client || "",
+      description: milestone.label,
+      amountExGst: Math.round(milestone.amount / 1.1),
+    });
+    setInvoices(current => [...current.filter(row => row.id !== invoice.id), invoice]);
+    fetch("/api/beta/records?kind=invoices", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source: invoice.source,
+        source_ref: invoice.sourceRef,
+        job_name: invoice.jobName,
+        client_name: invoice.clientName,
+        amount: invoice.amount,
+        tax: invoice.tax,
+        status: "draft",
+        lines: invoice.lines,
+      }),
+    }).catch(() => undefined);
     setSubmitting(null);
   }
 
@@ -248,7 +283,7 @@ export default function ProjectReportsScreen() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 20 }}>
         <Mini label="Contract value" value={pageLoading ? "—" : formatQuotedValue(contract)} hint={selected?.status === "review" ? "Takeoff inc GST, quote not sent" : "Quoted total inc GST"} icon={<DollarSign size={16} />} />
         <Mini label="Materials" value={pageLoading ? "—" : formatQuotedValue(Number(selected?.subtotal) || 0)} hint={`${selected?.items ?? 0} priced lines, ex GST`} icon={<DollarSign size={16} />} />
-        <Mini label="Labour" value={pageLoading ? "—" : formatQuotedValue(Number(selected?.labour) || 0)} hint={selected?.labour ? "Rate-library allowance, ex GST" : "No labour allowance on this takeoff"} icon={<DollarSign size={16} />} />
+        <Mini label="Labour" value={pageLoading ? "—" : formatQuotedValue(Number(selected?.labour) || 0)} hint="Included in the assembly sell price" icon={<DollarSign size={16} />} />
         <Mini label="Claimed" value={formatQuotedValue(claimedTotal)} hint="Saved claims only" icon={<CheckCircle2 size={16} />} />
         <Mini
           label={fromQuote ? "Quoted margin" : "Takeoff markup"}
@@ -286,6 +321,24 @@ export default function ProjectReportsScreen() {
           </div>
         ))}
       </Card>
+
+      {invoices.length > 0 && (
+        <Card style={{ padding: 22, marginTop: 16 }}>
+          <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>Draft invoices</h2>
+          <p style={{ margin: "0 0 12px", color: C.textMuted, fontSize: 14 }}>
+            An approved claim creates a draft here. Download the Xero or MYOB CSV now. A Xero push stays off until XERO_CLIENT_ID, XERO_CLIENT_SECRET, and XERO_REDIRECT_URI exist. MYOB has no invoice handler yet.
+          </p>
+          {invoices.map(invoice => (
+            <div key={invoice.id} style={{ padding: "8px 0", borderTop: `1px solid ${C.border}` }}>
+              {invoice.jobName} · {invoice.sourceRef} · {formatQuotedValue(invoice.amount)} ex GST · draft
+            </div>
+          ))}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+            <GhostButton onClick={() => downloadText("invoices-xero.csv", toXeroCsv(invoices))}>Download Xero CSV</GhostButton>
+            <GhostButton onClick={() => downloadText("invoices-myob.csv", toMyobCsv(invoices))}>Download MYOB CSV</GhostButton>
+          </div>
+        </Card>
+      )}
 
       <Resources projectKey={projectKey} />
 
@@ -369,6 +422,16 @@ function Resources({ projectKey }: { projectKey: string }) {
       </form>
     </Card>
   );
+}
+
+function downloadText(name: string, contents: string) {
+  const blob = new Blob([contents], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 const fieldStyle: React.CSSProperties = {
