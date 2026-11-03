@@ -8,6 +8,7 @@ import { loadAssemblies, loadLabourRate } from "../lib/assemblies";
 import { priceItem } from "../lib/quoteSource";
 import { readDetectedItems } from "../lib/scanRecord";
 import { compareJobCost, JOB_STAGES, STAGE_LABEL, jobKey, type JobStage } from "../lib/jobTracker";
+import { loadDefaultMargin, marginForQuote } from "../lib/margin";
 import { formatQuotedValue } from "../lib/estimateMoney";
 import QueryBanner from "../components/QueryBanner";
 
@@ -70,13 +71,15 @@ export default function JobsScreen() {
       {jobs.length === 0 && !loading && <p style={{ color: C.textMuted }}>No jobs yet. A scan becomes a job.</p>}
       {jobs.map(job => {
         const actual = actualFor(job.key);
+        const linked = (estimates as Array<{ client?: string | null; reference?: string | null; margin_pct?: number | null }>).filter(row => jobKey(row.client, "") === job.key);
+        const savedMargin = linked.find(row => typeof row.margin_pct === "number")?.margin_pct;
         const compare = compareJobCost({
           quotedSell: job.quoted,
+          quotedMarginPct: marginForQuote(savedMargin, loadDefaultMargin()),
           actualMaterials: actual.materials,
           actualHours: actual.hours,
           labourRate,
         });
-        const linked = (estimates as Array<{ client?: string | null; reference?: string | null }>).filter(row => jobKey(row.client, "") === job.key);
         return (
           <Card key={job.key} style={{ padding: 16, marginBottom: 12 }}>
             <div style={{ fontWeight: 800, fontSize: 18 }}>{job.name}</div>

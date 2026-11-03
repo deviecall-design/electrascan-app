@@ -43,7 +43,8 @@ import { readDetectedItems, scanListStatus } from "../lib/scanRecord";
 import { attentionFromPipeline } from "../lib/pipelineAttention";
 import { loadAssemblies, loadLabourRate } from "../lib/assemblies";
 import { priceItem } from "../lib/quoteSource";
-import { computeQuoteTotals, DEFAULT_MARGIN_PCT } from "../lib/quoteTotals";
+import { computeQuoteTotals } from "../lib/quoteTotals";
+import { loadDefaultMargin } from "../lib/margin";
 import { formatAuShortDateTime } from "../lib/dates";
 
 const STATUS_TONE: Record<string, { bg: string; fg: string }> = {
@@ -91,7 +92,7 @@ export default function DashboardScreen() {
           .reduce((lineSum, item) => lineSum + item.qty * priceItem(item, rates, assemblies, labourRate).sellUnit, 0);
         return sum + sell;
       }, 0);
-    return computeQuoteTotals(subtotal, DEFAULT_MARGIN_PCT).total;
+    return computeQuoteTotals(subtotal, loadDefaultMargin()).total;
   }, [liveScans, rates]);
   const showReviewTakeoff = !loading && stats.pendingValue <= 0 && reviewValue > 0;
 
@@ -216,7 +217,7 @@ export default function DashboardScreen() {
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <div style={{ borderRadius: 16, padding: 22, background: `linear-gradient(135deg, ${C.ink}, ${C.ink2})`, color: "#fff" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, color: "#dbe6ff" }}>
-              <Sparkles size={16} /> Aries insight
+              <Sparkles size={16} /> ElectraScan insight
             </div>
             <p style={{ margin: "12px 0 0", fontSize: 16, lineHeight: 1.45 }}>{ariesCopy}</p>
             <button

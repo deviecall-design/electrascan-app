@@ -9,6 +9,7 @@ import { APPROVAL_LABEL, type ApprovalStatus } from "../../lib/approvalStatus";
 import { downloadEstimatePDF } from "../../utils/estimatePdf";
 import { getActiveCompanyProfile } from "../../services/companyProfile";
 import { computeQuoteTotals, formatAud } from "../../lib/quoteTotals";
+import { clampMargin } from "../../lib/margin";
 import {
   GROUP_LABEL,
   billableItems,
@@ -108,6 +109,7 @@ export default function SignOrderStep({
   const [supplierEmail, setSupplierEmail] = useState("");
   const [materialLines, setMaterialLines] = useState<MaterialLine[]>([]);
   const [materialStatus, setMaterialStatus] = useState<MaterialStatus>("draft");
+  const [quoteMargin, setQuoteMargin] = useState(() => clampMargin(marginPct));
   const [supplierName, setSupplierName] = useState<string>(DEFAULT_SUPPLIER_NAME);
   const [supplierLink, setSupplierLink] = useState<string | null>(null);
   const [supplierNote, setSupplierNote] = useState<string | null>(null);
@@ -119,6 +121,10 @@ export default function SignOrderStep({
   useEffect(() => {
     if (approvalStatus) setApproval(approvalStatus);
   }, [approvalStatus]);
+
+  useEffect(() => {
+    setQuoteMargin(clampMargin(marginPct));
+  }, [marginPct]);
 
   useEffect(() => {
     let cancelled = false;
@@ -155,7 +161,8 @@ export default function SignOrderStep({
   const materialsSub = groups.reduce((sum, group) => sum + group.materials, 0);
   const labourSub = groups.reduce((sum, group) => sum + group.labour, 0);
   const subtotal = materialsSub + labourSub;
-  const totals = computeQuoteTotals(subtotal, marginPct);
+  const marginLocked = Boolean(quoteRef) || approval === "sent_for_signature" || approval === "approved" || approval === "materials_sent";
+  const totals = computeQuoteTotals(subtotal, quoteMargin);
   const verified = verifiedPercent(items);
   const verifiedLabel = formatVerified(items);
   const belowMinimum = minVerifiedPct != null && verified < minVerifiedPct;
@@ -188,7 +195,7 @@ export default function SignOrderStep({
       projectName: jobName,
       drawingFile: drawingFile ?? null,
       subtotal: totals.subtotal,
-      marginPct,
+      marginPct: quoteMargin,
       lineItems: [
         ...priced.lines.map(line => ({
           description: line.description,
@@ -245,7 +252,7 @@ export default function SignOrderStep({
           qty: line.qty,
           unitPrice: line.materialUnit + line.labourUnit,
         })),
-        marginPercent: marginPct,
+        marginPercent: quoteMargin,
       });
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Could not generate the PDF.");
@@ -348,6 +355,22 @@ export default function SignOrderStep({
             <Money label="Materials" value={materialsSub} />
             <Money label="Labour" value={labourSub} />
             <Money label="Subtotal ex GST" value={totals.subtotal} />
+            <label style={{ display: "block", marginTop: 8, fontSize: 13, color: C.textMuted }}>
+              Quote margin %
+              <input
+                aria-label="Quote margin percent"
+                inputMode="decimal"
+                value={quoteMargin}
+                disabled={marginLocked}
+                onChange={event => setQuoteMargin(clampMargin(event.target.value, quoteMargin))}
+                style={{ ...inputStyle, width: "100%", marginTop: 4 }}
+              />
+            </label>
+            {marginLocked && (
+              <p style={{ margin: "6px 0 0", fontSize: 13, color: C.textMuted }}>
+                This quote keeps the {totals.marginPct}% margin it was saved with.
+              </p>
+            )}
             <Money label={`Margin (${totals.marginPct}%)`} value={totals.marginAmount} />
             <Money label={`GST (${totals.gstRatePct}%)`} value={totals.gst} />
             <Money label="Total inc GST" value={totals.total} strong />

@@ -10,7 +10,7 @@ import { approvalsHref } from "../lib/approvalsLink";
 import { readDetectedItems, type StoredDetectedItem } from "../lib/scanRecord";
 import { formatVerified, verifiedFromEstimate } from "../lib/takeoff";
 import { APPROVAL_LABEL, approvalFromRow, type ApprovalStatus } from "../lib/approvalStatus";
-import { DEFAULT_MARGIN_PCT } from "../lib/quoteTotals";
+import { marginForQuote } from "../lib/margin";
 import { getActiveCompanyProfile } from "../services/companyProfile";
 import SignOrderStep from "../components/desktop/SignOrderStep";
 import QueryBanner from "../components/QueryBanner";
@@ -144,7 +144,7 @@ export default function ApprovalsScreen() {
                 drawingFile={selectedScan?.file_name || selectedEstimate?.drawing_file}
                 siteAddress={getActiveCompanyProfile().address || ""}
                 scanId={selectedScan?.id}
-                marginPct={typeof selectedEstimate?.margin_pct === "number" ? selectedEstimate.margin_pct : DEFAULT_MARGIN_PCT}
+                marginPct={marginForQuote(selectedEstimate?.margin_pct)}
                 minVerifiedPct={null}
                 approvalStatus={selectedEstimate ? statusOf(selectedEstimate) : "ready_for_approval"}
                 onApproval={next => {

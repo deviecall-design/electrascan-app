@@ -12,7 +12,7 @@ import { loadAssemblies, loadLabourRate } from "../lib/assemblies";
 import { priceItem } from "../lib/quoteSource";
 import { readDetectedItems } from "../lib/scanRecord";
 import { draftInvoice, toMyobCsv, toXeroCsv, type DraftInvoice } from "../lib/invoiceExport";
-import { DEFAULT_MARGIN_PCT } from "../lib/quoteTotals";
+import { loadDefaultMargin } from "../lib/margin";
 import { milestoneAfterSave } from "../lib/progressClaim";
 import { formatQuotedValue } from "../lib/estimateMoney";
 import QueryBanner from "../components/QueryBanner";
@@ -113,7 +113,7 @@ function projectsFrom(estimates: any[], scans: any[], rates: RateLike[] = []): P
         project_name: scan.file_name || scan.client || "Untitled scan",
         value: takeoffIncGst(lines),
         subtotal,
-        margin_pct: DEFAULT_MARGIN_PCT,
+        margin_pct: loadDefaultMargin(),
         status: scan.estimate_ref ? "draft" : "review",
         reference: scan.estimate_ref ?? null,
         ref: scan.estimate_ref ?? null,
@@ -239,7 +239,7 @@ export default function ProjectReportsScreen() {
   }
 
   const fromQuote = selected?.status !== "review";
-  const marginPct = typeof selected?.margin_pct === "number" ? selected.margin_pct : DEFAULT_MARGIN_PCT;
+  const marginPct = typeof selected?.margin_pct === "number" ? selected.margin_pct : loadDefaultMargin();
   const marginDollars = Math.round((Number(selected?.subtotal) || 0) * (marginPct / 100));
 
   return (

@@ -78,7 +78,9 @@ import { persistQuoteFromScan } from "../services/persistQuote";
 import { downloadEstimatePDF } from "../utils/estimatePdf";
 import SourcePlanPreview from "../components/SourcePlanPreview";
 import { ariesMarginSuggestion } from "../lib/ariesSuggestion";
-import { computeQuoteTotals, DEFAULT_MARGIN_PCT, formatAud, lineTotal as qtyRateTotal, roundCents } from "../lib/quoteTotals";
+import { computeQuoteTotals, formatAud, lineTotal as qtyRateTotal, roundCents } from "../lib/quoteTotals";
+import { clampMargin, loadDefaultMargin } from "../lib/margin";
+import { fetchWorkspaceSettings } from "../services/workspaceSettings";
 import { mapDetectionToQuoteItems, formatQtyRate, type ScanQuoteItem } from "../lib/scanQuote";
 import { rememberPlanContext, recallPlanContext } from "../lib/planContext";
 
@@ -387,7 +389,7 @@ export default function ScanDetailScreen() {
           items={detectedItems}
           file={sourceFile}
           fileName={fileName}
-          marginPct={getActiveCompanyProfile().defaultMargin ?? DEFAULT_MARGIN_PCT}
+          marginPct={loadDefaultMargin()}
           minVerifiedPct={minVerifiedPct}
           onChange={next => {
             skipTakeoffSave.current = false;
@@ -1339,13 +1341,23 @@ function StepQuote({
     return () => { cancelled = true; };
   }, []);
 
-  const marginPct = company.defaultMargin ?? DEFAULT_MARGIN_PCT;
+  const [marginPct, setMarginPct] = useState(loadDefaultMargin);
+  const [marginTouched, setMarginTouched] = useState(false);
   const subtotal = useMemo(() => takeoffSubtotal(allItems), [allItems]);
   const totals = computeQuoteTotals(subtotal, marginPct);
-  const ariesCopy = ariesMarginSuggestion({
+  const suggestion = ariesMarginSuggestion({
     clientName,
     marginPct,
   });
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchWorkspaceSettings().then(settings => {
+      if (cancelled || marginTouched) return;
+      setMarginPct(clampMargin(settings.defaultMarginPct));
+    });
+    return () => { cancelled = true; };
+  }, [marginTouched]);
 
   // Breakdown built by summing the detected lines in each category. This used
   // to be fixed percentages of the subtotal (12% power, 22% lighting, ...),
@@ -1557,7 +1569,7 @@ function StepQuote({
         </div>
       </div>
 
-      {/* Sidebar — totals + Aries + actions */}
+      {/* Sidebar — totals, suggestion, and actions */}
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         {/* Quoted total */}
         <Card style={{ padding: 20 }}>
@@ -1568,6 +1580,23 @@ function StepQuote({
           <div style={{ fontSize: 13, color: C.textMuted, fontStyle: "italic", marginTop: 8 }}>
             incl. GST · {source.reduce((sum, item) => sum + item.qty, 0)} symbols · {totals.marginPct}% margin
           </div>
+          <label style={{ display: "block", marginTop: 14, fontSize: 13, color: C.textMuted }}>
+            Quote margin %
+            <input
+              aria-label="Quote margin percent"
+              inputMode="decimal"
+              value={marginPct}
+              disabled={Boolean(saveMessage)}
+              onChange={event => {
+                setMarginTouched(true);
+                setMarginPct(clampMargin(event.target.value, marginPct));
+              }}
+              style={{ display: "block", width: "100%", minHeight: 44, marginTop: 6, borderRadius: 10, border: `1px solid ${C.border}`, padding: "0 12px", fontSize: 16, background: C.bg, color: C.text }}
+            />
+          </label>
+          {saveMessage && (
+            <p style={{ margin: "8px 0 0", fontSize: 13, color: C.textMuted }}>This quote keeps the {totals.marginPct}% margin it was saved with.</p>
+          )}
 
           {/* Materials/Labour used to be a fixed 55/45 split of the subtotal.
               The catalogue gives a single supply-and-install rate per item, so
@@ -1584,16 +1613,16 @@ function StepQuote({
           </div>
         </Card>
 
-        {/* Aries suggests */}
+        {/* ElectraScan suggests */}
         <Card style={{ padding: 18 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
             <Sparkles size={14} color={C.orange} />
             <span style={{ fontFamily: FONT.heading, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: C.textMuted }}>
-              Aries suggests
+              ElectraScan suggests
             </span>
           </div>
           <p style={{ margin: 0, fontSize: 14, lineHeight: 1.65 }}>
-            {ariesCopy}
+            {suggestion}
           </p>
         </Card>
 
