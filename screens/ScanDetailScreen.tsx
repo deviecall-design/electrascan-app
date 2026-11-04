@@ -20,6 +20,8 @@ import { publicScanFailure } from "../lib/scanFailure";
 import ScanFailure from "../components/ScanFailure";
 import { billableItems, canSendQuote, formatVerified, verifiedPercent } from "../lib/takeoff";
 import { estimateSubtotal, groupEstimateLines, scaleMemberQtys } from "../lib/groupEstimateLines";
+import { buildEstimateWorkbook, checkWorkbookUpload, linesFromDetections, workbookToArrayBuffer, type WorkbookPreview } from "../lib/estimateWorkbook";
+import EstimateBoard from "../components/desktop/EstimateBoard";
 import TakeoffWorkspace from "../components/desktop/TakeoffWorkspace";
 import { approvalsHref } from "../lib/approvalsLink";
 import { fetchWorkspaceSettings } from "../services/workspaceSettings";
@@ -79,7 +81,7 @@ import { persistQuoteFromScan } from "../services/persistQuote";
 import { downloadEstimatePDF } from "../utils/estimatePdf";
 import SourcePlanPreview from "../components/SourcePlanPreview";
 import { ariesMarginSuggestion } from "../lib/ariesSuggestion";
-import { computeQuoteTotals, formatAud, lineTotal as qtyRateTotal, roundCents } from "../lib/quoteTotals";
+import { computeQuoteTotals, lineTotal as qtyRateTotal } from "../lib/quoteTotals";
 import { clampMargin, loadDefaultMargin } from "../lib/margin";
 import { mapDetectionToQuoteItems, formatQtyRate, type ScanQuoteItem } from "../lib/scanQuote";
 import { rememberPlanContext, recallPlanContext } from "../lib/planContext";
@@ -95,6 +97,8 @@ interface DetectedItem extends ScanQuoteItem {
   manualPrice?: boolean;
   materialUnit?: number;
   labourUnit?: number;
+  unit?: string;
+  notes?: string;
 }
 
 /** Line total for an item: catalogue price when known, demo rates otherwise. */
@@ -121,6 +125,8 @@ function toStored(items: DetectedItem[]): StoredDetectedItem[] {
     ...(item.manualPrice ? { manualPrice: true as const } : {}),
     ...(typeof item.materialUnit === "number" ? { materialUnit: item.materialUnit } : {}),
     ...(typeof item.labourUnit === "number" ? { labourUnit: item.labourUnit } : {}),
+    ...(item.unit ? { unit: item.unit } : {}),
+    ...(item.notes ? { notes: item.notes } : {}),
     category: item.category,
     room: item.room,
     detectedType: item.detectedType,
@@ -1333,7 +1339,6 @@ function StepQuote({
   minVerifiedPct?: number | null;
   onSaved?: (reference: string) => void;
 }) {
-  const navigate = useNavigate();
   const allItems = propItems ?? [];
   const source = billableItems(allItems) as DetectedItem[];
   const verifiedLabel = formatVerified(allItems);
@@ -1344,6 +1349,9 @@ function StepQuote({
   const [pdfBusy, setPdfBusy] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [excelBusy, setExcelBusy] = useState(false);
+  const [excelError, setExcelError] = useState<string | null>(null);
+  const [excelPreview, setExcelPreview] = useState<WorkbookPreview | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1494,6 +1502,56 @@ function StepQuote({
     }
   }
 
+  const estimateId = estimateRef || "EST-DRAFT";
+  const marginLocked = Boolean(saveMessage);
+  const labourAmount = source.filter(item => !isUnpriced(item)).reduce((sum, item) => sum + item.qty * (item.labourUnit ?? 0), 0);
+  const labourShare = Math.min(subtotal, labourAmount);
+  const materialShare = Math.max(0, subtotal - labourShare);
+
+  function handleDownloadExcel() {
+    setExcelBusy(true);
+    setExcelError(null);
+    try {
+      const lines = linesFromDetections(source, estimateId);
+      const book = buildEstimateWorkbook({ estimateId, marginPct, lines });
+      const blob = new Blob([workbookToArrayBuffer(book)], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `${estimateId}.xlsx`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(link.href), 2000);
+    } catch (err) {
+      setExcelError(err instanceof Error ? err.message : "Could not build the workbook.");
+    } finally {
+      setExcelBusy(false);
+    }
+  }
+
+  async function handleExcelFile(file: File) {
+    setExcelError(null);
+    const checked = checkWorkbookUpload({
+      estimateId,
+      marginPct,
+      items: allItems,
+      file: await file.arrayBuffer(),
+      locked: marginLocked,
+    });
+    if (!checked.ok) {
+      setExcelPreview(null);
+      setExcelError(checked.error);
+      return;
+    }
+    setExcelPreview(checked);
+  }
+
+  function applyExcel() {
+    if (!excelPreview || !onChange) return;
+    onChange(excelPreview.next as DetectedItem[]);
+    setExcelPreview(null);
+  }
+
   const blockReason = source.length === 0
     ? "No billable lines on this quote yet. Confirm items on the takeoff first."
     : sendBlocked
@@ -1501,225 +1559,57 @@ function StepQuote({
       : null;
 
   return (
-    <div className="anim-in es-split es-quote" role="region" aria-label="Quote">
-      {/* Letterhead preview */}
-      <div style={{ backgroundColor: C.bgCard, border: `1px solid ${C.border}`, borderRadius: RADIUS.xl, overflow: "hidden", minWidth: 0 }}>
-        <div style={{ padding: "10px 16px", borderBottom: `1px solid ${C.border}`, backgroundColor: C.bg, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <span style={{ fontFamily: FONT.heading, fontSize: 12, fontWeight: 500, color: C.textMuted }}>Preview</span>
-          <span role="status" style={{ fontFamily: FONT.mono, fontSize: 12, color: C.textMuted, overflowWrap: "anywhere" }}>
-            {estimateRef ? `${estimateRef}.pdf` : "Loading estimate number"}
-          </span>
-        </div>
-        {/* The quote preview is a document, so it stays on light paper even in
-            the navy theme. Pin the text colour here: the inherited `C.text` is
-            near-white and would be invisible on this surface. */}
-        <div className="es-quote-frame">
-          <div
-            className="es-quote-paper"
-            style={{
-              backgroundColor: "#fff",
-              padding: 36,
-              boxShadow: "0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.04)",
-              minHeight: 540,
-              boxSizing: "border-box",
-            }}
-          >
-            {/* Letterhead header */}
-            <div className="es-quote-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 28, paddingBottom: 16, borderBottom: `2px solid ${C.paperText}` }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontFamily: FONT.heading, fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em", overflowWrap: "anywhere" }}>
-                  {company.name.replace(" Pty Ltd", "").replace(" Services", "")}
-                </div>
-                <div style={{ fontSize: 12, color: C.paperTextMuted, fontStyle: "italic", marginTop: 2, overflowWrap: "anywhere" }}>
-                  Licensed electrical contractor · NSW Lic. {company.licence}
-                </div>
-              </div>
-              <div style={{ textAlign: "right" }}>
-                <div style={{ fontFamily: FONT.heading, fontSize: 11, color: C.paperTextMuted, textTransform: "uppercase", letterSpacing: "0.1em" }}>Estimate</div>
-                <div style={{ fontFamily: FONT.mono, fontSize: 14, fontWeight: 500, whiteSpace: estimateRef ? "nowrap" : "normal" }}>
-                  {estimateRef ?? "Loading estimate number"}
-                </div>
-              </div>
-            </div>
-
-            {/* Prepared-for / scope */}
-            <div className="es-pair" style={{ marginBottom: 24, fontSize: 12 }}>
-              <div>
-                <div style={{ fontFamily: FONT.heading, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em", color: C.paperTextMuted, marginBottom: 4 }}>Prepared for</div>
-                {/* Was hardcoded to a fictional client (Bondi Tower Residences,
-                    Attn: Marco Petrou). On a document the contractor sends to a
-                    builder, invented recipient details are worse than a blank —
-                    so show a clear prompt until the client is set. */}
-                {clientName ? (
-                  <div style={{ fontWeight: 500 }}>{clientName}</div>
-                ) : (
-                  <div style={{ fontWeight: 500, fontStyle: "italic", color: C.paperTextMuted }}>Client not set</div>
-                )}
-              </div>
-              <div>
-                <div style={{ fontFamily: FONT.heading, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em", color: C.paperTextMuted, marginBottom: 4 }}>Scope</div>
-                <div style={{ fontWeight: 500 }}>Electrical fit-out</div>
-                <div style={{ color: C.paperTextMuted, fontStyle: "italic" }}>
-                  {sourceFileName ? `per ${sourceFileName}` : "per uploaded drawing"}
-                </div>
-              </div>
-            </div>
-
-            {/* Line items summary */}
-            <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 10 }}>{verifiedLabel}</div>
-            <div style={{ fontSize: 11, fontFamily: FONT.mono, color: C.paperTextMuted, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-              Line items · qty × rate
-            </div>
-            {groups.length === 0 ? (
-              <div className="es-empty" role="status" aria-label="No priced lines yet.">
-                <p style={{ margin: 0, fontWeight: 600, color: C.paperText }}>No priced lines yet.</p>
-                <p style={{ margin: "6px 0 0", color: C.paperTextMuted, fontSize: 13 }}>Confirm items on the takeoff and they will show on this quote.</p>
-              </div>
-            ) : groups.map(group => (
-              <div key={group.category} style={{ marginBottom: 10 }}>
-                <div className="es-quote-line" style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", padding: "6px 0", fontSize: 12, fontWeight: 600 }}>
-                  <span>{group.category}</span>
-                  <span style={{ fontFamily: FONT.mono, marginLeft: "auto", whiteSpace: "nowrap" }}>${formatAud(group.total)}</span>
-                </div>
-                {group.lines.map(line => (
-                  <div key={`${line.category}-${line.description}-${line.unitPrice}-${line.code || ""}`} className="es-quote-line" style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center", padding: "6px 0 6px 12px", borderBottom: `1px solid ${C.border}`, fontSize: 11, color: C.paperTextMuted }}>
-                    <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{line.description}</span>
-                    <span style={{ display: "inline-flex", gap: 6, alignItems: "center", marginLeft: "auto", flexWrap: "wrap" }}>
-                      <input
-                        aria-label={`Quantity for ${line.description}`}
-                        inputMode="numeric"
-                        value={line.qty}
-                        onChange={event => editGroupedLine(line.ids, { qty: Number(event.target.value) })}
-                        style={{ width: 64, minHeight: 44, fontSize: 16, borderRadius: 8, border: `1px solid ${C.border}`, padding: "0 8px" }}
-                      />
-                      <span style={{ fontFamily: FONT.mono, whiteSpace: "nowrap" }}>
-                        × ${formatAud(line.unitPrice)} = ${formatAud(line.lineAmount ?? line.qty * line.unitPrice)}
-                      </span>
-                      <input
-                        aria-label={`Price for ${line.description}`}
-                        inputMode="decimal"
-                        value={line.unitPrice}
-                        onChange={event => editGroupedLine(line.ids, { unitPrice: Number(event.target.value) })}
-                        style={{ width: 88, minHeight: 44, fontSize: 16, borderRadius: 8, border: `1px solid ${C.border}`, padding: "0 8px" }}
-                      />
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ))}
-
-            {/* Totals */}
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 18 }}>
-              <div className="es-quote-totals" style={{ width: "100%", maxWidth: 220, fontSize: 12 }}>
-                <LetterRow l="Subtotal"     v={`$${formatAud(totals.subtotal)}`} />
-                <LetterRow l={`Margin (${totals.marginPct}%)`} v={`$${formatAud(totals.marginAmount)}`} />
-                <LetterRow l={`GST (${totals.gstRatePct}%)`}    v={`$${formatAud(totals.gst)}`} />
-                <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0 0 0", marginTop: 6, borderTop: `2px solid ${C.paperText}`, fontFamily: FONT.heading, fontWeight: 600, fontSize: 14 }}>
-                  <span>Total</span>
-                  <span>${formatAud(totals.total)}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Sidebar — totals, suggestion, and actions */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        {/* Quoted total */}
-        <Card style={{ padding: 20 }}>
-          <div style={{ fontFamily: FONT.heading, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textMuted, marginBottom: 6 }}>Quoted total</div>
-          <div className="es-quote-total" style={{ fontFamily: FONT.heading, fontSize: 36, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1, overflowWrap: "anywhere" }}>
-            ${formatAud(totals.total, true)}
-          </div>
-          <div style={{ fontSize: 13, color: C.textMuted, fontStyle: "italic", marginTop: 8 }}>
-            incl. GST · {source.reduce((sum, item) => sum + item.qty, 0)} symbols · {totals.marginPct}% margin
-          </div>
-          <label style={{ display: "block", marginTop: 14, fontSize: 13, color: C.textMuted }}>
-            Quote margin %
-            <input
-              aria-label="Quote margin percent"
-              inputMode="decimal"
-              value={marginPct}
-              disabled={Boolean(saveMessage)}
-              onChange={event => {
-                setMarginTouched(true);
-                setMarginPct(clampMargin(event.target.value, marginPct));
-              }}
-              style={{ display: "block", width: "100%", minHeight: 44, marginTop: 6, borderRadius: 10, border: `1px solid ${C.border}`, padding: "0 12px", fontSize: 16, background: C.bg, color: C.text }}
-            />
-          </label>
-          {saveMessage && (
-            <p style={{ margin: "8px 0 0", fontSize: 13, color: C.textMuted }}>This quote keeps the {totals.marginPct}% margin it was saved with.</p>
-          )}
-
-          {/* Materials/Labour used to be a fixed 55/45 split of the subtotal.
-              The catalogue gives a single supply-and-install rate per item, so
-              that split was invented. These four are values we actually hold. */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 20 }}>
-            <MiniStat label="Subtotal ex GST" v={`$${formatAud(totals.subtotal, true)}`} />
-            <MiniStat label="GST"             v={`$${formatAud(totals.gst, true)}`} />
-            <MiniStat label="Margin"          v={`$${formatAud(totals.marginAmount, true)}`} tint={AA_GREEN} />
-            <MiniStat
-              label="Price required"
-              v={String(unpricedCount)}
-              tint={unpricedCount > 0 ? C.orange : undefined}
-            />
-          </div>
-        </Card>
-
-        {/* ElectraScan suggests */}
-        <Card style={{ padding: 18 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <Sparkles size={14} color={C.orange} />
-            <span style={{ fontFamily: FONT.heading, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: C.textMuted }}>
-              ElectraScan suggests
-            </span>
-          </div>
-          <p style={{ margin: 0, fontSize: 14, lineHeight: 1.65 }}>
-            {suggestion}
-          </p>
-        </Card>
-
-        {/* Actions */}
-        <div className="es-quote-actions" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {blockReason && (
-            <p id="quote-block-reason" role="status" aria-label={blockReason ?? undefined} style={{ margin: 0, fontSize: 13, color: source.length === 0 ? C.textMuted : C.amber }}>
-              {blockReason}
-            </p>
-          )}
-          <PrimaryButton
-            icon={<Send size={15} />}
-            onClick={handleSend}
-            disabled={saving || source.length === 0 || sendBlocked}
-            ariaBusy={saving}
-            ariaDescribedBy={blockReason ? "quote-block-reason" : undefined}
-          >
-            {saving ? "Saving…" : "Save for approval"}
-          </PrimaryButton>
-          <GhostButton
-            icon={<FileDown size={14} />}
-            onClick={handleDownloadPdf}
-            disabled={pdfBusy || source.length === 0}
-            ariaBusy={pdfBusy}
-          >
-            {pdfBusy ? "Preparing PDF…" : "Download PDF"}
-          </GhostButton>
-          {saveMessage && (
-            <p role="status" style={{ margin: 0, fontSize: 13, color: AA_GREEN, fontStyle: "italic" }}>{saveMessage}</p>
-          )}
-          {saveError && (
-            <p role="alert" style={{ margin: 0, fontSize: 13, color: C.red, fontStyle: "italic" }}>{saveError}</p>
-          )}
-          <GhostButton icon={<Copy size={14} />} disabled>
-            Duplicate as template
-          </GhostButton>
-        </div>
-
-        <GhostButton onClick={onBack} icon={<ArrowLeft size={14} />}>Back to review</GhostButton>
-        <GhostButton onClick={() => navigate('/detection/new')} icon={<Plus size={14} />}>New scan</GhostButton>
-      </div>
-    </div>
+    <EstimateBoard
+      companyName={company.name}
+      licence={company.licence}
+      estimateId={estimateId}
+      client={clientName || "Client not set"}
+      site={sourceFileName || "Site not set"}
+      status={saveMessage ? "Ready for approval" : "Draft"}
+      date={new Date().toLocaleDateString("en-AU")}
+      totals={totals}
+      marginPct={marginPct}
+      onMargin={value => {
+        setMarginTouched(true);
+        setMarginPct(clampMargin(value, marginPct));
+      }}
+      marginLocked={marginLocked}
+      lineCount={groups.reduce((sum, group) => sum + group.lines.length, 0)}
+      unpricedCount={unpricedCount}
+      materials={materialShare}
+      labour={labourShare}
+      sections={groups.map(group => ({
+        category: group.category,
+        total: group.total,
+        lines: group.lines.map(line => ({
+          key: `${line.category}-${line.description}-${line.unitPrice}-${line.code || ""}`,
+          description: line.description,
+          qty: line.qty,
+          unit: "ea",
+          rate: line.unitPrice,
+          total: line.lineAmount ?? line.qty * line.unitPrice,
+          ids: line.ids,
+        })),
+      }))}
+      onQty={(ids, qty) => editGroupedLine(ids, { qty })}
+      onRate={(ids, rate) => editGroupedLine(ids, { unitPrice: rate })}
+      onPdf={handleDownloadPdf}
+      pdfBusy={pdfBusy}
+      onExcel={handleDownloadExcel}
+      excelBusy={excelBusy}
+      onExcelFile={file => void handleExcelFile(file)}
+      excelError={excelError || saveError}
+      excelPreview={excelPreview}
+      onApplyExcel={applyExcel}
+      onDismissExcel={() => setExcelPreview(null)}
+      onSave={handleSend}
+      saveBusy={saving}
+      saveDisabled={saving || source.length === 0 || sendBlocked}
+      saveLabel={saving ? "Saving…" : "Save for approval"}
+      blockReason={blockReason}
+      suggestion={suggestion}
+      onBack={onBack}
+    />
   );
 }
 
@@ -1749,14 +1639,5 @@ function SignHandoff({
         <GhostButton onClick={onBack}>Back to price & send</GhostButton>
       </div>
     </Card>
-  );
-}
-
-function LetterRow({ l, v }: { l: string; v: string }) {
-  return (
-    <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", color: C.paperTextMuted }}>
-      <span>{l}</span>
-      <span style={{ fontFamily: FONT.mono, color: C.paperText }}>{v}</span>
-    </div>
   );
 }
