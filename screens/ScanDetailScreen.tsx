@@ -18,7 +18,8 @@ import { fetchScanById, insertScan, updateScan, ScanRow } from "../services/supa
 import { buildScanWrite, readDetectedItems, recallScanFile, rememberScanFile, type StoredDetectedItem } from "../lib/scanRecord";
 import { publicScanFailure } from "../lib/scanFailure";
 import ScanFailure from "../components/ScanFailure";
-import { billableItems, canSendQuote, formatVerified, groupTakeoff, takeoffSubtotal, verifiedPercent } from "../lib/takeoff";
+import { billableItems, canSendQuote, formatVerified, verifiedPercent } from "../lib/takeoff";
+import { estimateSubtotal, groupEstimateLines, scaleMemberQtys } from "../lib/groupEstimateLines";
 import TakeoffWorkspace from "../components/desktop/TakeoffWorkspace";
 import { approvalsHref } from "../lib/approvalsLink";
 import { fetchWorkspaceSettings } from "../services/workspaceSettings";
@@ -80,7 +81,6 @@ import SourcePlanPreview from "../components/SourcePlanPreview";
 import { ariesMarginSuggestion } from "../lib/ariesSuggestion";
 import { computeQuoteTotals, formatAud, lineTotal as qtyRateTotal, roundCents } from "../lib/quoteTotals";
 import { clampMargin, loadDefaultMargin } from "../lib/margin";
-import { fetchWorkspaceSettings } from "../services/workspaceSettings";
 import { mapDetectionToQuoteItems, formatQtyRate, type ScanQuoteItem } from "../lib/scanQuote";
 import { rememberPlanContext, recallPlanContext } from "../lib/planContext";
 
@@ -92,6 +92,9 @@ interface DetectedItem extends ScanQuoteItem {
   status?: StoredDetectedItem["status"];
   group?: string;
   marks?: StoredDetectedItem["marks"];
+  manualPrice?: boolean;
+  materialUnit?: number;
+  labourUnit?: number;
 }
 
 /** Line total for an item: catalogue price when known, demo rates otherwise. */
@@ -115,6 +118,9 @@ function toStored(items: DetectedItem[]): StoredDetectedItem[] {
     x: item.x,
     y: item.y,
     unitPrice: item.unitPrice,
+    ...(item.manualPrice ? { manualPrice: true as const } : {}),
+    ...(typeof item.materialUnit === "number" ? { materialUnit: item.materialUnit } : {}),
+    ...(typeof item.labourUnit === "number" ? { labourUnit: item.labourUnit } : {}),
     category: item.category,
     room: item.room,
     detectedType: item.detectedType,
@@ -401,6 +407,10 @@ export default function ScanDetailScreen() {
         <StepQuote
           onBack={() => setStep(2)}
           items={detectedItems}
+          onChange={next => {
+            skipTakeoffSave.current = false;
+            setDetectedItems(next);
+          }}
           clientName={clientLabel}
           sourceFileName={uploadedName || liveScan?.file_name}
           scanId={id}
@@ -1307,6 +1317,7 @@ function StepReview({
 function StepQuote({
   onBack,
   items: propItems,
+  onChange,
   clientName,
   sourceFileName,
   scanId,
@@ -1315,6 +1326,7 @@ function StepQuote({
 }: {
   onBack: () => void;
   items?: DetectedItem[];
+  onChange?: (items: DetectedItem[]) => void;
   clientName?: string;
   sourceFileName?: string;
   scanId?: string;
@@ -1343,7 +1355,15 @@ function StepQuote({
 
   const [marginPct, setMarginPct] = useState(loadDefaultMargin);
   const [marginTouched, setMarginTouched] = useState(false);
-  const subtotal = useMemo(() => takeoffSubtotal(allItems), [allItems]);
+  const pricedLines = useMemo(() => source.filter(item => !isUnpriced(item)).map(item => ({
+    description: item.desc,
+    qty: item.qty,
+    unitPrice: unitPriceOf(item),
+    category: item.category || "Other",
+    code: item.rateCode,
+    ids: [item.id],
+  })), [source]);
+  const subtotal = useMemo(() => estimateSubtotal(pricedLines), [pricedLines]);
   const totals = computeQuoteTotals(subtotal, marginPct);
   const suggestion = ariesMarginSuggestion({
     clientName,
@@ -1364,19 +1384,36 @@ function StepQuote({
   // which produced a plausible-looking quote with no relationship to the
   // drawing — including a "Cabling & conduit" line worth 30% of every job
   // whether or not any cable was detected.
-  const groups = useMemo(
-    () => groupTakeoff(allItems).filter(group => group.count > 0).map(group => ({
-      category: group.label,
-      total: group.lineTotal,
-      lines: group.items.filter(item => item.status !== "rejected" && item.qty > 0).map(item => ({
-        desc: item.desc,
-        qty: item.qty,
-        unitPrice: group.rate,
-        lineTotal: item.qty * group.rate,
-      })),
-    })),
-    [allItems],
-  );
+  const groups = useMemo(() => {
+    const buckets = new Map<string, ReturnType<typeof groupEstimateLines<typeof pricedLines[number]>>>();
+    for (const line of groupEstimateLines(pricedLines)) {
+      const list = buckets.get(line.category || "Other") ?? [];
+      list.push(line);
+      buckets.set(line.category || "Other", list);
+    }
+    return [...buckets.entries()].map(([category, lines]) => ({
+      category,
+      total: estimateSubtotal(lines),
+      lines,
+    }));
+  }, [pricedLines]);
+
+  function editGroupedLine(ids: number[] | undefined, patch: { qty?: number; unitPrice?: number }) {
+    if (!onChange || !ids?.length) return;
+    const idSet = new Set(ids);
+    const members = allItems.filter(item => idSet.has(item.id));
+    if (patch.unitPrice != null) {
+      const unitPrice = patch.unitPrice;
+      onChange(allItems.map(item => idSet.has(item.id)
+        ? { ...item, unitPrice, materialUnit: unitPrice, labourUnit: 0, manualPrice: true }
+        : item));
+      return;
+    }
+    if (patch.qty == null) return;
+    const scaled = scaleMemberQtys(members.map(item => item.qty), patch.qty);
+    const nextQty = new Map(members.map((item, index) => [item.id, scaled[index] ?? 0]));
+    onChange(allItems.map(item => nextQty.has(item.id) ? { ...item, qty: nextQty.get(item.id) ?? item.qty } : item));
+  }
 
   // Items detection found but could not price. They are excluded from the
   // subtotal above, so the quote must say so rather than reading as complete.
@@ -1445,6 +1482,8 @@ function StepQuote({
             description: it.desc,
             qty: it.qty,
             unitPrice: unitPriceOf(it),
+            category: it.category,
+            code: it.rateCode,
           })),
         marginPercent: marginPct,
       });
@@ -1540,13 +1579,29 @@ function StepQuote({
               <div key={group.category} style={{ marginBottom: 10 }}>
                 <div className="es-quote-line" style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", padding: "6px 0", fontSize: 12, fontWeight: 600 }}>
                   <span>{group.category}</span>
-                  <span style={{ fontFamily: FONT.mono, marginLeft: "auto", whiteSpace: "nowrap" }}>${Math.round(group.total).toLocaleString()}</span>
+                  <span style={{ fontFamily: FONT.mono, marginLeft: "auto", whiteSpace: "nowrap" }}>${formatAud(group.total)}</span>
                 </div>
-                {group.lines.map((line, i) => (
-                  <div key={`${line.desc}-${i}`} className="es-quote-line" style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", padding: "3px 0 3px 12px", borderBottom: `1px solid ${C.border}`, fontSize: 11, color: C.paperTextMuted }}>
-                    <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{line.desc}</span>
-                    <span style={{ fontFamily: FONT.mono, marginLeft: "auto", whiteSpace: "nowrap" }}>
-                      {formatQtyRate(line.qty, line.unitPrice)} = ${Math.round(line.lineTotal).toLocaleString()}
+                {group.lines.map(line => (
+                  <div key={`${line.category}-${line.description}-${line.unitPrice}-${line.code || ""}`} className="es-quote-line" style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center", padding: "6px 0 6px 12px", borderBottom: `1px solid ${C.border}`, fontSize: 11, color: C.paperTextMuted }}>
+                    <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{line.description}</span>
+                    <span style={{ display: "inline-flex", gap: 6, alignItems: "center", marginLeft: "auto", flexWrap: "wrap" }}>
+                      <input
+                        aria-label={`Quantity for ${line.description}`}
+                        inputMode="numeric"
+                        value={line.qty}
+                        onChange={event => editGroupedLine(line.ids, { qty: Number(event.target.value) })}
+                        style={{ width: 64, minHeight: 44, fontSize: 16, borderRadius: 8, border: `1px solid ${C.border}`, padding: "0 8px" }}
+                      />
+                      <span style={{ fontFamily: FONT.mono, whiteSpace: "nowrap" }}>
+                        × ${formatAud(line.unitPrice)} = ${formatAud(line.lineAmount ?? line.qty * line.unitPrice)}
+                      </span>
+                      <input
+                        aria-label={`Price for ${line.description}`}
+                        inputMode="decimal"
+                        value={line.unitPrice}
+                        onChange={event => editGroupedLine(line.ids, { unitPrice: Number(event.target.value) })}
+                        style={{ width: 88, minHeight: 44, fontSize: 16, borderRadius: 8, border: `1px solid ${C.border}`, padding: "0 8px" }}
+                      />
                     </span>
                   </div>
                 ))}
