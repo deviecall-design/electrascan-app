@@ -77,6 +77,13 @@ export default function JobBurndownScreen() {
   }, [scans, estimates, assemblies, labourRate, jobId]);
 
   useEffect(() => {
+    const main = document.querySelector(".es-main");
+    if (!main) return;
+    if (job.approved && !loading && !estimatesLoading) main.classList.add("es-approved-job");
+    return () => main.classList.remove("es-approved-job");
+  }, [job.approved, loading, estimatesLoading]);
+
+  useEffect(() => {
     const savedDates = readJson<Schedule>(`es-job-dates:${jobId}`);
     const savedActuals = readJson<ActualEntry[]>(`es-job-actuals:${jobId}`);
     if (savedDates?.start && savedDates.end) setSchedule(savedDates);
@@ -229,13 +236,16 @@ export default function JobBurndownScreen() {
         crumb="Jobs"
         title={job.name || "Job burndown"}
         sub={[job.reference, `${job.margin}% margin from the quote`].filter(Boolean).join(" · ")}
+        cta={<span className="es-approved-badge">Approved</span>}
       />
       <p style={{ marginTop: 0 }}>
         <Link to="/jobs">All jobs</Link>
         {job.reference ? <> · <Link to="/approvals">Approved quote {job.reference}</Link></> : null}
         {job.scanId ? <> · <Link to={`/detection/${job.scanId}`}>Takeoff</Link></> : null}
       </p>
-      {migrationNote && <p style={{ color: C.amber }}>{migrationNote}</p>}
+      {migrationNote && (
+        <p style={{ color: C.amber, background: C.amberSoft, borderRadius: 12, padding: "10px 12px" }}>{migrationNote}</p>
+      )}
 
       <div className="es-stat-grid" style={{ marginBottom: 16 }}>
         <Stat label="Budget burn" value={`${burn}%`} tone={tone === "red" ? C.red : tone === "amber" ? C.amber : C.green} />
@@ -243,7 +253,9 @@ export default function JobBurndownScreen() {
         <Stat label="Spent" value={formatQuotedValue(totals.cost)} />
         <Stat label="Remaining" value={formatQuotedValue(remaining)} />
       </div>
-      {warning && <p style={{ color: C.red, fontWeight: 700 }}>{warning}</p>}
+      {warning && (
+        <p style={{ color: C.red, fontWeight: 700, background: C.redSoft, borderRadius: 12, padding: "10px 12px" }}>{warning}</p>
+      )}
 
       <Card style={{ padding: 16, marginBottom: 16 }}>
         <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>Job dates</h2>
@@ -268,7 +280,7 @@ export default function JobBurndownScreen() {
       <Card style={{ padding: 16, marginBottom: 16 }}>
         <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>Hours</h2>
         <p style={{ margin: "0 0 8px", color: C.textMuted, fontSize: 14 }}>
-          Planned hours are the labour hours on the quoted assemblies ({job.hours} h). Actual hours come from the log.
+          Planned hours are the labour hours on the quoted assemblies ({Math.round(job.hours * 10) / 10} h). Actual hours come from the log.
         </p>
         <BurndownChart weeks={weeks} plannedKey="plannedHours" actualKey="actualHours" max={Math.max(job.hours, totals.hours, 1)} format={value => `${Math.round(value)} h`} />
       </Card>
