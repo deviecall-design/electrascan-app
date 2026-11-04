@@ -20,6 +20,7 @@ import {
 } from "../../lib/takeoff";
 import { loadAssemblies, loadLabourRate } from "../../lib/assemblies";
 import { priceItem } from "../../lib/quoteSource";
+import { groupEstimateLines } from "../../lib/groupEstimateLines";
 import { newSupplierToken, supplierPath, SUPPLIERS } from "../../lib/supplierLink";
 import type { StoredDetectedItem } from "../../lib/scanRecord";
 import {
@@ -63,16 +64,25 @@ function orderLines(items: StoredDetectedItem[], rates: RateLike[]): { lines: Or
   const source = confirmed.length > 0 ? confirmed : billableItems(items);
   return {
     usingDetected: confirmed.length === 0 && source.length > 0,
-    lines: source.map(item => {
+    lines: groupEstimateLines(source.map(item => {
       const quote = priceItem(item, rates, loadAssemblies(), loadLabourRate());
       return {
         description: item.desc || "Item",
         category: item.category || GROUP_LABEL[groupForItem(item)],
         qty: item.qty,
+        unitPrice: quote.sellUnit,
+        code: item.rateCode,
         materialUnit: quote.materialUnit,
         labourUnit: quote.labourUnit,
+        ids: [item.id],
       };
-    }),
+    })).map(line => ({
+      description: line.description,
+      category: line.category || "",
+      qty: line.qty,
+      materialUnit: line.materialUnit,
+      labourUnit: line.labourUnit,
+    })),
   };
 }
 
@@ -177,7 +187,7 @@ export default function SignOrderStep({
     })));
   }, [priced.lines]);
 
-  const materialCost = new Map(priced.lines.map(line => [line.description, line.materialUnit]));
+  const materialUnitAt = (index: number) => priced.lines[index]?.materialUnit ?? 0;
 
   async function saveQuote() {
     if (priced.lines.length === 0) {
@@ -249,6 +259,7 @@ export default function SignOrderStep({
         clientName,
         items: priced.lines.map(line => ({
           description: line.description,
+          category: line.category,
           qty: line.qty,
           unitPrice: line.materialUnit + line.labourUnit,
         })),
@@ -341,7 +352,7 @@ export default function SignOrderStep({
                 <span style={{ fontFamily: FONT.mono }}>{formatAud(group.materials + group.labour, true)}</span>
               </div>
               {group.lines.map(line => (
-                <div key={line.description} className="es-sign-line" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.4fr) repeat(3, minmax(72px, auto))", gap: 8, padding: "10px 0", borderTop: `1px solid ${C.border}`, fontSize: 14 }}>
+                <div key={`${line.description}-${line.materialUnit}-${line.labourUnit}`} className="es-sign-line" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.4fr) repeat(3, minmax(72px, auto))", gap: 8, padding: "10px 0", borderTop: `1px solid ${C.border}`, fontSize: 14 }}>
                   <span>{line.description}</span>
                   <span style={{ fontFamily: FONT.mono }}>{line.qty}</span>
                   <span style={{ fontFamily: FONT.mono }}>Labour {formatAud(line.qty * line.labourUnit, true)}</span>
@@ -382,12 +393,12 @@ export default function SignOrderStep({
           <p style={{ margin: "0 0 12px", color: C.textMuted, fontSize: 14 }}>
             Products and quantities only. The quote price is the assembly sell, or the rate code when the line has one. Nothing is emailed until you send it. The supplier link prices this request only.
           </p>
-          <div style={{ fontWeight: 700, marginBottom: 8 }}>Estimated materials {formatAud(materialLines.reduce((sum, line) => sum + line.qty * (materialCost.get(line.product) || 0), 0), true)}</div>
+          <div style={{ fontWeight: 700, marginBottom: 8 }}>Estimated materials {formatAud(materialLines.reduce((sum, line, index) => sum + line.qty * materialUnitAt(index), 0), true)}</div>
           {materialLines.map((line, index) => (
             <div key={`${line.product}-${index}`} className="es-sign-line" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.2fr) 88px minmax(100px, 1fr) minmax(100px, 1fr)", gap: 8, padding: "8px 0", borderTop: `1px solid ${C.border}` }}>
               <span>
                 {line.product}
-                <span style={{ display: "block", color: C.textMuted, fontSize: 12 }}>{formatAud((materialCost.get(line.product) || 0) * line.qty, true)}</span>
+                <span style={{ display: "block", color: C.textMuted, fontSize: 12 }}>{formatAud(materialUnitAt(index) * line.qty, true)}</span>
               </span>
               <input aria-label={`Quantity for ${line.product}`} inputMode="numeric" value={line.qty} onChange={event => updateMaterial(index, { qty: Number(event.target.value) || 0 })} style={inputStyle} />
               <input aria-label={`Brand for ${line.product}`} value={line.brand} placeholder="Brand" onChange={event => updateMaterial(index, { brand: event.target.value })} style={inputStyle} />
