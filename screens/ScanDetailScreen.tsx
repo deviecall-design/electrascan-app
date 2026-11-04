@@ -80,7 +80,6 @@ import SourcePlanPreview from "../components/SourcePlanPreview";
 import { ariesMarginSuggestion } from "../lib/ariesSuggestion";
 import { computeQuoteTotals, formatAud, lineTotal as qtyRateTotal, roundCents } from "../lib/quoteTotals";
 import { clampMargin, loadDefaultMargin } from "../lib/margin";
-import { fetchWorkspaceSettings } from "../services/workspaceSettings";
 import { mapDetectionToQuoteItems, formatQtyRate, type ScanQuoteItem } from "../lib/scanQuote";
 import { rememberPlanContext, recallPlanContext } from "../lib/planContext";
 
