@@ -35,6 +35,10 @@ export interface StoredDetectedItem {
   group?: string;
   /** One plan position per counted symbol. Percent of the preview, 0–100. */
   marks?: PlanMark[];
+  /** Unit of measure, such as ea. */
+  unit?: string;
+  /** Contractor note from the estimate or an Excel round-trip. */
+  notes?: string;
 }
 
 export type ScanStage = "upload" | "review" | "quote" | "sign" | "complete";
@@ -127,6 +131,8 @@ export function readDetectedItems(raw: unknown): StoredDetectedItem[] {
         : {}),
       ...(typeof record.group === "string" ? { group: record.group } : {}),
       ...(Array.isArray(record.marks) ? { marks: readMarks(record.marks) } : {}),
+      ...(typeof record.unit === "string" ? { unit: record.unit } : {}),
+      ...(typeof record.notes === "string" ? { notes: record.notes } : {}),
     });
   });
   return items;

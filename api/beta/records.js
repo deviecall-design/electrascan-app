@@ -9,14 +9,8 @@ const TABLES = {
   invoices: "draft_invoices",
   jobs: "job_records",
   prices: "contractor_price_lists",
-};
-
-const MIGRATION = {
-  prices: "20261105090000_contractor_price_list_and_scope.sql",
-  assemblies: "20261103140000_assemblies_reviews_supplier_invoices_jobs.sql",
-  corrections: "20261103140000_assemblies_reviews_supplier_invoices_jobs.sql",
-  invoices: "20261103140000_assemblies_reviews_supplier_invoices_jobs.sql",
-  jobs: "20261103140000_assemblies_reviews_supplier_invoices_jobs.sql",
+  actuals: "job_actuals",
+  schedules: "job_schedules",
 };
 
 function kindOf(req) {
@@ -28,11 +22,17 @@ function missingTable(result) {
   return /does not exist|PGRST205|42P01/i.test(`${result.error || ""} ${result.bodyText || ""}`);
 }
 
+function migrationFor(kind) {
+  if (kind === "actuals" || kind === "schedules") return "20261104040000_job_actuals.sql";
+  if (kind === "prices") return "20261105090000_contractor_price_list_and_scope.sql";
+  return "20261103140000_assemblies_reviews_supplier_invoices_jobs.sql";
+}
+
 export default async function handler(req, res) {
   if (!requireBeta(res)) return;
   const table = TABLES[kindOf(req)];
   if (!table) {
-    res.status(400).json({ error: "Choose assemblies, corrections, invoices, jobs, or prices." });
+    res.status(400).json({ error: "Choose assemblies, corrections, invoices, jobs, prices, actuals, or schedules." });
     return;
   }
 
@@ -40,7 +40,7 @@ export default async function handler(req, res) {
     const result = await readVesh(table, { order: "updated_at.desc", limit: 100 });
     const fallback = await (result.ok ? result : readVesh(table, { limit: 100 }));
     if (!fallback.ok && missingTable(fallback)) {
-      res.status(200).json({ data: [], migration: MIGRATION[kindOf(req)] || MIGRATION.assemblies });
+      res.status(200).json({ data: [], migration: migrationFor(kindOf(req)) });
       return;
     }
     sendResult(res, fallback.ok ? fallback : result, { data: Array.isArray((fallback.ok ? fallback : result).data) ? (fallback.ok ? fallback : result).data : [] });
@@ -51,7 +51,7 @@ export default async function handler(req, res) {
     const saved = await insertVesh(table, readBody(req));
     if (!saved.ok && missingTable(saved)) {
       res.status(503).json({
-        error: `Apply migration ${MIGRATION[kindOf(req)] || MIGRATION.assemblies} in the Supabase SQL editor. This browser copy is still kept locally.`,
+        error: `Apply migration ${migrationFor(kindOf(req))} in the Supabase SQL editor. This browser copy is still kept locally.`,
       });
       return;
     }

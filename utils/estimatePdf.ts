@@ -16,6 +16,7 @@ import jsPDF from "jspdf";
 import { CompanyProfile } from "../services/companyProfile";
 import { computeQuoteTotals, lineTotal as qtyRateTotal } from "../lib/quoteTotals";
 import type { ScopeOfWorks } from "../lib/scopeOfWorks";
+import { estimateSubtotal, groupEstimateLines } from "../lib/groupEstimateLines";
 
 // ─── Types ──────────────────────────────────────────────────────────────
 export interface EstimateLineItem {
@@ -23,6 +24,11 @@ export interface EstimateLineItem {
   room?: string;
   qty: number;
   unitPrice: number;
+  unit?: string;
+  category?: string;
+  code?: string;
+  /** Summed member line totals. Present after grouping so the printed total matches the ungrouped quote. */
+  lineAmount?: number;
 }
 
 export interface EstimatePDFInput {
@@ -144,23 +150,36 @@ async function drawHeader(
   documentTitle: string,
   documentNumber: string,
   date: string,
-  drawingFile?: string
+  drawingFile?: string,
+  banner = false,
 ): Promise<number> {
+  const rightEdge = PAGE.width - PAGE.marginX;
+  let top = PAGE.marginTop;
+  if (banner) {
+    doc.setFillColor(...hexToRgb(C.navy));
+    doc.rect(0, 0, PAGE.width, 16, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(255, 255, 255);
+    doc.text(company.name, PAGE.marginX, 10);
+    doc.setFontSize(10);
+    doc.text(documentNumber, rightEdge, 10, { align: "right" });
+    top = 22;
+  }
   // Logo (top-left)
   const logoUrl = company.logoUrl ?? "/logo-placeholder.svg";
   const logoData = await imageUrlToDataUrl(logoUrl, 240, 80);
   if (logoData) {
-    doc.addImage(logoData, "PNG", PAGE.marginX, PAGE.marginTop, 40, 13);
-  } else {
+    doc.addImage(logoData, "PNG", PAGE.marginX, top, 40, 13);
+  } else if (!banner) {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(14);
     doc.setTextColor(...hexToRgb(C.navy));
-    doc.text(company.name, PAGE.marginX, PAGE.marginTop + 8);
+    doc.text(company.name, PAGE.marginX, top + 8);
   }
 
   // Company contact block (top-right, right-aligned)
-  const rightEdge = PAGE.width - PAGE.marginX;
-  let y = PAGE.marginTop + 3;
+  let y = top + 3;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
   doc.setTextColor(...hexToRgb(C.navy));
@@ -177,7 +196,7 @@ async function drawHeader(
   doc.text(`${company.phone}  |  ${company.email}`, rightEdge, y, { align: "right" });
 
   // Divider
-  const dividerY = PAGE.marginTop + 22;
+  const dividerY = top + 22;
   doc.setDrawColor(...hexToRgb(C.border));
   doc.setLineWidth(0.2);
   doc.line(PAGE.marginX, dividerY, rightEdge, dividerY);
@@ -245,45 +264,75 @@ function drawEstimateTable(doc: jsPDF, startY: number, items: EstimateLineItem[]
   const rightEdge = PAGE.width - PAGE.marginX;
   const colX = {
     item: PAGE.marginX + 2,
-    qty: 130,
-    rate: 155,
+    qty: 118,
+    unit: 132,
+    rate: 158,
     total: rightEdge - 2,
   };
+  const sections = new Map<string, EstimateLineItem[]>();
+  for (const item of items) {
+    const name = item.category?.trim() || "Items";
+    const list = sections.get(name) ?? [];
+    list.push(item);
+    sections.set(name, list);
+  }
 
-  // Header
-  doc.setFillColor(...hexToRgb(C.lightBg));
-  doc.rect(PAGE.marginX, startY, rightEdge - PAGE.marginX, 8, "F");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(8);
-  doc.setTextColor(...hexToRgb(C.muted));
-  doc.text("ITEM", colX.item, startY + 5.5);
-  doc.text("QTY", colX.qty, startY + 5.5, { align: "right" });
-  doc.text("RATE", colX.rate, startY + 5.5, { align: "right" });
-  doc.text("TOTAL", colX.total, startY + 5.5, { align: "right" });
+  const paintHeader = (y: number) => {
+    doc.setFillColor(...hexToRgb(C.navy));
+    doc.rect(PAGE.marginX, y, rightEdge - PAGE.marginX, 8, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(255, 255, 255);
+    doc.text("ITEM", colX.item, y + 5.5);
+    doc.text("QTY", colX.qty, y + 5.5, { align: "right" });
+    doc.text("UNIT", colX.unit, y + 5.5, { align: "right" });
+    doc.text("RATE", colX.rate, y + 5.5, { align: "right" });
+    doc.text("TOTAL", colX.total, y + 5.5, { align: "right" });
+    return y + 8;
+  };
 
-  let y = startY + 8;
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-
-  items.forEach((it, idx) => {
-    // Page break
-    if (y > PAGE.height - PAGE.marginBottom - 60) {
+  let y = startY;
+  let sectionIndex = 0;
+  for (const [name, rows] of sections) {
+    if (y > PAGE.height - PAGE.marginBottom - 40) {
       doc.addPage();
       y = PAGE.marginTop;
     }
-    const rowH = 7;
-    if (idx % 2 === 1) {
-      doc.setFillColor(252, 252, 253);
-      doc.rect(PAGE.marginX, y, rightEdge - PAGE.marginX, rowH, "F");
-    }
-    const rowTotal = qtyRateTotal(it.qty, it.unitPrice);
-    doc.setTextColor(...hexToRgb(C.text));
-    doc.text(it.description, colX.item, y + 5);
-    doc.text(String(it.qty), colX.qty, y + 5, { align: "right" });
-    doc.text(money(it.unitPrice), colX.rate, y + 5, { align: "right" });
-    doc.text(money(rowTotal), colX.total, y + 5, { align: "right" });
-    y += rowH;
-  });
+    doc.setFillColor(...hexToRgb(C.lightBg));
+    doc.rect(PAGE.marginX, y, rightEdge - PAGE.marginX, 7, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(...hexToRgb(C.navy));
+    doc.text(name, PAGE.marginX + 2, y + 5);
+    const sectionTotal = rows.reduce((sum, row) => sum + (row.lineAmount ?? qtyRateTotal(row.qty, row.unitPrice)), 0);
+    doc.text(money(sectionTotal), rightEdge - 2, y + 5, { align: "right" });
+    y += 7;
+    y = paintHeader(y);
+    rows.forEach((it, idx) => {
+      if (y > PAGE.height - PAGE.marginBottom - 30) {
+        doc.addPage();
+        y = PAGE.marginTop;
+        y = paintHeader(y);
+      }
+      const rowH = 7;
+      if (idx % 2 === 1) {
+        doc.setFillColor(248, 250, 252);
+        doc.rect(PAGE.marginX, y, rightEdge - PAGE.marginX, rowH, "F");
+      }
+      const rowTotal = it.lineAmount ?? qtyRateTotal(it.qty, it.unitPrice);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(...hexToRgb(C.text));
+      doc.text(it.description, colX.item, y + 5);
+      doc.text(String(it.qty), colX.qty, y + 5, { align: "right" });
+      doc.text(it.unit || "ea", colX.unit, y + 5, { align: "right" });
+      doc.text(money(it.unitPrice), colX.rate, y + 5, { align: "right" });
+      doc.text(money(rowTotal), colX.total, y + 5, { align: "right" });
+      y += rowH;
+    });
+    sectionIndex += 1;
+    if (sectionIndex < sections.size) y += 3;
+  }
 
   doc.setDrawColor(...hexToRgb(C.border));
   doc.setLineWidth(0.2);
@@ -315,7 +364,13 @@ function drawTotals(
     ["GST (10%)", money(gst), C.muted],
   ];
 
-  let y = startY + 4;
+  const boxTop = startY + 2;
+  const boxH = 44;
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(...hexToRgb(C.border));
+  doc.roundedRect(labelX - 4, boxTop, rightEdge - (labelX - 4), boxH, 1.5, 1.5, "FD");
+
+  let y = boxTop + 6;
   rows.forEach(([label, value, color]) => {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
@@ -338,7 +393,7 @@ function drawTotals(
   doc.setFontSize(14);
   doc.setTextColor(...hexToRgb(C.green));
   doc.text(money(total), valueX, y, { align: "right" });
-  return y + 8;
+  return Math.max(y + 8, boxTop + boxH + 4);
 }
 
 // ─── Footer (terms + licence) ───────────────────────────────────────────
@@ -427,7 +482,8 @@ export async function generateEstimatePDF(input: EstimatePDFInput): Promise<Blob
     "ELECTRICAL ESTIMATE",
     input.estimateNumber,
     input.date,
-    input.drawingFile
+    input.drawingFile,
+    true,
   );
   const afterProjectY = drawProjectBlock(
     doc,
@@ -436,9 +492,10 @@ export async function generateEstimatePDF(input: EstimatePDFInput): Promise<Blob
     input.projectAddress,
     input.clientName
   );
-  const afterTableY = drawEstimateTable(doc, afterProjectY, input.items);
+  const groupedItems = groupEstimateLines(input.items);
+  const afterTableY = drawEstimateTable(doc, afterProjectY, groupedItems);
 
-  const subtotal = input.items.reduce((s, i) => s + qtyRateTotal(i.qty, i.unitPrice), 0);
+  const subtotal = estimateSubtotal(groupedItems);
   drawTotals(doc, afterTableY, subtotal, input.marginPercent);
 
   drawFooter(doc, input.company);

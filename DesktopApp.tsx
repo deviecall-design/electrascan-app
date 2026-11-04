@@ -39,6 +39,7 @@ import ApprovalsScreen from "./screens/ApprovalsScreen";
 import ProjectReportsScreen from "./screens/ProjectReportsScreen";
 import SettingsScreen from "./screens/SettingsScreen";
 import JobsScreen from "./screens/JobsScreen";
+import JobBurndownScreen from "./screens/JobBurndownScreen";
 import SupplierPortal from "./screens/SupplierPortal";
 import { authIsDisabled, loadAuthMode } from "./lib/authMode";
 
@@ -93,6 +94,7 @@ export default function DesktopApp() {
           <Route path="/variation-report"  element={<VariationReportScreen />} />
           <Route path="/approvals"         element={<ApprovalsScreen />} />
           <Route path="/projects"          element={<ProjectReportsScreen />} />
+          <Route path="/jobs/:jobKey/burndown" element={<JobBurndownScreen />} />
           <Route path="/jobs"              element={<JobsScreen />} />
           <Route path="/settings"          element={<SettingsScreen />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { C, FONT } from "../components/desktop/tokens";
 import { PageHeader, Card, Footer, EmptyState } from "../components/ui/anthropic";
 import useSupabaseQuery from "../hooks/useSupabaseQuery";
@@ -11,6 +11,7 @@ import { readDetectedItems, type StoredDetectedItem } from "../lib/scanRecord";
 import { formatVerified, verifiedFromEstimate } from "../lib/takeoff";
 import { APPROVAL_LABEL, approvalFromRow, type ApprovalStatus } from "../lib/approvalStatus";
 import { marginForQuote } from "../lib/margin";
+import { jobKey } from "../lib/jobTracker";
 import { getActiveCompanyProfile } from "../services/companyProfile";
 import SignOrderStep from "../components/desktop/SignOrderStep";
 import { readScopeFromEstimate } from "../lib/scopeOfWorks";
@@ -137,6 +138,11 @@ export default function ApprovalsScreen() {
           {(selectedScan || selectedEstimate) && (
             <div style={{ marginTop: 16 }}>
               {verified && <p style={{ marginTop: 0, color: C.orange, fontWeight: 600 }}>{verified}</p>}
+              {selectedEstimate && ["approved", "materials_sent"].includes(statusOf(selectedEstimate)) && (
+                <p style={{ marginTop: 0 }}>
+                  <Link to={`/jobs/${encodeURIComponent(jobKey(selectedEstimate.client, selectedEstimate.project_name))}/burndown`}>Open burndown</Link>
+                </p>
+              )}
               <SignOrderStep
                 items={items}
                 reference={reference}
