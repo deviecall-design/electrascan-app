@@ -322,6 +322,22 @@ table {
   flex-direction: column;
   background: var(--es-bg);
 }
+.es-main.es-approved-job {
+  background: linear-gradient(180deg, #dbe7ff 0, #eef3ff 240px, #f8fafc 560px);
+}
+.es-approved-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: #1f56e6;
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 12px;
+}
 .es-page {
   width: 100%;
   max-width: 1200px;
