@@ -15,6 +15,7 @@
 import jsPDF from "jspdf";
 import { CompanyProfile } from "../services/companyProfile";
 import { computeQuoteTotals, lineTotal as qtyRateTotal } from "../lib/quoteTotals";
+import type { ScopeOfWorks } from "../lib/scopeOfWorks";
 
 // ─── Types ──────────────────────────────────────────────────────────────
 export interface EstimateLineItem {
@@ -34,6 +35,7 @@ export interface EstimatePDFInput {
   clientName?: string;             // "Linda Habak Design"
   items: EstimateLineItem[];
   marginPercent: number;           // 15
+  scope?: ScopeOfWorks | null;
 }
 
 export interface VariationPDFInput {
@@ -365,6 +367,53 @@ function drawFooter(doc: jsPDF, company: CompanyProfile) {
   );
 }
 
+function drawScopePages(doc: jsPDF, scope: ScopeOfWorks, company: CompanyProfile, estimateNumber: string) {
+  const width = PAGE.width - PAGE.marginX * 2;
+  let y = PAGE.marginTop;
+  const write = (text: string, bold = false, size = 9) => {
+    doc.setFont("helvetica", bold ? "bold" : "normal");
+    doc.setFontSize(size);
+    doc.setTextColor(...hexToRgb(bold ? C.text : C.muted));
+    const lines = doc.splitTextToSize(text, width) as string[];
+    for (const line of lines) {
+      if (y > PAGE.height - PAGE.marginBottom - 10) {
+        drawFooter(doc, company);
+        doc.addPage();
+        y = PAGE.marginTop;
+      }
+      doc.text(line, PAGE.marginX, y);
+      y += size <= 9 ? 4.2 : 6;
+    }
+  };
+
+  doc.addPage();
+  y = PAGE.marginTop;
+  write("SCOPE OF WORKS", true, 16);
+  y += 1;
+  write(estimateNumber, false, 10);
+  y += 2;
+  write("Inclusions", true, 12);
+  for (const section of scope.inclusions) {
+    y += 1;
+    write(section.heading, true, 10);
+    for (const line of section.lines) write(`•  ${line}`);
+  }
+  y += 2;
+  write("Exclusions", true, 12);
+  for (const line of scope.exclusions) write(`•  ${line}`);
+  y += 2;
+  write("Assumptions", true, 12);
+  for (const line of scope.assumptions) write(`•  ${line}`);
+  y += 2;
+  write("Compliance", true, 12);
+  write(scope.compliance);
+  y += 2;
+  write("Clarifications", true, 12);
+  const notes = scope.clarifications.length > 0 ? scope.clarifications : ["None from this takeoff."];
+  for (const line of notes) write(`•  ${line}`);
+  drawFooter(doc, company);
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // Public API
 // ═══════════════════════════════════════════════════════════════════════
@@ -393,6 +442,7 @@ export async function generateEstimatePDF(input: EstimatePDFInput): Promise<Blob
   drawTotals(doc, afterTableY, subtotal, input.marginPercent);
 
   drawFooter(doc, input.company);
+  if (input.scope) drawScopePages(doc, input.scope, input.company, input.estimateNumber);
 
   return doc.output("blob");
 }

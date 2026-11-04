@@ -2,12 +2,14 @@
  * One price for a detected line.
  *
  * A rate code uses that rate-library row.
+ * Otherwise the workspace price list, when a row matches, supplies the material cost.
  * Otherwise an assembly supplies the sell price.
  * Otherwise the price already stored on the line is kept.
  * A keyword in the rate library never replaces a stored price.
  */
 
 import { matchAssembly, materialCostOf, type Assembly, DEFAULT_LABOUR_RATE } from "./assemblies";
+import type { StoredContractorPrice } from "./priceFile";
 import type { RateLike } from "./takeoff";
 
 export interface QuotePrice {
@@ -15,13 +17,44 @@ export interface QuotePrice {
   labourUnit: number;
   labourHours: number;
   sellUnit: number;
-  source: "rate" | "assembly" | "stored";
+  source: "rate" | "price-list" | "assembly" | "stored";
   assemblyId: string | null;
   assemblyName: string | null;
 }
 
 function round(n: number) {
   return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+function norm(value: string | undefined): string {
+  return (value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+/** Contractor file first by code, then by description, then by a confirmed assembly link. */
+export function findContractorPrice(
+  item: { rateCode?: string; desc?: string; symbol?: string; detectedType?: string; group?: string; category?: string },
+  priceList: StoredContractorPrice[],
+  assemblies: Assembly[],
+): StoredContractorPrice | null {
+  const priced = priceList.filter(row => row.cost > 0);
+  const code = (item.rateCode || "").trim().toLowerCase();
+  if (code) {
+    const hit = priced.find(row => row.code.trim().toLowerCase() === code);
+    if (hit) return hit;
+  }
+  const desc = norm(item.desc);
+  if (desc) {
+    const exact = priced.find(row => norm(row.description) === desc);
+    if (exact) return exact;
+  }
+  const assembly = matchAssembly(item, assemblies);
+  if (!assembly) return null;
+  const linked = priced.filter(row => row.assemblyId === assembly.id);
+  if (linked.length === 0) return null;
+  return linked.find(row => {
+    const label = norm(row.description);
+    return Boolean(label) && (desc.includes(label) || label.includes(desc));
+  }) ?? linked[0];
 }
 
 export function priceItem(
@@ -41,6 +74,7 @@ export function priceItem(
   rates: RateLike[] = [],
   assemblies: Assembly[] = [],
   labourRate: number = DEFAULT_LABOUR_RATE,
+  priceList: StoredContractorPrice[] = [],
 ): QuotePrice {
   if (item.manualPrice && typeof item.unitPrice === "number" && item.unitPrice > 0) {
     return storedPrice(item);
@@ -61,8 +95,26 @@ export function priceItem(
         assemblyName: null,
       };
     }
-    return storedPrice(item);
   }
+
+  const listed = findContractorPrice(item, priceList, assemblies);
+  if (listed) {
+    const assembly = matchAssembly(item, assemblies);
+    const materialUnit = round(listed.cost);
+    const labourHours = assembly ? Math.max(0, assembly.labourHours) : 0;
+    const labourUnit = round(labourHours * Math.max(0, labourRate));
+    return {
+      materialUnit,
+      labourUnit,
+      labourHours,
+      sellUnit: round(materialUnit + labourUnit),
+      source: "price-list",
+      assemblyId: assembly?.id ?? listed.assemblyId ?? null,
+      assemblyName: assembly?.name ?? null,
+    };
+  }
+
+  if (code) return storedPrice(item);
 
   const assembly = matchAssembly(item, assemblies);
   if (assembly) {

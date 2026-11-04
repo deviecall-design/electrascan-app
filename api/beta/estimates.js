@@ -24,7 +24,7 @@ const APPROVAL_TO_STATUS = {
 async function insertQuote(row) {
   let payload = { ...row };
   let saved = await insertVesh("estimates", payload);
-  for (const column of ["verified_pct", "approval_status"]) {
+  for (const column of ["verified_pct", "approval_status", "scope_of_works"]) {
     if (!saved.ok && missingColumn(saved, column)) {
       delete payload[column];
       payload = { ...payload };
@@ -107,6 +107,7 @@ function quotePayload(body) {
       ...(body.verified_pct == null || body.verified_pct === ""
         ? {}
         : { verified_pct: Math.max(0, Math.min(100, Math.round(Number(body.verified_pct)))) }),
+      ...(body.scope_of_works && typeof body.scope_of_works === "object" ? { scope_of_works: body.scope_of_works } : {}),
     },
   };
 }

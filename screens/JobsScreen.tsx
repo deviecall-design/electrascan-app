@@ -6,6 +6,7 @@ import useSupabaseQuery from "../hooks/useSupabaseQuery";
 import { fetchEstimates, fetchScans } from "../services/supabaseData";
 import { loadAssemblies, loadLabourRate } from "../lib/assemblies";
 import { priceItem } from "../lib/quoteSource";
+import { loadPriceList } from "../lib/contractorPrices";
 import { readDetectedItems } from "../lib/scanRecord";
 import { compareJobCost, JOB_STAGES, STAGE_LABEL, jobKey, type JobStage } from "../lib/jobTracker";
 import { loadDefaultMargin, marginForQuote } from "../lib/margin";
@@ -32,7 +33,7 @@ export default function JobsScreen() {
       const current = grouped.get(key) ?? { name: scan.client || scan.file_name || "Unassigned", quoted: 0, scanId: scan.id };
       const sell = readDetectedItems(scan.detected_items)
         .filter(item => item.status !== "rejected" && item.qty > 0)
-        .reduce((sum, item) => sum + item.qty * priceItem(item, [], assemblies, labourRate).sellUnit, 0);
+        .reduce((sum, item) => sum + item.qty * priceItem(item, [], assemblies, labourRate, loadPriceList()).sellUnit, 0);
       current.quoted += sell;
       grouped.set(key, current);
     }

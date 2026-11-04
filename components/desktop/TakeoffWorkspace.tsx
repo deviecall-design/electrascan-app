@@ -22,6 +22,7 @@ import {
 } from "../../lib/takeoff";
 import { loadAssemblies, loadLabourRate, type Assembly } from "../../lib/assemblies";
 import { priceItem } from "../../lib/quoteSource";
+import { loadPriceList } from "../../lib/contractorPrices";
 import { takeoffRundown } from "../../lib/takeoffRundown";
 import { legendFlags } from "../../lib/legendMatch";
 import { scanRecap, type DetectionCorrection } from "../../lib/reviewQueue";
@@ -82,9 +83,10 @@ export default function TakeoffWorkspace({
 
   const assemblies = loadAssemblies();
   const labourRate = loadLabourRate();
+  const priceList = loadPriceList();
   const rundown = useMemo(
-    () => takeoffRundown(items, rates, assemblies, labourRate),
-    [items, rates, assemblies, labourRate],
+    () => takeoffRundown(items, rates, assemblies, labourRate, priceList),
+    [items, rates, assemblies, labourRate, priceList],
   );
   const priced = useMemo(() => rundown.groups.flatMap(group => group.rows.map(row => ({
     ...row.item,
@@ -102,7 +104,7 @@ export default function TakeoffWorkspace({
 
   function commit(next: StoredDetectedItem[]) {
     onChange(next.map(item => {
-      const quote = priceItem(item, rates, assemblies, labourRate);
+      const quote = priceItem(item, rates, assemblies, labourRate, priceList);
       return { ...item, unitPrice: quote.sellUnit, materialUnit: quote.materialUnit, labourUnit: quote.labourUnit };
     }));
   }

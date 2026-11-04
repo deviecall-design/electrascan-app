@@ -19,6 +19,9 @@ import { buildScanWrite, readDetectedItems, recallScanFile, rememberScanFile, ty
 import { publicScanFailure } from "../lib/scanFailure";
 import ScanFailure from "../components/ScanFailure";
 import { billableItems, canSendQuote, formatVerified, groupTakeoff, takeoffSubtotal, verifiedPercent } from "../lib/takeoff";
+import { generateScope, scopeLineItem, type ScopeOfWorks } from "../lib/scopeOfWorks";
+import { loadAssemblies } from "../lib/assemblies";
+import ScopeOfWorksCard, { ScopePreview } from "../components/desktop/ScopeOfWorksCard";
 import TakeoffWorkspace from "../components/desktop/TakeoffWorkspace";
 import { approvalsHref } from "../lib/approvalsLink";
 import { fetchWorkspaceSettings } from "../services/workspaceSettings";
@@ -80,7 +83,6 @@ import SourcePlanPreview from "../components/SourcePlanPreview";
 import { ariesMarginSuggestion } from "../lib/ariesSuggestion";
 import { computeQuoteTotals, formatAud, lineTotal as qtyRateTotal, roundCents } from "../lib/quoteTotals";
 import { clampMargin, loadDefaultMargin } from "../lib/margin";
-import { fetchWorkspaceSettings } from "../services/workspaceSettings";
 import { mapDetectionToQuoteItems, formatQtyRate, type ScanQuoteItem } from "../lib/scanQuote";
 import { rememberPlanContext, recallPlanContext } from "../lib/planContext";
 
@@ -1332,6 +1334,18 @@ function StepQuote({
   const [pdfBusy, setPdfBusy] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const plan = useMemo(() => recallPlanContext(sourceFileName), [sourceFileName]);
+  const generatedScope = useMemo(() => generateScope({
+    items: allItems,
+    assemblies: loadAssemblies(),
+    legend: plan?.legend,
+    schedules: plan?.schedules,
+  }), [allItems, plan]);
+  const [scope, setScope] = useState<ScopeOfWorks>(generatedScope);
+  const [scopeEdited, setScopeEdited] = useState(false);
+  useEffect(() => {
+    if (!scopeEdited) setScope(generatedScope);
+  }, [generatedScope, scopeEdited]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1410,7 +1424,9 @@ function StepQuote({
       lineItems: [
         ...persistItems,
         { description: "Takeoff verified", qty: 0, unitPrice: 0, meta: "takeoff", verifiedPct: verifiedPercent(allItems) },
+        scopeLineItem(scope),
       ],
+      scopeOfWorks: scope,
       approvalStatus: "ready_for_approval",
       scanId,
       verifiedPct: verifiedPercent(allItems),
@@ -1447,6 +1463,7 @@ function StepQuote({
             unitPrice: unitPriceOf(it),
           })),
         marginPercent: marginPct,
+        scope,
       });
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Could not generate the PDF.");
@@ -1463,6 +1480,7 @@ function StepQuote({
 
   return (
     <div className="anim-in es-split es-quote" role="region" aria-label="Quote">
+      <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
       {/* Letterhead preview */}
       <div style={{ backgroundColor: C.bgCard, border: `1px solid ${C.border}`, borderRadius: RADIUS.xl, overflow: "hidden", minWidth: 0 }}>
         <div style={{ padding: "10px 16px", borderBottom: `1px solid ${C.border}`, backgroundColor: C.bg, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -1565,8 +1583,17 @@ function StepQuote({
                 </div>
               </div>
             </div>
+            <ScopePreview scope={scope} paper />
           </div>
         </div>
+      </div>
+      <Card style={{ padding: 18 }}>
+        <ScopeOfWorksCard
+          scope={scope}
+          onChange={next => { setScopeEdited(true); setScope(next); }}
+          onRebuild={() => { setScopeEdited(false); setScope(generatedScope); }}
+        />
+      </Card>
       </div>
 
       {/* Sidebar — totals, suggestion, and actions */}

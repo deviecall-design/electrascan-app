@@ -10,6 +10,8 @@ import { labourExGst, linesOf, takeoffIncGst } from "../lib/variationDiff";
 import type { RateLike } from "../lib/takeoff";
 import { loadAssemblies, loadLabourRate } from "../lib/assemblies";
 import { priceItem } from "../lib/quoteSource";
+import { loadPriceList } from "../lib/contractorPrices";
+import type { StoredContractorPrice } from "../lib/priceFile";
 import { readDetectedItems } from "../lib/scanRecord";
 import { draftInvoice, toMyobCsv, toXeroCsv, type DraftInvoice } from "../lib/invoiceExport";
 import { loadDefaultMargin } from "../lib/margin";
@@ -76,7 +78,7 @@ interface ProjectRow {
   lines: { description: string; qty: number; unitPrice: number; labourUnit?: number }[];
 }
 
-function projectsFrom(estimates: any[], scans: any[], rates: RateLike[] = []): ProjectRow[] {
+function projectsFrom(estimates: any[], scans: any[], rates: RateLike[] = [], priceList: StoredContractorPrice[] = []): ProjectRow[] {
   const fromEstimates: ProjectRow[] = estimates.map(row => {
     const lines = linesOf(row);
     return {
@@ -103,7 +105,7 @@ function projectsFrom(estimates: any[], scans: any[], rates: RateLike[] = []): P
       const lines = readDetectedItems(scan.detected_items)
         .filter(item => item.status !== "rejected" && item.qty > 0 && item.desc.trim())
         .map(item => {
-          const quote = priceItem(item, rates, assemblies, labourRate);
+          const quote = priceItem(item, rates, assemblies, labourRate, priceList);
           return { description: item.desc.trim(), qty: item.qty, unitPrice: quote.sellUnit, labourUnit: quote.labourUnit };
         });
       const subtotal = lines.reduce((sum, line) => sum + line.qty * line.unitPrice, 0);
@@ -130,9 +132,10 @@ export default function ProjectReportsScreen() {
   const { data: estimates, loading, error } = useSupabaseQuery(fetchEstimates);
   const { data: scans, loading: scansLoading, error: scansError } = useSupabaseQuery(fetchScans);
   const { data: rates } = useSupabaseQuery(fetchRateLibrary);
+  const priceList = loadPriceList();
   const projects = useMemo(
-    () => projectsFrom(estimates, scans, rates as RateLike[]),
-    [estimates, scans, rates],
+    () => projectsFrom(estimates, scans, rates as RateLike[], priceList),
+    [estimates, scans, rates, priceList],
   );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = projects.find(row => row.id === selectedId) ?? projects[0] ?? null;
