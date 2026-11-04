@@ -71,7 +71,8 @@ export default function JobsScreen() {
       {jobs.length === 0 && !loading && <p style={{ color: C.textMuted }}>No jobs yet. A scan becomes a job.</p>}
       {jobs.map(job => {
         const actual = actualFor(job.key);
-        const linked = (estimates as Array<{ client?: string | null; reference?: string | null; margin_pct?: number | null }>).filter(row => jobKey(row.client, "") === job.key);
+        const linked = (estimates as Array<{ client?: string | null; reference?: string | null; margin_pct?: number | null; status?: string | null; approval_status?: string | null }>).filter(row => jobKey(row.client, "") === job.key);
+        const approved = linked.some(row => row.status === "approved" || row.approval_status === "approved" || row.approval_status === "materials_sent");
         const savedMargin = linked.find(row => typeof row.margin_pct === "number")?.margin_pct;
         const compare = compareJobCost({
           quotedSell: job.quoted,
@@ -113,6 +114,7 @@ export default function JobsScreen() {
               Actual cost {formatQuotedValue(compare.actualCost)} · margin {formatQuotedValue(compare.marginDollars)}
             </p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 12, fontSize: 14 }}>
+              {approved && <Link to={`/jobs/${encodeURIComponent(job.key)}/burndown`}>Burndown</Link>}
               {job.scanId && <Link to={`/detection/${job.scanId}`}>Takeoff</Link>}
               <Link to="/projects">Milestones and invoices</Link>
               <Link to="/variation-report">Variations</Link>
