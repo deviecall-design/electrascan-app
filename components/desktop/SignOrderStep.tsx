@@ -20,6 +20,10 @@ import {
 } from "../../lib/takeoff";
 import { loadAssemblies, loadLabourRate } from "../../lib/assemblies";
 import { priceItem } from "../../lib/quoteSource";
+import { loadPriceList } from "../../lib/contractorPrices";
+import { generateScope, scopeLineItem, type ScopeOfWorks } from "../../lib/scopeOfWorks";
+import ScopeOfWorksCard, { ScopePreview } from "./ScopeOfWorksCard";
+import { recallPlanContext } from "../../lib/planContext";
 import { groupEstimateLines } from "../../lib/groupEstimateLines";
 import { newSupplierToken, supplierPath, SUPPLIERS } from "../../lib/supplierLink";
 import type { StoredDetectedItem } from "../../lib/scanRecord";
@@ -46,6 +50,7 @@ interface Props {
   marginPct: number;
   minVerifiedPct: number | null;
   approvalStatus?: ApprovalStatus | null;
+  initialScope?: ScopeOfWorks | null;
   onBack: () => void;
   onSaved: (reference: string) => void;
   onApproval?: (status: ApprovalStatus) => void;
@@ -65,7 +70,7 @@ function orderLines(items: StoredDetectedItem[], rates: RateLike[]): { lines: Or
   return {
     usingDetected: confirmed.length === 0 && source.length > 0,
     lines: groupEstimateLines(source.map(item => {
-      const quote = priceItem(item, rates, loadAssemblies(), loadLabourRate());
+      const quote = priceItem(item, rates, loadAssemblies(), loadLabourRate(), loadPriceList());
       return {
         description: item.desc || "Item",
         category: item.category || GROUP_LABEL[groupForItem(item)],
@@ -97,6 +102,7 @@ export default function SignOrderStep({
   marginPct,
   minVerifiedPct,
   approvalStatus,
+  initialScope = null,
   onBack,
   onSaved,
   onApproval,
@@ -153,6 +159,28 @@ export default function SignOrderStep({
   }, []);
 
   const priced = useMemo(() => orderLines(items, rates), [items, rates]);
+  const scopeKey = items.map(item => `${item.id}|${item.desc}|${item.qty}|${item.room || ""}|${item.conf}|${item.unitPrice ?? ""}|${item.status || ""}`).join(";");
+  const generatedScope = useMemo(() => {
+    const plan = recallPlanContext(drawingFile);
+    return generateScope({
+      items,
+      assemblies: loadAssemblies(),
+      legend: plan?.legend,
+      schedules: plan?.schedules,
+    });
+  }, [scopeKey, drawingFile]);
+  const [scope, setScope] = useState<ScopeOfWorks>(initialScope || generatedScope);
+  const [scopeEdited, setScopeEdited] = useState(Boolean(initialScope));
+  const savedScopeKey = initialScope ? JSON.stringify(initialScope) : "";
+  useEffect(() => {
+    if (!savedScopeKey || scopeEdited) return;
+    setScope(initialScope as ScopeOfWorks);
+    setScopeEdited(true);
+  }, [savedScopeKey, scopeEdited, initialScope]);
+  useEffect(() => {
+    if (scopeEdited || savedScopeKey) return;
+    setScope(generatedScope);
+  }, [generatedScope, scopeEdited, savedScopeKey]);
   const groups = useMemo(() => {
     const map = new Map<string, OrderLine[]>();
     for (const line of priced.lines) {
@@ -216,7 +244,9 @@ export default function SignOrderStep({
           labourUnit: line.labourUnit,
         })),
         { description: "Takeoff verified", qty: 0, unitPrice: 0, meta: "takeoff", verifiedPct: verified },
+        scopeLineItem(scope),
       ],
+      scopeOfWorks: scope,
       approvalStatus: "ready_for_approval",
       scanId,
       verifiedPct: verified,
@@ -264,6 +294,7 @@ export default function SignOrderStep({
           unitPrice: line.materialUnit + line.labourUnit,
         })),
         marginPercent: quoteMargin,
+        scope,
       });
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Could not generate the PDF.");
@@ -362,6 +393,7 @@ export default function SignOrderStep({
             </section>
           ))}
           {groups.length === 0 && <p style={{ color: C.textMuted }}>This scan has no priced lines yet.</p>}
+          <ScopePreview scope={scope} />
           <div style={{ marginTop: 16, borderTop: `2px solid ${C.text}`, paddingTop: 10 }}>
             <Money label="Materials" value={materialsSub} />
             <Money label="Labour" value={labourSub} />
@@ -386,6 +418,14 @@ export default function SignOrderStep({
             <Money label={`GST (${totals.gstRatePct}%)`} value={totals.gst} />
             <Money label="Total inc GST" value={totals.total} strong />
           </div>
+        </Card>
+
+        <Card style={{ padding: 22 }}>
+          <ScopeOfWorksCard
+            scope={scope}
+            onChange={next => { setScopeEdited(true); setScope(next); }}
+            onRebuild={() => { setScopeEdited(false); setScope(generatedScope); }}
+          />
         </Card>
 
         <Card style={{ padding: 22 }}>

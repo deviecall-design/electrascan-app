@@ -8,6 +8,7 @@ const TABLES = {
   corrections: "detection_corrections",
   invoices: "draft_invoices",
   jobs: "job_records",
+  prices: "contractor_price_lists",
   actuals: "job_actuals",
   schedules: "job_schedules",
 };
@@ -23,6 +24,7 @@ function missingTable(result) {
 
 function migrationFor(kind) {
   if (kind === "actuals" || kind === "schedules") return "20261104040000_job_actuals.sql";
+  if (kind === "prices") return "20261105090000_contractor_price_list_and_scope.sql";
   return "20261103140000_assemblies_reviews_supplier_invoices_jobs.sql";
 }
 
@@ -30,7 +32,7 @@ export default async function handler(req, res) {
   if (!requireBeta(res)) return;
   const table = TABLES[kindOf(req)];
   if (!table) {
-    res.status(400).json({ error: "Choose assemblies, corrections, invoices, or jobs." });
+    res.status(400).json({ error: "Choose assemblies, corrections, invoices, jobs, prices, actuals, or schedules." });
     return;
   }
 

@@ -12,6 +12,7 @@ import { authIsDisabled } from "../lib/authMode";
 import { quotePersistFields } from "../lib/estimateMoney";
 import { estimateStatusFor, type ApprovalStatus } from "../lib/approvalStatus";
 import { updateScan } from "./supabaseData";
+import type { ScopeOfWorks } from "../lib/scopeOfWorks";
 
 export interface PersistQuoteInput {
   client: string;
@@ -24,6 +25,7 @@ export interface PersistQuoteInput {
   approvalStatus?: ApprovalStatus;
   scanId?: string | null;
   verifiedPct?: number | null;
+  scopeOfWorks?: ScopeOfWorks | null;
 }
 
 export type PersistQuoteResult =
@@ -57,6 +59,7 @@ export async function persistQuoteFromScan(
     days_since_sent: 0,
     ...money,
     ...(input.verifiedPct == null ? {} : { verified_pct: input.verifiedPct }),
+    ...(input.scopeOfWorks ? { scope_of_works: input.scopeOfWorks } : {}),
   };
 
   let res: Response;

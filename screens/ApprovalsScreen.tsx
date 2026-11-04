@@ -14,6 +14,7 @@ import { marginForQuote } from "../lib/margin";
 import { jobKey } from "../lib/jobTracker";
 import { getActiveCompanyProfile } from "../services/companyProfile";
 import SignOrderStep from "../components/desktop/SignOrderStep";
+import { readScopeFromEstimate } from "../lib/scopeOfWorks";
 import QueryBanner from "../components/QueryBanner";
 
 interface MaterialRequestRow {
@@ -153,6 +154,7 @@ export default function ApprovalsScreen() {
                 marginPct={marginForQuote(selectedEstimate?.margin_pct)}
                 minVerifiedPct={null}
                 approvalStatus={selectedEstimate ? statusOf(selectedEstimate) : "ready_for_approval"}
+                initialScope={readScopeFromEstimate(selectedEstimate)}
                 onApproval={next => {
                   if (reference) setApprovalOverrides(current => ({ ...current, [reference]: next }));
                 }}

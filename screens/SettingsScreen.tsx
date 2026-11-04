@@ -23,6 +23,7 @@ import { authIsDisabled } from "../lib/authMode";
 import { fetchWorkspaceSettings, saveWorkspaceSettings } from "../services/workspaceSettings";
 import { loadDefaultMargin } from "../lib/margin";
 import AssembliesCard from "../components/desktop/AssembliesCard";
+import PriceFileCard from "../components/desktop/PriceFileCard";
 import { useToast } from "../contexts/ToastContext";
 
 const EMPTY_FORM: CompanyProfileInput = {
@@ -211,6 +212,8 @@ export default function SettingsScreen() {
       </form>
 
       <TakeoffSettings />
+
+      <PriceFileCard />
 
       {!authIsDisabled() && <WorkspaceInvites />}
 

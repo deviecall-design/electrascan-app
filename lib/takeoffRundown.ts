@@ -5,6 +5,7 @@
 
 import type { StoredDetectedItem } from "./scanRecord";
 import type { Assembly } from "./assemblies";
+import type { StoredContractorPrice } from "./priceFile";
 import { priceItem, type QuotePrice } from "./quoteSource";
 import type { RateLike } from "./takeoff";
 
@@ -46,9 +47,10 @@ export function takeoffRundown(
   rates: RateLike[] = [],
   assemblies: Assembly[] = [],
   labourRate = 110,
+  priceList: StoredContractorPrice[] = [],
 ): TakeoffRundown {
   const rows: RundownRow[] = items.map(item => {
-    const quote = priceItem(item, rates, assemblies, labourRate);
+    const quote = priceItem(item, rates, assemblies, labourRate, priceList);
     const priced = item.status !== "rejected" && quote.sellUnit > 0;
     return {
       item,

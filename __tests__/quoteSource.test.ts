@@ -42,6 +42,32 @@ describe("one pricing source", () => {
     expect(priced.sellUnit).toBe(120);
   });
 
+  it("uses the workspace price list ahead of the assembly default", () => {
+    const priced = priceItem(
+      downlight,
+      [],
+      DEFAULT_ASSEMBLIES,
+      110,
+      [{ code: "DL-90", description: "Recessed downlight", unit: "ea", cost: 18, assemblyId: "downlight" }],
+    );
+    expect(priced.source).toBe("price-list");
+    expect(priced.materialUnit).toBe(18);
+    expect(priced.labourUnit).toBe(38.5);
+    expect(priced.sellUnit).toBe(56.5);
+  });
+
+  it("keeps an explicit rate code ahead of the price list", () => {
+    const priced = priceItem(
+      { ...downlight, rateCode: "LT-1" },
+      [{ code: "LT-1", description: "LED downlight", rate: 80, labour: 45 }],
+      DEFAULT_ASSEMBLIES,
+      110,
+      [{ code: "LT-1", description: "Recessed downlight", unit: "ea", cost: 9, assemblyId: "downlight" }],
+    );
+    expect(priced.source).toBe("rate");
+    expect(priced.sellUnit).toBe(125);
+  });
+
   it("does not let a rate-library keyword replace a stored price", () => {
     const priced = priceItem(
       { desc: "Pendant", symbol: "EL", unitPrice: 200, rateCode: "" },
