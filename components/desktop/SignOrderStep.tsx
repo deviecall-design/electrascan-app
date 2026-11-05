@@ -229,7 +229,7 @@ export default function SignOrderStep({
     setSaving(true);
     setSaveError(null);
     const result = await persistQuoteFromScan({
-      client: clientName || jobName || "Client not set",
+      client: clientName || "",
       projectName: jobName,
       drawingFile: drawingFile ?? null,
       subtotal: totals.subtotal,

@@ -39,7 +39,9 @@ import ApprovalsScreen from "./screens/ApprovalsScreen";
 import ProjectReportsScreen from "./screens/ProjectReportsScreen";
 import SettingsScreen from "./screens/SettingsScreen";
 import JobsScreen from "./screens/JobsScreen";
+import JobFrame from "./components/desktop/JobFrame";
 import JobBurndownScreen from "./screens/JobBurndownScreen";
+import { JobDocumentsTab, JobEstimateTab, JobMilestonesTab, JobScopeTab } from "./screens/JobSections";
 import SupplierPortal from "./screens/SupplierPortal";
 import { authIsDisabled, loadAuthMode } from "./lib/authMode";
 
@@ -94,8 +96,15 @@ export default function DesktopApp() {
           <Route path="/variation-report"  element={<VariationReportScreen />} />
           <Route path="/approvals"         element={<ApprovalsScreen />} />
           <Route path="/projects"          element={<ProjectReportsScreen />} />
-          <Route path="/jobs/:jobKey/burndown" element={<JobBurndownScreen />} />
           <Route path="/jobs"              element={<JobsScreen />} />
+          <Route path="/jobs/:jobKey" element={<JobFrame />}>
+            <Route index element={<Navigate to="estimate" replace />} />
+            <Route path="estimate" element={<JobEstimateTab />} />
+            <Route path="scope" element={<JobScopeTab />} />
+            <Route path="burndown" element={<JobBurndownScreen />} />
+            <Route path="milestones" element={<JobMilestonesTab />} />
+            <Route path="documents" element={<JobDocumentsTab />} />
+          </Route>
           <Route path="/settings"          element={<SettingsScreen />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
