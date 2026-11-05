@@ -50,22 +50,22 @@ const NAV: { grp: string; items: NavEntry[] }[] = [
   {
     grp: "Workflow",
     items: [
-      { path: "/dashboard", label: "Dashboard", icon: <LayoutDashboard size={18} />, end: true },
-      { path: "/detection", label: "Scans", icon: <Scan size={18} /> },
+      { path: "/detection", label: "Upload plans", icon: <Scan size={18} /> },
       { path: "/estimate", label: "Estimates", icon: <FileText size={18} /> },
       { path: "/approvals", label: "Approvals", icon: <CheckCircle2 size={18} /> },
-    ],
-  },
-  {
-    grp: "Projects",
-    items: [
-      { path: "/variation-report", label: "Variations", icon: <GitCompare size={18} /> },
-      { path: "/projects", label: "Project reports", icon: <FolderKanban size={18} /> },
       { path: "/jobs", label: "Jobs", icon: <Briefcase size={18} /> },
     ],
   },
   {
-    grp: "Setup",
+    grp: "Job records",
+    items: [
+      { path: "/dashboard", label: "Dashboard", icon: <LayoutDashboard size={18} />, end: true },
+      { path: "/variation-report", label: "Variations", icon: <GitCompare size={18} /> },
+      { path: "/projects", label: "Milestones", icon: <FolderKanban size={18} /> },
+    ],
+  },
+  {
+    grp: "Suppliers",
     items: [
       { path: "/pricing-schedule", label: "Rates", icon: <BookOpen size={18} /> },
       { path: "/settings", label: "Settings", icon: <SettingsIcon size={18} /> },
@@ -110,10 +110,10 @@ export default function DesktopShell() {
         </div>
       </main>
       <nav className="es-bottom-nav" aria-label="Primary">
-        <NavLink to="/dashboard" end>Dashboard</NavLink>
-        <NavLink to="/detection">Scans</NavLink>
+        <NavLink to="/detection">Upload</NavLink>
         <NavLink to="/estimate">Estimates</NavLink>
-        <NavLink to="/pricing-schedule">Rates</NavLink>
+        <NavLink to="/approvals">Approvals</NavLink>
+        <NavLink to="/jobs">Jobs</NavLink>
         <button type="button" onClick={() => setDrawerOpen(true)}>More</button>
       </nav>
     </div>
@@ -297,7 +297,7 @@ function TopBar({ onMenu, menuOpen }: { onMenu: () => void; menuOpen: boolean })
           setNotesOpen(false);
           setPaletteOpen(true);
         }}
-        aria-label="Search scans, estimates, plans"
+        aria-label="Search jobs, estimates, and plans"
         aria-keyshortcuts="Meta+K Control+K"
         style={{
           display: "flex",
@@ -317,7 +317,7 @@ function TopBar({ onMenu, menuOpen }: { onMenu: () => void; menuOpen: boolean })
         }}
       >
         <Search size={18} />
-        <span style={{ flex: 1 }}>Search scans, estimates, plans…</span>
+        <span style={{ flex: 1 }}>Search jobs and estimates…</span>
         <span
           style={{
             fontFamily: FONT.heading,

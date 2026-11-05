@@ -81,6 +81,7 @@ import {
 } from "../lib/reviewClassification";
 import { peekNextReference } from "../services/estimateReferenceService";
 import { persistQuoteFromScan } from "../services/persistQuote";
+import { displayClient } from "../lib/jobLink";
 import { downloadEstimatePDF } from "../utils/estimatePdf";
 import SourcePlanPreview from "../components/SourcePlanPreview";
 import { ariesMarginSuggestion } from "../lib/ariesSuggestion";
@@ -1581,7 +1582,7 @@ function StepQuote({
       companyName={company.name}
       licence={company.licence}
       estimateId={estimateId}
-      client={clientName || "Client not set"}
+      client={displayClient({ client: clientName, fileName: sourceFileName, drawingFile: sourceFileName })}
       site={sourceFileName || "Site not set"}
       status={saveMessage ? "Ready for approval" : "Draft"}
       date={new Date().toLocaleDateString("en-AU")}

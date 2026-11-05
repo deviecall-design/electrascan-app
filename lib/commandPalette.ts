@@ -5,7 +5,9 @@
  * estimates. No sample jobs, no unread counts, no invented metrics.
  */
 
-export type PaletteGroup = "Actions" | "Navigate" | "Scans" | "Estimates";
+import { displayClient } from "./jobLink";
+
+export type PaletteGroup = "Actions" | "Navigate" | "Jobs" | "Scans" | "Estimates";
 
 export interface PaletteItem {
   id: string;
@@ -35,9 +37,9 @@ export const STATIC_PALETTE_ITEMS: PaletteItem[] = [
   {
     id: "nav-scans",
     group: "Navigate",
-    label: "Scans",
+    label: "Upload plans",
     to: "/detection",
-    keywords: ["detection", "plans", "drawings"],
+    keywords: ["scans", "detection", "plans", "drawings"],
   },
   {
     id: "nav-estimates",
@@ -84,9 +86,9 @@ export const STATIC_PALETTE_ITEMS: PaletteItem[] = [
   {
     id: "nav-projects",
     group: "Navigate",
-    label: "Project Reports",
+    label: "Milestones",
     to: "/projects",
-    keywords: ["reports", "budget"],
+    keywords: ["reports", "budget", "claims", "invoices"],
   },
 ];
 
@@ -101,6 +103,8 @@ export interface PaletteEstimate {
   reference?: string | null;
   ref?: string;
   client?: string | null;
+  project_name?: string | null;
+  drawing_file?: string | null;
 }
 
 export function scanToPaletteItem(scan: PaletteScan, index: number): PaletteItem {
@@ -116,16 +120,39 @@ export function scanToPaletteItem(scan: PaletteScan, index: number): PaletteItem
   };
 }
 
+function namedClient(estimate: PaletteEstimate): string {
+  return displayClient({
+    client: estimate.client,
+    projectName: estimate.project_name,
+    drawingFile: estimate.drawing_file,
+  });
+}
+
 export function estimateToPaletteItem(estimate: PaletteEstimate, index: number): PaletteItem {
   const ref = (estimate.reference || estimate.ref || `Estimate ${index + 1}`).trim();
   const id = estimate.id ?? `estimate-${index}`;
+  const client = namedClient(estimate);
   return {
     id: `estimate-${id}`,
     group: "Estimates",
     label: ref,
-    hint: estimate.client?.trim() || "Estimate",
-    to: "/estimate",
-    keywords: [ref, estimate.client ?? "", "quote", "estimate"],
+    hint: client,
+    to: estimate.reference || estimate.ref ? `/jobs/${encodeURIComponent(ref)}/estimate` : "/estimate",
+    keywords: [ref, client, "quote", "estimate"],
+  };
+}
+
+export function jobToPaletteItem(estimate: PaletteEstimate, index: number): PaletteItem {
+  const ref = (estimate.reference || estimate.ref || "").trim();
+  const client = namedClient(estimate);
+  const id = estimate.id ?? `job-${index}`;
+  return {
+    id: `job-${id}`,
+    group: "Jobs",
+    label: client === "Client not set" ? "Job" : client,
+    hint: ref || "Job",
+    to: ref ? `/jobs/${encodeURIComponent(ref)}/estimate` : "/jobs",
+    keywords: [ref, client, "job", "burndown", "scope"],
   };
 }
 
@@ -137,6 +164,7 @@ export function buildPaletteItems(
     ...STATIC_PALETTE_ITEMS,
     ...scans.map(scanToPaletteItem),
     ...estimates.map(estimateToPaletteItem),
+    ...estimates.map(jobToPaletteItem),
   ];
 }
 
@@ -151,8 +179,10 @@ export function filterPaletteItems(items: PaletteItem[], query: string): Palette
   if (tokens.length === 0) {
     const scans = items.filter(i => i.group === "Scans").slice(0, 6);
     const estimates = items.filter(i => i.group === "Estimates").slice(0, 6);
+    const jobs = items.filter(i => i.group === "Jobs").slice(0, 6);
     return [
       ...items.filter(i => i.group === "Actions" || i.group === "Navigate"),
+      ...jobs,
       ...scans,
       ...estimates,
     ];
@@ -165,7 +195,8 @@ export function filterPaletteItems(items: PaletteItem[], query: string): Palette
 
 export const PALETTE_GROUP_ORDER: PaletteGroup[] = [
   "Actions",
-  "Navigate",
-  "Scans",
+  "Jobs",
   "Estimates",
+  "Scans",
+  "Navigate",
 ];

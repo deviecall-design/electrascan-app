@@ -49,7 +49,7 @@ describe("DesktopShell V1 navy chrome", () => {
     renderShell();
     expect(screen.getByText("ElectraScan")).toBeInTheDocument();
     expect(screen.getAllByText(/vesh/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("link", { name: /scans/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("link", { name: /upload plans/i }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("link", { name: /estimates/i }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("link", { name: /^rates$/i }).length).toBeGreaterThan(0);
     expect(screen.queryByText("Vision credits")).not.toBeInTheDocument();
@@ -63,17 +63,17 @@ describe("DesktopShell V1 navy chrome", () => {
   it("opens a real search palette from the header control", async () => {
     const user = userEvent.setup();
     renderShell();
-    await user.click(screen.getByRole("button", { name: /search scans, estimates, plans/i }));
-    expect(screen.getByRole("dialog", { name: /search scans, estimates, and pages/i })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /search jobs, estimates, and plans/i }));
+    expect(screen.getByRole("dialog", { name: /search jobs, estimates, and pages/i })).toBeInTheDocument();
     expect(screen.getByText("Upload plan")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/search scans, estimates, plans/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/search jobs, estimates, plans/i)).toBeInTheDocument();
   });
 
   it("navigates from the palette to New scan", async () => {
     const user = userEvent.setup();
     renderShell();
-    await user.click(screen.getByRole("button", { name: /search scans, estimates, plans/i }));
-    await user.click(screen.getByRole("button", { name: /upload plan/i }));
+    await user.click(screen.getByRole("button", { name: /search jobs, estimates, and plans/i }));
+    await user.click(screen.getByRole("button", { name: /start a new scan/i }));
     expect(screen.getByText("New scan page")).toBeInTheDocument();
   });
 
