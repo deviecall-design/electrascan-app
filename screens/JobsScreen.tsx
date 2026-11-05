@@ -4,11 +4,10 @@ import { C, FONT } from "../components/desktop/tokens";
 import { PageHeader, Card, Footer } from "../components/ui/anthropic";
 import useSupabaseQuery from "../hooks/useSupabaseQuery";
 import { fetchEstimates, fetchScans } from "../services/supabaseData";
-import { loadAssemblies, loadLabourRate } from "../lib/assemblies";
-import { priceItem } from "../lib/quoteSource";
-import { loadPriceList } from "../lib/contractorPrices";
+import { loadLabourRate } from "../lib/assemblies";
 import { readDetectedItems } from "../lib/scanRecord";
-import { compareJobCost, JOB_STAGES, STAGE_LABEL, jobKey, type JobStage } from "../lib/jobTracker";
+import { displayClient, quotedSellExGst } from "../lib/jobLink";
+import { compareJobCost, JOB_STAGES, STAGE_LABEL, type JobStage } from "../lib/jobTracker";
 import { loadDefaultMargin, marginForQuote } from "../lib/margin";
 import { formatQuotedValue } from "../lib/estimateMoney";
 import QueryBanner from "../components/QueryBanner";
@@ -22,23 +21,43 @@ interface Actuals {
 export default function JobsScreen() {
   const { data: scans, loading, error } = useSupabaseQuery(fetchScans);
   const { data: estimates, loading: estimatesLoading } = useSupabaseQuery(fetchEstimates);
-  const assemblies = loadAssemblies();
   const labourRate = loadLabourRate();
   const [actuals, setActuals] = useState<Record<string, Actuals>>({});
 
   const jobs = useMemo(() => {
-    const grouped = new Map<string, { name: string; quoted: number; scanId?: string }>();
-    for (const scan of scans as Array<{ id?: string; client?: string | null; file_name?: string; detected_items?: unknown; estimate_ref?: string | null }>) {
-      const key = jobKey(scan.client, scan.file_name);
-      const current = grouped.get(key) ?? { name: scan.client || scan.file_name || "Unassigned", quoted: 0, scanId: scan.id };
-      const sell = readDetectedItems(scan.detected_items)
-        .filter(item => item.status !== "rejected" && item.qty > 0)
-        .reduce((sum, item) => sum + item.qty * priceItem(item, [], assemblies, labourRate, loadPriceList()).sellUnit, 0);
-      current.quoted += sell;
-      grouped.set(key, current);
+    const scanRows = scans as Array<{ id?: string; client?: string | null; file_name?: string; detected_items?: unknown; estimate_ref?: string | null }>;
+    const estimateRows = estimates as Array<{ id?: string; client?: string | null; project_name?: string | null; drawing_file?: string | null; reference?: string | null; ref?: string | null; margin_pct?: number | null; status?: string | null; approval_status?: string | null }>;
+    const cards = estimateRows.map(row => {
+      const reference = row.reference || row.ref || "";
+      const scan = scanRows.find(item => item.estimate_ref === reference);
+      const approved = row.status === "approved" || row.approval_status === "approved" || row.approval_status === "materials_sent";
+      return {
+        key: reference || row.id || scan?.id || "job",
+        routeKey: reference || row.id || scan?.id || "job",
+        name: displayClient({ client: row.client, projectName: row.project_name, drawingFile: row.drawing_file, fileName: scan?.file_name }),
+        quoted: quotedSellExGst(readDetectedItems(scan?.detected_items)),
+        scanId: scan?.id,
+        reference: reference || null,
+        approved,
+        margin_pct: row.margin_pct,
+      };
+    });
+    const linked = new Set(cards.map(card => card.reference).filter(Boolean));
+    for (const scan of scanRows) {
+      if (scan.estimate_ref && linked.has(scan.estimate_ref)) continue;
+      cards.push({
+        key: scan.id || scan.file_name || "scan",
+        routeKey: scan.id || scan.file_name || "scan",
+        name: displayClient({ client: scan.client, fileName: scan.file_name }),
+        quoted: quotedSellExGst(readDetectedItems(scan.detected_items)),
+        scanId: scan.id,
+        reference: scan.estimate_ref || null,
+        approved: false,
+        margin_pct: null,
+      });
     }
-    return [...grouped.entries()].map(([key, job]) => ({ key, ...job }));
-  }, [scans, assemblies, labourRate]);
+    return cards;
+  }, [scans, estimates]);
 
   function actualFor(key: string): Actuals {
     return actuals[key] ?? { stage: "takeoff", materials: 0, hours: 0 };
@@ -72,9 +91,8 @@ export default function JobsScreen() {
       {jobs.length === 0 && !loading && <p style={{ color: C.textMuted }}>No jobs yet. A scan becomes a job.</p>}
       {jobs.map(job => {
         const actual = actualFor(job.key);
-        const linked = (estimates as Array<{ client?: string | null; reference?: string | null; margin_pct?: number | null; status?: string | null; approval_status?: string | null }>).filter(row => jobKey(row.client, "") === job.key);
-        const approved = linked.some(row => row.status === "approved" || row.approval_status === "approved" || row.approval_status === "materials_sent");
-        const savedMargin = linked.find(row => typeof row.margin_pct === "number")?.margin_pct;
+        const approved = job.approved;
+        const savedMargin = job.margin_pct;
         const compare = compareJobCost({
           quotedSell: job.quoted,
           quotedMarginPct: marginForQuote(savedMargin, loadDefaultMargin()),
@@ -86,7 +104,7 @@ export default function JobsScreen() {
           <Card key={job.key} style={{ padding: 16, marginBottom: 12 }}>
             <div style={{ fontWeight: 800, fontSize: 18 }}>{job.name}</div>
             <p style={{ margin: "6px 0 12px", color: C.textMuted, fontSize: 14 }}>
-              Quoted {formatQuotedValue(compare.quotedSell)} from assemblies
+              Quoted {formatQuotedValue(compare.quotedSell)} ex GST
               {compare.marginPct != null && actual.materials + actual.hours > 0 ? ` · margin ${compare.marginPct}%` : ""}
             </p>
             {compare.warning && <p style={{ color: C.red, fontWeight: 700 }}>{compare.warning}</p>}
@@ -114,12 +132,15 @@ export default function JobsScreen() {
             <p style={{ fontSize: 14 }}>
               Actual cost {formatQuotedValue(compare.actualCost)} · margin {formatQuotedValue(compare.marginDollars)}
             </p>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 12, fontSize: 14 }}>
-              {approved && <Link to={`/jobs/${encodeURIComponent(job.key)}/burndown`}>Burndown</Link>}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 12, fontSize: 14, alignItems: "center" }}>
+              <Link to={`/jobs/${encodeURIComponent(job.routeKey)}/burndown`} style={burndownLink} aria-label={`Burndown for ${job.name}`}>
+                Burndown
+              </Link>
               {job.scanId && <Link to={`/detection/${job.scanId}`}>Takeoff</Link>}
               <Link to="/projects">Milestones and invoices</Link>
               <Link to="/variation-report">Variations</Link>
-              {linked[0]?.reference && <Link to="/approvals">Quote {linked[0].reference}</Link>}
+              {job.reference && <Link to="/approvals">Quote {job.reference}</Link>}
+              {!approved && <span style={{ color: C.textMuted }}>Tracking starts on approval.</span>}
             </div>
           </Card>
         );
@@ -128,6 +149,19 @@ export default function JobsScreen() {
     </div>
   );
 }
+
+const burndownLink: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  minHeight: 44,
+  padding: "0 16px",
+  borderRadius: 10,
+  background: C.orange,
+  color: "#fff",
+  fontWeight: 700,
+  textDecoration: "none",
+};
 
 const field: React.CSSProperties = {
   display: "block",

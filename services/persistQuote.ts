@@ -13,6 +13,7 @@ import { quotePersistFields } from "../lib/estimateMoney";
 import { estimateStatusFor, type ApprovalStatus } from "../lib/approvalStatus";
 import { updateScan } from "./supabaseData";
 import type { ScopeOfWorks } from "../lib/scopeOfWorks";
+import { displayClient } from "../lib/jobLink";
 
 export interface PersistQuoteInput {
   client: string;
@@ -50,7 +51,11 @@ export async function persistQuoteFromScan(
 
   const money = quotePersistFields(input.subtotal, input.marginPct);
   const body = {
-    client: (input.client || "").trim() || "Client not set",
+    client: displayClient({
+      client: input.client,
+      projectName: input.projectName,
+      drawingFile: input.drawingFile,
+    }),
     project_name: input.projectName ?? null,
     drawing_file: input.drawingFile ?? null,
     status: input.status || estimateStatusFor(input.approvalStatus || "ready_for_approval"),
