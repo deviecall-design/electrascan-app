@@ -21,7 +21,7 @@ vi.mock("../services/supabaseData", () => ({
 vi.mock("../services/workspaceSettings", () => ({
   fetchWorkspaceSettings: vi.fn().mockResolvedValue({
     minVerifiedPct: 80,
-    supplierName: "Lawrence & Hanson",
+    supplierName: "TLE",
     supplierEmail: "",
   }),
 }));

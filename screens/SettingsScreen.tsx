@@ -22,6 +22,7 @@ import { getCurrentTenantId, VESH_TENANT_ID } from "../lib/tenants";
 import { authIsDisabled } from "../lib/authMode";
 import { fetchWorkspaceSettings, saveWorkspaceSettings } from "../services/workspaceSettings";
 import { loadDefaultMargin } from "../lib/margin";
+import { canonicalSupplierName, TLE_SUPPLIER_NAME } from "../lib/supplierName";
 import AssembliesCard from "../components/desktop/AssembliesCard";
 import PriceFileCard from "../components/desktop/PriceFileCard";
 import { useToast } from "../contexts/ToastContext";
@@ -227,7 +228,7 @@ function TakeoffSettings() {
   const { addToast } = useToast();
   const [minVerified, setMinVerified] = useState("");
   const [defaultMargin, setDefaultMargin] = useState(() => String(loadDefaultMargin()));
-  const [supplierName, setSupplierName] = useState("Lawrence & Hanson");
+  const [supplierName, setSupplierName] = useState(TLE_SUPPLIER_NAME);
   const [supplierEmail, setSupplierEmail] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -237,7 +238,7 @@ function TakeoffSettings() {
       if (cancelled) return;
       setMinVerified(settings.minVerifiedPct == null ? "" : String(settings.minVerifiedPct));
       if (typeof settings.defaultMarginPct === "number") setDefaultMargin(String(settings.defaultMarginPct));
-      setSupplierName(settings.supplierName);
+      setSupplierName(canonicalSupplierName(settings.supplierName));
       setSupplierEmail(settings.supplierEmail);
     });
     return () => { cancelled = true; };

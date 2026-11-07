@@ -43,6 +43,7 @@ describe("materials route", () => {
     }, res);
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(posted);
+    expect(body.supplier_name).toBe("TLE");
     expect(body.lines[0]).toEqual({ product: "Double GPO", qty: 4, brand: "Clipsal", unit: "ea", notes: "" });
     expect(JSON.stringify(body.lines)).not.toMatch(/price|discount/);
     expect(JSON.stringify(res.body)).not.toContain("service-role-test");

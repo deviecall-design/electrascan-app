@@ -1,4 +1,5 @@
 import { clampMargin, loadDefaultMargin, saveDefaultMargin } from "../lib/margin";
+import { canonicalSupplierName, TLE_SUPPLIER_NAME } from "../lib/supplierName";
 
 export interface WorkspaceSettings {
   minVerifiedPct: number | null;
@@ -9,7 +10,7 @@ export interface WorkspaceSettings {
 
 const DEFAULTS: WorkspaceSettings = {
   minVerifiedPct: null,
-  supplierName: "Lawrence & Hanson",
+  supplierName: TLE_SUPPLIER_NAME,
   supplierEmail: "",
   defaultMarginPct: 15,
 };
@@ -23,7 +24,7 @@ export async function fetchWorkspaceSettings(): Promise<WorkspaceSettings> {
     if (stored != null) saveDefaultMargin(stored);
     return {
       minVerifiedPct: typeof json.minVerifiedPct === "number" ? json.minVerifiedPct : null,
-      supplierName: json.supplierName || DEFAULTS.supplierName,
+      supplierName: canonicalSupplierName(json.supplierName || DEFAULTS.supplierName),
       supplierEmail: json.supplierEmail || "",
       defaultMarginPct: stored ?? loadDefaultMargin(),
     };
@@ -39,7 +40,7 @@ export async function saveWorkspaceSettings(input: WorkspaceSettings): Promise<{
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       minVerifiedPct: input.minVerifiedPct,
-      supplierName: input.supplierName,
+      supplierName: canonicalSupplierName(input.supplierName),
       supplierEmail: input.supplierEmail,
       defaultMarginPct,
     }),

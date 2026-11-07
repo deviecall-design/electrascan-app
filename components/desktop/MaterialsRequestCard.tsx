@@ -15,6 +15,7 @@ import {
 } from "../../lib/materialsRequest";
 import { downloadMaterialsPdf } from "../../utils/materialsPdf";
 import { fetchWorkspaceSettings } from "../../services/workspaceSettings";
+import { canonicalSupplierName } from "../../lib/supplierName";
 
 /**
  * The user reviews this list and sends the email themselves.
@@ -53,7 +54,7 @@ export default function MaterialsRequestCard({
       if (cancelled) return;
       setDraft(current => ({
         ...current,
-        supplierName: settings.supplierName || DEFAULT_SUPPLIER_NAME,
+        supplierName: canonicalSupplierName(settings.supplierName || DEFAULT_SUPPLIER_NAME),
         supplierEmail: settings.supplierEmail || "",
       }));
     }).catch(() => undefined);
@@ -207,7 +208,7 @@ export default function MaterialsRequestCard({
             ))}
           </div>
           <p style={{ margin: 0, fontSize: 12, color: C.textSubtle }}>
-            Status on this job: {draft.status}. Lawrence &amp; Hanson prices the list on Vesh&apos;s trade terms. Supplier prices are not stored.
+            Status on this job: {draft.status}. TLE prices the list on Vesh&apos;s trade terms. Supplier prices are not stored.
           </p>
         </div>
       )}

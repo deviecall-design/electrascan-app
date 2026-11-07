@@ -5,12 +5,13 @@
  */
 
 import type { StoredDetectedItem } from "./scanRecord";
+import { TLE_SUPPLIER_NAME } from "./supplierName";
 import { groupForItem, GROUP_LABEL, type TakeoffGroupId } from "./takeoff";
 
 export const MATERIAL_STATUSES = ["draft", "sent", "priced", "ordered", "delivered"] as const;
 export type MaterialStatus = (typeof MATERIAL_STATUSES)[number];
 
-export const DEFAULT_SUPPLIER_NAME = "Lawrence & Hanson";
+export const DEFAULT_SUPPLIER_NAME = TLE_SUPPLIER_NAME;
 
 export interface MaterialLine {
   product: string;

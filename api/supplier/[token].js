@@ -2,6 +2,7 @@
 // Prices are written onto this link only. No supplier catalogue is stored.
 
 import { firstRow, readVesh, updateVesh } from "../_lib/veshAdmin.js";
+import { canonicalSupplierName } from "../_lib/supplierName.js";
 
 function tokenFrom(req) {
   const header = req.headers?.["x-supplier-token"];
@@ -70,7 +71,7 @@ export default async function handler(req, res) {
     res.status(200).json({
       data: {
         jobName: found.row.job_name,
-        supplierName: found.row.supplier_name,
+        supplierName: canonicalSupplierName(found.row.supplier_name, ""),
         status: found.row.status,
         lines: found.row.lines || [],
       },

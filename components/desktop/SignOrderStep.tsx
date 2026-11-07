@@ -453,7 +453,7 @@ export default function SignOrderStep({
           </label>
           <label style={{ display: "block", marginTop: 12, fontSize: 13, color: C.textMuted }}>
             Supplier email
-            <input aria-label="Supplier email" type="email" value={supplierEmail} placeholder="orders@lawrenceandhanson.com.au" onChange={event => setSupplierEmail(event.target.value)} style={{ ...inputStyle, width: "100%", marginTop: 4 }} />
+            <input aria-label="Supplier email" type="email" value={supplierEmail} placeholder="orders@example.com.au" onChange={event => setSupplierEmail(event.target.value)} style={{ ...inputStyle, width: "100%", marginTop: 4 }} />
           </label>
           <p style={{ fontSize: 13, color: C.textMuted }}>Approval: {APPROVAL_LABEL[approval]}. Materials request: {materialStatus}. Signature: {envelopeId ? `sent ${envelopeId}` : approval === "sent_for_signature" || approval === "approved" || approval === "materials_sent" ? APPROVAL_LABEL[approval] : "not sent"}.</p>
           {materialsOpen && (

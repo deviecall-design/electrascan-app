@@ -1,6 +1,7 @@
 // Vesh creates a one-job supplier link. This does not email anyone.
 
 import { firstRow, insertVesh, readBody, requireBeta, sendResult } from "../_lib/veshAdmin.js";
+import { canonicalSupplierName } from "../_lib/supplierName.js";
 
 function cleanLines(value) {
   if (!Array.isArray(value)) return [];
@@ -32,7 +33,7 @@ export default async function handler(req, res) {
     materials_request_id: requestId,
     estimate_ref: body.estimate_ref ? String(body.estimate_ref).slice(0, 40) : null,
     job_name: String(body.job_name || "").slice(0, 200),
-    supplier_name: String(body.supplier_name || "Lawrence & Hanson").slice(0, 120),
+    supplier_name: canonicalSupplierName(body.supplier_name).slice(0, 120),
     lines: cleanLines(body.lines),
     status: "sent",
   });
