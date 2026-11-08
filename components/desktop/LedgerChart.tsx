@@ -11,9 +11,10 @@ export interface ChartMilestone {
 }
 
 const SERIES = [
-  { key: "planned", label: "Planned remaining", color: "#1f56e6", dash: true },
-  { key: "actual", label: "Actual remaining", color: "#059669", dash: false },
-  { key: "forecast", label: "Forecast", color: "#b45309", dash: true },
+  { key: "planned", label: "Planned", color: "#1f56e6" },
+  { key: "actual", label: "Actual", color: "#059669" },
+  { key: "forecast", label: "Forecast", color: "#b45309" },
+  { key: "claimed", label: "Claimed / paid", color: "#0f172a" },
 ] as const;
 
 /**
@@ -42,7 +43,7 @@ export default function LedgerChart({
     return <p style={{ color: C.textMuted, margin: 0 }}>Add job dates or a cost to draw the weeks.</p>;
   }
   const points = weeks.map(week => remainingAt(week, baseline, today));
-  const max = Math.max(baseline, 1, ...points.flatMap(point => [point.planned, point.actual ?? 0]));
+  const max = Math.max(baseline, 1, ...points.flatMap(point => [point.planned, point.actual ?? 0]), ...weeks.map(week => week.cumulativeClaimed));
   const width = 700;
   const height = 240;
   const left = 78;
@@ -80,6 +81,7 @@ export default function LedgerChart({
         {actualArea && <path d={actualArea} fill="#059669" fillOpacity="0.12" />}
         <polyline points={planLine} fill="none" stroke="#1f56e6" strokeDasharray="5 3" strokeWidth="2" />
         {actualLine && <polyline points={actualLine} fill="none" stroke="#059669" strokeWidth="2.5" />}
+        <polyline points={weeks.map((week, index) => `${xAt(index)},${yAt(week.cumulativeClaimed)}`).join(" ")} fill="none" stroke="#0f172a" strokeWidth="2" />
         {actuals.map(index => (
           <circle key={weeks[index].start} cx={xAt(index)} cy={yAt(points[index].actual ?? 0)} r="4" fill="#059669" stroke="#fff" strokeWidth="1.5" />
         ))}

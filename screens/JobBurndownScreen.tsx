@@ -17,7 +17,9 @@ import { estimateTotal, formatGstMoney } from "../lib/estimateTotal";
 import { indexRows, readLocalDocumentLabels } from "../lib/documentLabel";
 import { approvalFromRow } from "../lib/approvalStatus";
 import QueryBanner from "../components/QueryBanner";
-import { burnPercent, milestoneWeekIndex, paymentSchedule, spendAheadWarning, type ActualEntry } from "../lib/burndown";
+import { burnPercent, milestoneWeekIndex, paymentSchedule, type ActualEntry } from "../lib/burndown";
+import { claimedMilestone, reportClaimStatus, REPORT_STATUS_LABEL, type ReportClaimStatus } from "../lib/reportMilestone";
+import AccountingConnect from "../components/desktop/AccountingConnect";
 import { formatAud, roundCents } from "../lib/quoteTotals";
 
 interface Schedule {
@@ -36,13 +38,14 @@ export default function JobBurndownScreen() {
   const [entries, setEntries] = useState<ActualEntry[]>([]);
   const [schedule, setSchedule] = useState<Schedule>({ start: "", end: "" });
   const [migrationNote, setMigrationNote] = useState<string | null>(null);
-  const [claims, setClaims] = useState<Array<{ milestone_id?: string; status?: string }>>([]);
+  const [claims, setClaims] = useState<Array<{ milestone_id?: string; status?: string; inv_ref?: string | null }>>([]);
   const [invoices, setInvoices] = useState<Array<{ id?: string; source_ref?: string | null; job_name?: string | null }>>([]);
   const [costs, setCosts] = useState<LedgerCost[]>([]);
   const [drawer, setDrawer] = useState<CostKind | null>(null);
   const [gstMode, setGstMode] = useState<"ex" | "inc">("ex");
   const [openWeek, setOpenWeek] = useState<string | null>(null);
-  const [tab, setTab] = useState<"burn" | "burndown" | "hours" | "milestones">("burndown");
+  const [tab, setTab] = useState<"overview" | "burndown" | "hours" | "milestones" | "overruns" | "accounting">("overview");
+  const [payTab, setPayTab] = useState<"schedule" | "claims" | "deposit">("schedule");
   const [costDraft, setCostDraft] = useState({ date: today(), roleId: "", hours: "", amount: "", supplier: "TLE", reference: "", note: "" });
 
   const job = useMemo(() => {
@@ -138,7 +141,7 @@ export default function JobBurndownScreen() {
       .catch(() => undefined);
     if (job.reference) {
       fetchMilestoneClaimsForProject(job.reference).then(({ data }) => {
-        if (!cancelled) setClaims((data as Array<{ milestone_id?: string; status?: string }> | null) ?? []);
+        if (!cancelled) setClaims((data as Array<{ milestone_id?: string; status?: string; inv_ref?: string | null }> | null) ?? []);
       });
     }
     return () => { cancelled = true; };
@@ -185,20 +188,46 @@ export default function JobBurndownScreen() {
   const asOf = today();
   const forecastRemaining = roundCents(job.contractExGst - ledger.summary.forecastAtCompletion);
   const labourSpent = roundCents(ledger.weeks.reduce((sum, week) => sum + week.labour, 0));
-  const supplierSpent = roundCents(ledger.weeks.reduce((sum, week) => sum + week.supplier + week.other, 0));
-  const labourBudget = job.labourDollars > 0 ? job.labourDollars : job.contractExGst;
-  const supplierBudget = job.labourDollars > 0 ? Math.max(0, roundCents(job.contractExGst - job.labourDollars)) : 0;
+  const materialsSpent = roundCents(ledger.weeks.reduce((sum, week) => sum + week.supplier, 0));
+  const otherSpent = roundCents(ledger.weeks.reduce((sum, week) => sum + week.other, 0));
+  const labourBudget = roundCents(Math.max(0, job.labourDollars));
+  const materialsBudget = roundCents(Math.max(0, (job.sell > 0 ? job.sell : job.contractExGst) - labourBudget));
+  const contingency = job.sell > 0 ? roundCents(Math.max(0, job.contractExGst - job.sell)) : 0;
+  const overrunAmount = roundCents(otherSpent + Math.max(0, labourSpent - labourBudget) + Math.max(0, materialsSpent - materialsBudget));
+  const contingLeft = roundCents(Math.max(0, contingency - overrunAmount));
   const plannedHours = Math.round(job.hours * 10) / 10;
   const loggedHours = Math.round(ledger.weeks.reduce((sum, week) => sum + weekHours(week.items, plannedHours, ledger.weeks.length).actual, 0) * 10) / 10;
   const hoursGap = Math.round((loggedHours - plannedHours) * 10) / 10;
-  const burnNote = spendAheadWarning(burnPercent(ledger.summary.costToDate, job.contractExGst), claimEvents.map(row => ({
-    pct: scheduled.find(item => item.id === row.id)?.pct || 0,
-    status: row.status === "paid" || row.status === "invoiced" ? "invoiced" as const : "not_due" as const,
-  })));
+  const pctBurnt = burnPercent(ledger.summary.costToDate, job.contractExGst);
+  const reportRows = scheduled.map(row => {
+    const claim = claims.find(item => item.milestone_id === row.id);
+    const invoice = invoices.find(item => item.source_ref === row.id);
+    const event = claimEvents.find(item => item.id === row.id);
+    const status = reportClaimStatus({
+      retention: row.id === "retention",
+      due: Boolean(event?.date && event.date <= asOf),
+      stored: claim?.status,
+      hasInvoice: Boolean(invoice),
+    });
+    return {
+      ...row,
+      retention: row.id === "retention",
+      status,
+      date: event?.date || "",
+      invoiceRef: claim?.inv_ref || invoice?.id || "",
+    };
+  });
+  const progressRows = reportRows.filter(row => !row.retention);
+  const claimedCount = progressRows.filter(row => claimedMilestone(row.status)).length;
+  const nextOpen = progressRows.find(row => row.status !== "received");
+  const depositRow = reportRows.find(row => row.id === "deposit");
+  const depositReceived = depositRow?.status === "received" ? depositRow.amount : 0;
+  const progressInvoiced = roundCents(progressRows.filter(row => row.status === "invoiced" || row.status === "invoiced-draft").reduce((sum, row) => sum + row.amount, 0));
+  const progressReceived = roundCents(progressRows.filter(row => row.status === "received" && row.id !== "deposit").reduce((sum, row) => sum + row.amount, 0));
   const milestoneMarks = claimEvents.map(row => ({
     label: row.label,
     amount: gstMode === "inc" ? incGst(row.amount) : row.amount,
-    status: row.status,
+    status: REPORT_STATUS_LABEL[reportRows.find(item => item.id === row.id)?.status || "pending"],
     weekIndex: Math.max(0, ledger.weeks.findIndex(week => week.start === row.date)),
   }));
 
@@ -271,6 +300,27 @@ export default function JobBurndownScreen() {
     }).catch(() => undefined);
   }
 
+  async function submitClaim(row: { id: string; label: string; amount: number }) {
+    const invRef = `INV-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
+    setClaims(current => [...current.filter(item => item.milestone_id !== row.id), { milestone_id: row.id, status: "draft", inv_ref: invRef }]);
+    const res = await fetch("/api/beta/records?kind=claims", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        project_id: job.reference || jobId,
+        milestone_id: row.id,
+        milestone_label: row.label,
+        amount: row.amount,
+        inv_ref: invRef,
+        status: "draft",
+      }),
+    }).catch(() => null);
+    if (res && !res.ok) {
+      const body = await res.json().catch(() => ({}));
+      setMigrationNote(body.error || "The claim is saved in this browser until the claims migration is applied.");
+    }
+  }
+
   return (
     <div className="anim-in">
       <QueryBanner loading={loading || estimatesLoading} error={error} noun="the job" />
@@ -302,36 +352,40 @@ export default function JobBurndownScreen() {
       </form>
       <div role="tablist" aria-label="Job reports" style={{ display: "flex", gap: 4, overflowX: "auto", borderBottom: `2px solid ${C.border}`, marginBottom: 16 }}>
         {([
-          ["burn", "Budget burn"],
+          ["overview", "Overview"],
           ["burndown", "Burndown"],
           ["hours", "Hours"],
           ["milestones", "Milestones"],
+          ["overruns", "Overruns"],
+          ["accounting", "Accounting"],
         ] as const).map(([id, label]) => (
           <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)} style={{ ...tabBtn, color: tab === id ? C.orange : C.textMuted, borderBottomColor: tab === id ? C.orange : "transparent" }}>{label}</button>
         ))}
       </div>
-      {burnNote && <p role="status" style={{ color: C.ink, background: C.amberSoft, borderRadius: 12, padding: "12px 14px" }}>{burnNote}</p>}
-      {tab === "burn" && (
+      <p role="status" style={{ color: C.ink, background: C.amberSoft, borderRadius: 12, padding: "12px 14px", borderLeft: `4px solid ${C.amber}` }}>
+        Budget is {pctBurnt}% burnt. {nextOpen ? `${nextOpen.label} is ${REPORT_STATUS_LABEL[nextOpen.status]}.` : "Every progress milestone has been received."}
+      </p>
+      <p role="status" style={{ color: C.ink, background: overrunAmount > 0 ? C.redSoft : C.greenSoft, borderRadius: 12, padding: "12px 14px", borderLeft: `4px solid ${overrunAmount > 0 ? C.red : C.green}` }}>
+        {overrunAmount > 0 ? `${show(overrunAmount)} in unplanned costs. ` : "No unplanned costs. "}
+        Contingency remaining {show(contingLeft)} of {show(contingency)}.
+      </p>
+      {tab === "overview" && (
         <>
           <div className="es-stat-grid" style={{ marginBottom: 16 }}>
-            <Stat label={job.approved ? "Approved value" : "Projected value"} value={show(job.contractExGst)} />
-            <Stat label="Cost to date" value={show(ledger.summary.costToDate)} />
-            <Stat label="Remaining" value={show(ledger.summary.remaining)} tone={ledger.summary.remaining < 0 ? C.red : C.text} />
-            <Stat label="Claimed to date" value={show(ledger.summary.claimedToDate)} />
-            <Stat label="Paid to date" value={show(ledger.summary.paidToDate)} />
-            <Stat label="Margin to date" value={`${ledger.summary.marginToDatePct}%`} />
-            <Stat label="Forecast at completion" value={show(ledger.summary.forecastAtCompletion)} />
+            <Stat label="Total budget" value={show(job.contractExGst)} sub={job.approved ? "Approved price" : "Projected"} />
+            <Stat label="Spent to date" value={show(ledger.summary.costToDate)} sub={`${pctBurnt}% of budget`} />
+            <Stat label="Remaining" value={show(ledger.summary.remaining)} tone={ledger.summary.remaining < 0 ? C.red : C.text} sub={`${Math.max(0, Math.round((100 - pctBurnt) * 10) / 10)}% left`} />
+            <Stat label="Claimed" value={show(ledger.summary.claimedToDate)} sub={`${claimedCount} of ${progressRows.length} milestones`} />
           </div>
           <Card style={{ padding: 16, marginBottom: 16 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: C.textMuted, letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: 12 }}>Budget breakdown</div>
             <BudgetBar label="Labour" spent={labourSpent} budget={labourBudget} show={show} color={C.orange} />
-            {supplierBudget > 0 && <BudgetBar label="Supplier and other" spent={supplierSpent} budget={supplierBudget} show={show} color="#0f172a" />}
+            <BudgetBar label="Materials" spent={materialsSpent} budget={materialsBudget} show={show} color="#0f172a" />
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 13, paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
+              <span>Contingency: {show(contingency)}</span>
+              <strong style={{ color: contingency > 0 && contingLeft < contingency * 0.2 ? C.red : C.green }}>Remaining: {show(contingLeft)}</strong>
+            </div>
           </Card>
-          <div className="es-stat-grid">
-            <Stat label="Planned hours" value={`${plannedHours}h`} />
-            <Stat label="Logged hours" value={`${loggedHours}h`} />
-            <Stat label="Hours variance" value={`${hoursGap > 0 ? "+" : ""}${hoursGap}h`} tone={hoursGap > 0 ? C.red : C.text} />
-          </div>
         </>
       )}
       {tab === "burndown" && (
@@ -419,7 +473,7 @@ export default function JobBurndownScreen() {
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <div style={{ fontWeight: 700 }}>Weekly timesheet</div>
-            <button type="button" onClick={() => setDrawer("timesheet")} style={quietBtn}>Add timesheet</button>
+            <button type="button" onClick={() => setDrawer("timesheet")} style={quietBtn}>Submit timesheet</button>
           </div>
           <Card style={{ padding: 0, overflow: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 640, fontSize: 14 }}>
@@ -459,31 +513,84 @@ export default function JobBurndownScreen() {
       )}
       {tab === "milestones" && (
         <>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-            <div style={{ fontWeight: 700 }}>Payment schedule</div>
-            <Link to="/projects" style={quietBtn}>Open milestones</Link>
+          <div style={{ display: "flex", gap: 8, overflowX: "auto", marginBottom: 12 }}>
+            {(["schedule", "claims", "deposit"] as const).map(id => (
+              <button key={id} type="button" onClick={() => setPayTab(id)} style={{ ...quietBtn, background: payTab === id ? C.orange : "#fff", color: payTab === id ? "#fff" : C.text }}>
+                {id === "schedule" ? "Payment schedule" : id === "claims" ? "Claim status" : "Deposit + splits"}
+              </button>
+            ))}
           </div>
-          {scheduled.map(row => {
-            const claim = claimEvents.find(item => item.id === row.id);
-            const status = claim?.status || "unpaid";
-            const tone = status === "paid" ? C.green : status === "invoiced" ? C.orange : C.textMuted;
+          {payTab === "schedule" && reportRows.map(row => {
+            const tone = row.retention ? C.amber : statusTone(row.status);
             return (
-              <Card key={row.id} style={{ padding: 14, marginBottom: 8, display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
-                <div style={{ width: 52, height: 52, borderRadius: 26, border: `3px solid ${tone}`, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, color: tone }}>{row.pct}%</div>
+              <Card key={row.id} title={row.retention ? "Held until the defect period ends, usually 3 to 6 months after practical completion." : undefined} style={{ padding: 14, marginBottom: 8, display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", borderLeft: `4px solid ${tone}` }}>
+                <div style={{ width: 52, height: 52, borderRadius: 26, border: `3px solid ${tone}`, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, color: tone }}>{row.retention ? "Hold" : `${row.pct}%`}</div>
                 <div style={{ flex: 1, minWidth: 180 }}>
-                  <div style={{ fontWeight: 700 }}>{row.label}</div>
-                  <div style={{ color: C.textMuted, fontSize: 13 }}>{row.description} · {show(row.amount)} · {status}{claim?.date ? ` · ${claim.date}` : ""}</div>
+                  <div style={{ fontWeight: 700 }}>{row.retention ? "Retention holdback" : row.label}</div>
+                  <div style={{ color: C.textMuted, fontSize: 13 }}>
+                    {REPORT_STATUS_LABEL[row.status]} · {show(row.amount)}
+                    {row.invoiceRef ? ` · ${row.invoiceRef}` : ""}
+                    {row.date ? ` · ${row.date}` : ""}
+                  </div>
                 </div>
+                {row.status === "ready" && (
+                  <button type="button" onClick={() => void submitClaim(row)} style={{ ...quietBtn, background: C.amber, color: "#fff", borderColor: C.amber }}>Submit claim</button>
+                )}
               </Card>
             );
           })}
-          <Card style={{ padding: 16 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0" }}><span>Contract</span><strong>{show(job.contractExGst)}</strong></div>
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0" }}><span>Claimed</span><strong>{show(ledger.summary.claimedToDate)}</strong></div>
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0" }}><span>Unclaimed</span><strong>{show(roundCents(job.contractExGst - ledger.summary.claimedToDate))}</strong></div>
-          </Card>
+          {payTab === "claims" && (
+            <Card style={{ padding: 16 }}>
+              <SummaryLine label="Total contract value" value={show(job.contractExGst)} />
+              <SummaryLine label="Deposit received" value={show(depositReceived)} />
+              <SummaryLine label="Progress claims invoiced" value={show(progressInvoiced)} />
+              <SummaryLine label="Progress claims received" value={show(progressReceived)} />
+              <SummaryLine label="Claimed to date" value={show(ledger.summary.claimedToDate)} />
+              <SummaryLine label="Unclaimed remaining" value={show(roundCents(job.contractExGst - ledger.summary.claimedToDate))} />
+            </Card>
+          )}
+          {payTab === "deposit" && (
+            <>
+              {reportRows.map(row => {
+                const tone = row.retention ? C.amber : statusTone(row.status);
+                return (
+                  <Card key={row.id} style={{ padding: 14, marginBottom: 8, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap", borderLeft: `4px solid ${tone}` }}>
+                    <div>
+                      <div style={{ fontWeight: 700 }}>{row.label} ({row.pct}%)</div>
+                      <div style={{ color: C.textMuted, fontSize: 13 }}>{row.description}{row.date ? ` · ${row.date}` : ""}</div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontWeight: 800, color: tone }}>{show(row.amount)}</div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: tone }}>{row.retention ? "Retention holdback" : REPORT_STATUS_LABEL[row.status]}</div>
+                    </div>
+                  </Card>
+                );
+              })}
+              <p style={{ color: C.textMuted, fontSize: 13 }}>The deposit is credited against the contract. Retention is held back from the final payment until the defect period ends.</p>
+            </>
+          )}
         </>
       )}
+      {tab === "overruns" && (
+        <>
+          <Card style={{ padding: 16, marginBottom: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.textMuted, letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: 8 }}>Contingency reserve</div>
+            <div style={{ height: 12, background: C.bg, borderRadius: 6, overflow: "hidden", marginBottom: 8 }}>
+              <div style={{ height: 12, width: `${contingency > 0 ? Math.max(0, Math.min(100, Math.round((contingLeft / contingency) * 100))) : 0}%`, background: contingLeft < contingency * 0.2 ? C.red : C.amber }} />
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+              <span>Used: {show(overrunAmount)}</span>
+              <span>Remaining: {show(contingLeft)} of {show(contingency)}</span>
+            </div>
+          </Card>
+          <div style={{ fontWeight: 700, marginBottom: 8 }}>Flagged cost overruns</div>
+          {overrunAmount === 0 && <p style={{ color: C.textMuted }}>No unplanned costs yet. Other costs, and labour or supplier spend above the quote, appear here.</p>}
+          {otherSpent > 0 && <OverrunRow label="Other costs" note="Logged outside labour and supplier invoices" amount={show(otherSpent)} />}
+          {labourSpent > labourBudget && <OverrunRow label="Labour over quote" note="Timesheets above the quoted labour" amount={show(roundCents(labourSpent - labourBudget))} />}
+          {materialsSpent > materialsBudget && <OverrunRow label="Supplier over quote" note="TLE and other supplier invoices above the quoted materials" amount={show(roundCents(materialsSpent - materialsBudget))} />}
+        </>
+      )}
+      {tab === "accounting" && <AccountingConnect />}
       {drawer && (
         <form onSubmit={event => void addCost(event)} style={{ position: "fixed", right: 0, top: 0, bottom: 0, width: "min(420px, 100%)", background: "#fff", borderLeft: `1px solid ${C.border}`, padding: 20, zIndex: 30, overflow: "auto" }}>
           <h2 style={{ marginTop: 0 }}>{drawer === "timesheet" ? "Timesheet" : drawer === "supplier" ? "Supplier invoice" : "Other cost"}</h2>
@@ -497,6 +604,15 @@ export default function JobBurndownScreen() {
                 </select>
               </label>
               <label style={labelStyle}>Hours<input aria-label="Timesheet hours" inputMode="decimal" value={costDraft.hours} onChange={event => setCostDraft(current => ({ ...current, hours: event.target.value }))} style={fieldStyle} /></label>
+              <p style={{ margin: "4px 0 0", color: C.textMuted, fontSize: 13 }}>
+                Priced from the labour rate card
+                {(() => {
+                  const card = loadLabourCard() || [];
+                  const role = card.find(item => item.id === costDraft.roleId) || defaultHourlyRole(card);
+                  const amount = priceTimesheet(Number(costDraft.hours) || 0, role, labourRate);
+                  return role ? ` · ${role.name} · ${show(amount)}` : ` · ${show(amount)}`;
+                })()}
+              </p>
             </>
           )}
           {drawer === "supplier" && (
@@ -533,13 +649,42 @@ function BudgetBar({ label, spent, budget, show, color }: { label: string; spent
   );
 }
 
-function Stat({ label, value, tone }: { label: string; value: string; tone?: string }) {
+function Stat({ label, value, tone, sub }: { label: string; value: string; tone?: string; sub?: string }) {
   return (
     <div style={{ padding: 12, borderRadius: 12, border: `1px solid ${C.border}`, background: C.bgCard }}>
       <div style={{ fontSize: 12, color: C.textMuted }}>{label}</div>
       <div style={{ marginTop: 4, fontSize: 22, fontWeight: 800, color: tone || C.text }}>{value}</div>
+      {sub && <div style={{ marginTop: 4, fontSize: 12, color: C.textMuted }}>{sub}</div>}
     </div>
   );
+}
+
+function SummaryLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "8px 0", borderTop: `1px solid ${C.border}` }}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function OverrunRow({ label, note, amount }: { label: string; note: string; amount: string }) {
+  return (
+    <Card style={{ padding: 14, marginBottom: 8, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", borderLeft: `4px solid ${C.red}` }}>
+      <div>
+        <div style={{ fontWeight: 700 }}>{label}</div>
+        <div style={{ color: C.textMuted, fontSize: 13 }}>{note}</div>
+      </div>
+      <strong style={{ color: C.red }}>{amount}</strong>
+    </Card>
+  );
+}
+
+function statusTone(status: ReportClaimStatus): string {
+  if (status === "received") return C.green;
+  if (status === "ready") return C.amber;
+  if (status === "invoiced" || status === "invoiced-draft") return C.orange;
+  return C.textMuted;
 }
 
 function today(): string {
