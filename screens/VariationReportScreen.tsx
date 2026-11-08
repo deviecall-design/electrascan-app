@@ -240,7 +240,7 @@ export default function VariationReportScreen() {
                         <td style={{ padding: 10, borderTop: `1px solid ${C.border}` }}>{line.description}</td>
                         <td style={{ padding: 10, borderTop: `1px solid ${C.border}` }}>{line.prevQty || "—"}</td>
                         <td style={{ padding: 10, borderTop: `1px solid ${C.border}` }}>{line.newQty || "—"}</td>
-                        <td style={{ padding: 10, borderTop: `1px solid ${C.border}`, fontWeight: 700 }}>{signedGst(line.delta)} ex GST</td>
+                        <td style={{ padding: 10, borderTop: `1px solid ${C.border}`, fontWeight: 700 }}>{signedGst(line.delta)}</td>
                       </tr>
                     ))}
                   </tbody>

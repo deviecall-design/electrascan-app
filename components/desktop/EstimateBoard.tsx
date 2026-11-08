@@ -4,6 +4,7 @@ import { C, FONT, RADIUS } from "./tokens";
 import { Card } from "../ui/anthropic";
 import { GhostButton, PrimaryButton } from "../ui/anthropic/Button";
 import { formatAud } from "../../lib/quoteTotals";
+import { splitCostBreakdown } from "../../lib/costBreakdown";
 import { incGst, isHourlyCharge } from "../../lib/labourRates";
 import type { QuoteTotals } from "../../lib/quoteTotals";
 import type { WorkbookChange, WorkbookLine } from "../../lib/estimateWorkbook";
@@ -54,7 +55,6 @@ export default function EstimateBoard({
   marginLocked,
   lineCount,
   unpricedCount,
-  materials,
   labour,
   labourByRole,
   sections,
@@ -118,11 +118,17 @@ export default function EstimateBoard({
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState<Record<string, boolean>>({});
-  const mix = Math.max(0.01, materials + labour + totals.marginAmount);
+  const split = splitCostBreakdown({
+    subtotal: totals.subtotal,
+    margin: totals.marginAmount,
+    labourByRole,
+    fallbackLabour: labour,
+  });
+  const mix = Math.max(0.01, split.materials + split.labour + split.margin);
   const parts = [
-    { label: "Materials", amount: materials, color: "#1f56e6" },
-    { label: "Labour", amount: labour, color: "#0ea5e9" },
-    { label: "Margin", amount: totals.marginAmount, color: "#b45309" },
+    { label: "Materials", amount: split.materials, color: "#1f56e6" },
+    { label: "Labour", amount: split.labour, color: "#0ea5e9" },
+    { label: "Margin", amount: split.margin, color: "#b45309" },
   ];
 
   return (
