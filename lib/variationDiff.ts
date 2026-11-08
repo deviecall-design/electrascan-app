@@ -4,7 +4,7 @@
  */
 
 import { readDetectedItems, type StoredDetectedItem } from "./scanRecord";
-import { computeQuoteTotals, DEFAULT_MARGIN_PCT } from "./quoteTotals";
+import { computeQuoteTotals, DEFAULT_MARGIN_PCT, roundCents } from "./quoteTotals";
 import { costSplit, type RateLike } from "./takeoff";
 import { cleanDocumentName } from "./documentLabel";
 
@@ -80,11 +80,43 @@ function materialOf(line: TakeoffLine) {
   return line.materialUnit ?? line.unitPrice;
 }
 
+/** Same description is one line. Qty and cost are summed so the diff matches the version totals. */
+export function mergeTakeoffLines(lines: TakeoffLine[]): TakeoffLine[] {
+  const groups = new Map<string, TakeoffLine[]>();
+  for (const line of lines) {
+    const key = keyOf(line.description);
+    const list = groups.get(key) ?? [];
+    list.push(line);
+    groups.set(key, list);
+  }
+  return [...groups.values()].map(group => {
+    const qty = group.reduce((sum, line) => sum + line.qty, 0);
+    const material = group.reduce((sum, line) => sum + line.qty * materialOf(line), 0);
+    const labour = group.reduce((sum, line) => sum + line.qty * labourOf(line), 0);
+    const sell = group.reduce((sum, line) => sum + line.qty * (line.unitPrice || 0), 0);
+    return {
+      description: group[0].description,
+      qty,
+      unitPrice: qty > 0 ? sell / qty : 0,
+      materialUnit: qty > 0 ? material / qty : 0,
+      labourUnit: qty > 0 ? labour / qty : 0,
+    };
+  });
+}
+
+/** Ex-GST contract of a takeoff: materials plus labour, after identical lines are merged. */
+export function variationExGst(lines: TakeoffLine[]): number {
+  const merged = mergeTakeoffLines(lines);
+  return roundCents(materialsExGst(merged) + labourExGst(merged));
+}
+
 function labourOf(line: TakeoffLine) {
   return line.labourUnit ?? 0;
 }
 
 export function diffTakeoffLines(previous: TakeoffLine[], next: TakeoffLine[]): VariationLine[] {
+  previous = mergeTakeoffLines(previous);
+  next = mergeTakeoffLines(next);
   const prevByKey = new Map<string, TakeoffLine>();
   for (const line of previous) prevByKey.set(keyOf(line.description), line);
   const nextByKey = new Map<string, TakeoffLine>();
@@ -263,8 +295,8 @@ export function variationChain<T extends { client?: string | null; file_name?: s
     .filter(scan => variationProjectKey(scan) === key)
     .sort((a, b) => startedMs(a.started_at) - startedMs(b.started_at));
   return ordered.map((scan, index) => {
-    const lines = linesFromDetected(scan.detected_items, rates);
-    const prev = index > 0 ? linesFromDetected(ordered[index - 1].detected_items, rates) : null;
+    const lines = mergeTakeoffLines(linesFromDetected(scan.detected_items, rates));
+    const prev = index > 0 ? mergeTakeoffLines(linesFromDetected(ordered[index - 1].detected_items, rates)) : null;
     return {
       scan,
       lines,

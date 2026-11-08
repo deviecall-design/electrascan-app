@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link, useOutletContext, useParams } from "react-router-dom";
+import { useOutletContext, useParams, useSearchParams } from "react-router-dom";
 import { C } from "../components/desktop/tokens";
 import { PageHeader, Card, Footer } from "../components/ui/anthropic";
 import { PrimaryButton } from "../components/ui/anthropic/Button";
@@ -19,7 +19,7 @@ import { approvalFromRow } from "../lib/approvalStatus";
 import { getActiveCompanyProfile } from "../services/companyProfile";
 import QueryBanner from "../components/QueryBanner";
 import { burnPercent, milestoneWeekIndex, paymentSchedule, type ActualEntry } from "../lib/burndown";
-import { claimedMilestone, reportClaimStatus, REPORT_STATUS_LABEL, type ReportClaimStatus } from "../lib/reportMilestone";
+import { claimedMilestone, milestoneWarning, reportClaimStatus, REPORT_STATUS_LABEL, showOverrunAlert, type ReportClaimStatus } from "../lib/reportMilestone";
 import AccountingConnect from "../components/desktop/AccountingConnect";
 import { formatAud, roundCents } from "../lib/quoteTotals";
 
@@ -30,6 +30,7 @@ interface Schedule {
 
 export default function JobBurndownScreen() {
   const params = useParams();
+  const [searchParams] = useSearchParams();
   const jobId = decodeURIComponent(params.jobKey || "");
   const embedded = Boolean(useOutletContext<{ embedded?: boolean } | undefined>()?.embedded);
   const { data: scans, loading, error } = useSupabaseQuery(fetchScans);
@@ -45,7 +46,10 @@ export default function JobBurndownScreen() {
   const [drawer, setDrawer] = useState<CostKind | null>(null);
   const [gstMode, setGstMode] = useState<"ex" | "inc">("ex");
   const [openWeek, setOpenWeek] = useState<string | null>(null);
-  const [tab, setTab] = useState<"overview" | "burndown" | "hours" | "milestones" | "overruns" | "accounting">("overview");
+  const requestedTab = searchParams.get("tab");
+  const [tab, setTab] = useState<"overview" | "burndown" | "hours" | "milestones" | "overruns" | "accounting">(
+    requestedTab === "milestones" || requestedTab === "burndown" || requestedTab === "hours" || requestedTab === "overruns" || requestedTab === "accounting" ? requestedTab : "overview",
+  );
   const [payTab, setPayTab] = useState<"schedule" | "claims" | "deposit">("schedule");
   const [costDraft, setCostDraft] = useState({ date: today(), roleId: "", hours: "", amount: "", supplier: "TLE", reference: "", note: "" });
 
@@ -218,9 +222,16 @@ export default function JobBurndownScreen() {
       invoiceRef: claim?.inv_ref || invoice?.id || "",
     };
   });
+  let cumulativePct = 0;
+  const milestoneProgress = reportRows.map(row => {
+    cumulativePct += row.pct;
+    return { label: row.label, cumulativePct, status: row.status };
+  });
+  const warning = milestoneWarning({ burnPct: pctBurnt, milestones: milestoneProgress });
+  const plannedToDate = [...ledger.weeks].reverse().find(week => week.start <= asOf)?.plannedCumulative ?? 0;
+  const overrunVisible = showOverrunAlert({ overrunAmount, costToDate: ledger.summary.costToDate, plannedToDate });
   const progressRows = reportRows.filter(row => !row.retention);
   const claimedCount = progressRows.filter(row => claimedMilestone(row.status)).length;
-  const nextOpen = progressRows.find(row => row.status !== "received");
   const depositRow = reportRows.find(row => row.id === "deposit");
   const depositReceived = depositRow?.status === "received" ? depositRow.amount : 0;
   const progressInvoiced = roundCents(progressRows.filter(row => row.status === "invoiced" || row.status === "invoiced-draft").reduce((sum, row) => sum + row.amount, 0));
@@ -368,7 +379,7 @@ export default function JobBurndownScreen() {
         <button type="button" onClick={() => setDrawer("timesheet")} style={quietBtn}>Add timesheet</button>
         <button type="button" onClick={() => setDrawer("supplier")} style={quietBtn}>Add TLE invoice</button>
         <button type="button" onClick={() => setDrawer("other")} style={quietBtn}>Add other cost</button>
-        <Link to="/projects" style={quietBtn}>Milestones</Link>
+        <button type="button" onClick={() => setTab("milestones")} style={quietBtn}>Milestones</button>
         <button type="button" onClick={exportLedger} style={quietBtn}>Export Excel</button>
       </div>
       <form onSubmit={saveDates} style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
@@ -388,16 +399,22 @@ export default function JobBurndownScreen() {
           <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)} style={{ ...tabBtn, color: tab === id ? "#1D6EFD" : "#64748B", borderBottomColor: tab === id ? "#1D6EFD" : "transparent", fontWeight: 600, fontSize: 12 }}>{label}</button>
         ))}
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
-        <div role="status" style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderLeft: "4px solid #F59E0B", borderRadius: 8, padding: "8px 14px", display: "flex", gap: 10, alignItems: "center", fontSize: 12 }}>
-          <span aria-hidden>⚠️</span>
-          <div><strong style={{ color: "#92400E" }}>Milestone warning — </strong><span style={{ color: "#78350F" }}>Budget is {pctBurnt}% burnt. {nextOpen ? `${nextOpen.label} is ${REPORT_STATUS_LABEL[nextOpen.status]}.` : "Every progress milestone has been received."}</span></div>
+      {(warning || overrunVisible) && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
+          {warning && (
+            <div role="status" style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderLeft: "4px solid #F59E0B", borderRadius: 8, padding: "8px 14px", display: "flex", gap: 10, alignItems: "center", fontSize: 12 }}>
+              <span aria-hidden>⚠️</span>
+              <div><strong style={{ color: "#92400E" }}>Milestone warning — </strong><span style={{ color: "#78350F" }}>Budget is {pctBurnt}% burnt. {warning.label} is not claimed yet.</span></div>
+            </div>
+          )}
+          {overrunVisible && (
+            <div role="status" style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderLeft: "4px solid #EF4444", borderRadius: 8, padding: "8px 14px", display: "flex", gap: 10, alignItems: "center", fontSize: 12 }}>
+              <span aria-hidden>🔺</span>
+              <div><strong style={{ color: "#991B1B" }}>Overrun alert — </strong><span style={{ color: "#7F1D1D" }}>{show(Math.max(overrunAmount, roundCents(ledger.summary.costToDate - plannedToDate)))} is past the plan. {show(contingLeft)} contingency remaining.</span></div>
+            </div>
+          )}
         </div>
-        <div role="status" style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderLeft: "4px solid #EF4444", borderRadius: 8, padding: "8px 14px", display: "flex", gap: 10, alignItems: "center", fontSize: 12 }}>
-          <span aria-hidden>🔺</span>
-          <div><strong style={{ color: "#991B1B" }}>Overrun alert — </strong><span style={{ color: "#7F1D1D" }}>{overrunAmount > 0 ? `${show(overrunAmount)} in unplanned costs. ` : "No unplanned costs. "}{show(contingLeft)} contingency remaining.</span></div>
-        </div>
-      </div>
+      )}
       {tab === "overview" && (
         <>
           <div className="es-stat-grid" style={{ marginBottom: 16 }}>

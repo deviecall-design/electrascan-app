@@ -23,7 +23,7 @@ export function JobEstimateTab() {
       </p>
       <p>{job.approved ? "This quote is approved." : "This quote is still moving through approval."}</p>
       {job.scanId ? (
-        <Link to={`/detection/${job.scanId}`} style={action}>Open estimate</Link>
+        <Link to={`/detection/${job.scanId}?estimate=${encodeURIComponent(job.reference || job.estimateId || "")}`} style={action}>Open estimate</Link>
       ) : (
         <p>Upload a plan before there is an estimate to open.</p>
       )}
@@ -63,7 +63,7 @@ export function JobMilestonesTab() {
           <div style={{ fontFamily: FONT.mono, fontWeight: 700 }}>${formatAud(row.amount)} · {row.pct}%</div>
         </div>
       ))}
-      <p><Link to="/projects">Open milestone claims</Link></p>
+      <p><Link to="../burndown?tab=milestones">Open milestone claims</Link></p>
     </Card>
   );
 }

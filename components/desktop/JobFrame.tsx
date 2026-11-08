@@ -33,6 +33,7 @@ export interface JobOutletContext {
   approved: boolean;
   approval: string;
   drawing: string;
+  estimateId?: string;
   estimate: { scope_of_works?: unknown; line_items?: unknown; client?: string | null; project_name?: string | null; drawing_file?: string | null } | null;
 }
 

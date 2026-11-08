@@ -60,7 +60,7 @@ const NAV: { grp: string; items: NavEntry[] }[] = [
     grp: "Workflow",
     items: [
       { path: "/approvals", label: "Approvals", icon: <CheckCircle2 size={18} /> },
-      { path: "/projects", label: "Reports", icon: <FolderKanban size={18} /> },
+      { path: "/reports", label: "Reports", icon: <FolderKanban size={18} /> },
     ],
   },
   {
