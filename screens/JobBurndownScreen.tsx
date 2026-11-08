@@ -8,7 +8,8 @@ import { fetchEstimates, fetchMilestoneClaimsForProject, fetchScans } from "../s
 import { loadAssemblies, loadLabourRate } from "../lib/assemblies";
 import { priceItem } from "../lib/quoteSource";
 import { readDetectedItems } from "../lib/scanRecord";
-import { displayClient, quotedSellExGst, resolveJobTarget } from "../lib/jobLink";
+import { quotedSellExGst, resolveJobTarget } from "../lib/jobLink";
+import { indexRows, readLocalDocumentLabels } from "../lib/documentLabel";
 import { marginForQuote } from "../lib/margin";
 import { approvalFromRow } from "../lib/approvalStatus";
 import { formatQuotedValue } from "../lib/estimateMoney";
@@ -68,14 +69,11 @@ export default function JobBurndownScreen() {
     const margin = marginForQuote(estimate?.margin_pct);
     const contract = quoteContract(sell, margin);
     const approved = estimate ? ["approved", "materials_sent"].includes(approvalFromRow(estimate)) : false;
+    const labels = indexRows(estimateRows as Array<Record<string, unknown>>, scanRows as Array<Record<string, unknown>>, readLocalDocumentLabels());
+    const reference = estimate?.reference || estimate?.ref || resolved.scans[0]?.estimate_ref || "";
     return {
-      name: displayClient({
-        client: estimate?.client || resolved.scans[0]?.client,
-        projectName: estimate?.project_name,
-        drawingFile: estimate?.drawing_file,
-        fileName: resolved.scans[0]?.file_name,
-      }),
-      reference: estimate?.reference || estimate?.ref || resolved.scans[0]?.estimate_ref || "",
+      name: (reference && labels.byReference[reference]) || (resolved.scans[0]?.id && labels.byScanId[resolved.scans[0].id]) || "Untitled plan",
+      reference,
       approved,
       sell,
       hours,

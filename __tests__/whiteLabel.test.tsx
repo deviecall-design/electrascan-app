@@ -12,6 +12,7 @@ vi.mock("../analyze_pdf", () => ({
 vi.mock("../services/supabaseData", () => ({
   fetchScanById: vi.fn(),
   fetchScans: vi.fn().mockResolvedValue({ data: [], error: null }),
+  fetchEstimates: vi.fn().mockResolvedValue({ data: [], error: null }),
   insertScan: vi.fn(),
   updateScan: vi.fn(),
 }));

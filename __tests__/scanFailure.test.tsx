@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -6,6 +6,7 @@ import { publicScanFailure } from "../lib/scanFailure";
 
 const fetchScans = vi.hoisted(() => vi.fn());
 const fetchScanById = vi.hoisted(() => vi.fn());
+const fetchEstimates = vi.hoisted(() => vi.fn().mockResolvedValue({ data: [], error: null }));
 
 vi.mock("../analyze_pdf", () => ({
   detectElectricalComponents: vi.fn(),
@@ -13,6 +14,7 @@ vi.mock("../analyze_pdf", () => ({
 
 vi.mock("../services/supabaseData", () => ({
   fetchScans: (...args: unknown[]) => fetchScans(...args),
+  fetchEstimates,
   fetchScanById: (...args: unknown[]) => fetchScanById(...args),
   insertScan: vi.fn(),
   updateScan: vi.fn(),
@@ -34,6 +36,12 @@ describe("public scan failures", () => {
 });
 
 describe("scan failure state", () => {
+  beforeEach(() => {
+    fetchScans.mockReset();
+    fetchScans.mockResolvedValue({ data: [], error: null });
+    fetchScanById.mockReset();
+  });
+
   it("shows a retry panel instead of an empty scan list", async () => {
     const user = userEvent.setup();
     fetchScans
@@ -66,7 +74,7 @@ describe("scan failure state", () => {
     expect(screen.queryByText(/SUPABASE_SERVICE_ROLE_KEY/)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Try again" }));
-    expect(await screen.findByText("level-1.pdf")).toBeInTheDocument();
+    expect(await screen.findByText("level-1")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
@@ -97,7 +105,7 @@ describe("scan failure state", () => {
     expect(screen.queryByText("Untitled scan")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Try again" }));
-    expect(await screen.findByRole("heading", { name: "kitchen-plan.pdf" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "kitchen-plan" })).toBeInTheDocument();
     expect(fetchScanById).toHaveBeenCalledTimes(2);
   });
 });

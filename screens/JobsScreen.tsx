@@ -5,7 +5,8 @@ import { PageHeader, Card, Footer } from "../components/ui/anthropic";
 import useSupabaseQuery from "../hooks/useSupabaseQuery";
 import { fetchEstimates, fetchScans } from "../services/supabaseData";
 import { readDetectedItems } from "../lib/scanRecord";
-import { displayClient, quotedSellExGst } from "../lib/jobLink";
+import { quotedSellExGst } from "../lib/jobLink";
+import { indexRows, readLocalDocumentLabels } from "../lib/documentLabel";
 import { workflowStageIndex } from "../lib/workflowStage";
 import StagePipeline from "../components/desktop/StagePipeline";
 import { formatQuotedValue } from "../lib/estimateMoney";
@@ -18,6 +19,7 @@ export default function JobsScreen() {
   const jobs = useMemo(() => {
     const scanRows = scans as Array<{ id?: string; client?: string | null; file_name?: string; detected_items?: unknown; estimate_ref?: string | null }>;
     const estimateRows = estimates as Array<{ id?: string; client?: string | null; project_name?: string | null; drawing_file?: string | null; reference?: string | null; ref?: string | null; status?: string | null; approval_status?: string | null }>;
+    const labels = indexRows(estimateRows as Array<Record<string, unknown>>, scanRows as Array<Record<string, unknown>>, readLocalDocumentLabels());
     const cards = estimateRows.map(row => {
       const reference = row.reference || row.ref || "";
       const scan = scanRows.find(item => item.estimate_ref === reference);
@@ -25,7 +27,7 @@ export default function JobsScreen() {
       return {
         key: reference || row.id || scan?.id || "job",
         routeKey: reference || row.id || scan?.id || "job",
-        name: displayClient({ client: row.client, projectName: row.project_name, drawingFile: row.drawing_file, fileName: scan?.file_name }),
+        name: labels.byReference[reference] || (row.id ? labels.byEstimateId[row.id] : "") || reference || "Untitled plan",
         quoted: quotedSellExGst(readDetectedItems(scan?.detected_items)),
         reference: reference || null,
         approved,
@@ -38,7 +40,7 @@ export default function JobsScreen() {
       cards.push({
         key: scan.id || scan.file_name || "scan",
         routeKey: scan.id || scan.file_name || "scan",
-        name: displayClient({ client: scan.client, fileName: scan.file_name }),
+        name: (scan.id && labels.byScanId[scan.id]) || scan.file_name || "Untitled plan",
         quoted: quotedSellExGst(readDetectedItems(scan.detected_items)),
         reference: scan.estimate_ref || null,
         approved: false,
@@ -61,7 +63,7 @@ export default function JobsScreen() {
         <Card key={job.key} style={{ padding: 16, marginBottom: 12 }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 800, fontSize: 18 }}>{job.name}</div>
+              <div style={{ fontWeight: 800, fontSize: 18, overflowWrap: "anywhere" }}>{job.name}</div>
               <p style={{ margin: "4px 0 0", color: C.textMuted, fontSize: 14 }}>
                 {job.reference ? `${job.reference} · ` : ""}
                 Quoted {formatQuotedValue(job.quoted)} ex GST

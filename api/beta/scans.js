@@ -10,6 +10,7 @@ import {
   firstRow,
   insertVesh,
   isUuid,
+  missingColumn,
   readVesh,
   requireBeta,
   sendResult,
@@ -112,6 +113,9 @@ function scanPayload(body, { requireName }) {
   }
   if (body.estimate_ref !== undefined) {
     row.estimate_ref = body.estimate_ref ? String(body.estimate_ref).slice(0, 40) : null;
+  }
+  if (body.display_label !== undefined) {
+    row.display_label = String(body.display_label || "").trim().slice(0, 200) || null;
   }
   if (requireName) {
     if (row.stage == null) row.stage = "review";
@@ -238,7 +242,16 @@ async function handle(req, res) {
       fail(res, 400, parsed.error);
       return;
     }
-    const saved = await updateVesh("scans", id.id, parsed.row);
+    let saved = await updateVesh("scans", id.id, parsed.row);
+    if (!saved.ok && missingColumn(saved, "display_label")) {
+      const retry = { ...parsed.row };
+      delete retry.display_label;
+      if (Object.keys(retry).length === 0) {
+        res.status(200).json({ data: null, stored: "browser" });
+        return;
+      }
+      saved = await updateVesh("scans", id.id, retry);
+    }
     const row = firstRow(saved);
     if (!saved.ok) {
       sendResult(res, saved, { data: null });

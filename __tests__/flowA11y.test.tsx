@@ -13,6 +13,8 @@ vi.mock("../analyze_pdf", () => ({
 
 vi.mock("../services/supabaseData", () => ({
   fetchScanById: (...args: unknown[]) => fetchScanById(...args),
+  fetchScans: vi.fn().mockResolvedValue({ data: [], error: null }),
+  fetchEstimates: vi.fn().mockResolvedValue({ data: [], error: null }),
   insertScan: vi.fn(),
   updateScan: vi.fn().mockResolvedValue({ data: null, error: null }),
   fetchRateLibrary: vi.fn().mockResolvedValue({ data: [], error: null }),
@@ -128,7 +130,8 @@ describe("takeoff, verification, and quote accessibility", () => {
     const save = screen.getByRole("button", { name: "Save for approval" });
     expect(save).toBeDisabled();
     expect(save).toHaveAttribute("aria-describedby", reason.id);
-    expect(await screen.findByText("EST-2611-0004.pdf")).toBeInTheDocument();
+    expect(await screen.findByText("EST-2611-0004")).toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { name: "Level-2-power" }).length).toBeGreaterThan(0);
     expect(screen.getByRole("region", { name: "Quote" })).toBeInTheDocument();
   });
 

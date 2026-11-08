@@ -6,6 +6,7 @@
  */
 
 import { displayClient } from "./jobLink";
+import { cleanDocumentName, indexRows } from "./documentLabel";
 
 export type PaletteGroup = "Actions" | "Navigate" | "Jobs" | "Scans" | "Estimates";
 
@@ -96,6 +97,9 @@ export interface PaletteScan {
   id?: string;
   file_name?: string;
   client?: string | null;
+  estimate_ref?: string | null;
+  started_at?: string | null;
+  display_label?: string | null;
 }
 
 export interface PaletteEstimate {
@@ -105,18 +109,21 @@ export interface PaletteEstimate {
   client?: string | null;
   project_name?: string | null;
   drawing_file?: string | null;
+  created_at?: string | null;
+  display_label?: string | null;
 }
 
-export function scanToPaletteItem(scan: PaletteScan, index: number): PaletteItem {
+export function scanToPaletteItem(scan: PaletteScan, index: number, label?: string): PaletteItem {
   const file = (scan.file_name ?? "Untitled plan").trim() || "Untitled plan";
   const id = scan.id ?? `scan-${index}`;
+  const name = label || cleanDocumentName(file) || file;
   return {
     id: `scan-${id}`,
     group: "Scans",
-    label: file,
-    hint: scan.client?.trim() || "Scan",
+    label: name,
+    hint: scan.estimate_ref || "Scan",
     to: `/detection/${id}`,
-    keywords: [file, scan.client ?? "", "scan", "plan"],
+    keywords: [file, name, scan.estimate_ref ?? "", scan.client ?? "", "scan", "plan"],
   };
 }
 
@@ -128,31 +135,33 @@ function namedClient(estimate: PaletteEstimate): string {
   });
 }
 
-export function estimateToPaletteItem(estimate: PaletteEstimate, index: number): PaletteItem {
+export function estimateToPaletteItem(estimate: PaletteEstimate, index: number, label?: string): PaletteItem {
   const ref = (estimate.reference || estimate.ref || `Estimate ${index + 1}`).trim();
   const id = estimate.id ?? `estimate-${index}`;
   const client = namedClient(estimate);
+  const name = label || cleanDocumentName(estimate.drawing_file || estimate.project_name) || ref;
   return {
     id: `estimate-${id}`,
     group: "Estimates",
-    label: ref,
-    hint: client,
+    label: name,
+    hint: ref,
     to: estimate.reference || estimate.ref ? `/jobs/${encodeURIComponent(ref)}/estimate` : "/estimate",
-    keywords: [ref, client, "quote", "estimate"],
+    keywords: [ref, name, client, "quote", "estimate"],
   };
 }
 
-export function jobToPaletteItem(estimate: PaletteEstimate, index: number): PaletteItem {
+export function jobToPaletteItem(estimate: PaletteEstimate, index: number, label?: string): PaletteItem {
   const ref = (estimate.reference || estimate.ref || "").trim();
   const client = namedClient(estimate);
   const id = estimate.id ?? `job-${index}`;
+  const name = label || cleanDocumentName(estimate.drawing_file || estimate.project_name) || (client === "Client not set" ? "Job" : client);
   return {
     id: `job-${id}`,
     group: "Jobs",
-    label: client === "Client not set" ? "Job" : client,
+    label: name,
     hint: ref || "Job",
     to: ref ? `/jobs/${encodeURIComponent(ref)}/estimate` : "/jobs",
-    keywords: [ref, client, "job", "burndown", "scope"],
+    keywords: [ref, name, client, "job", "burndown", "scope"],
   };
 }
 
@@ -160,11 +169,20 @@ export function buildPaletteItems(
   scans: PaletteScan[] = [],
   estimates: PaletteEstimate[] = [],
 ): PaletteItem[] {
+  const labels = indexRows(estimates as Array<Record<string, unknown>>, scans as Array<Record<string, unknown>>);
   return [
     ...STATIC_PALETTE_ITEMS,
-    ...scans.map(scanToPaletteItem),
-    ...estimates.map(estimateToPaletteItem),
-    ...estimates.map(jobToPaletteItem),
+    ...scans.map((scan, index) => scanToPaletteItem(scan, index, scan.id ? labels.byScanId[scan.id] : undefined)),
+    ...estimates.map((estimate, index) => estimateToPaletteItem(
+      estimate,
+      index,
+      labels.byReference[(estimate.reference || estimate.ref || "").trim()] || (estimate.id ? labels.byEstimateId[estimate.id] : undefined),
+    )),
+    ...estimates.map((estimate, index) => jobToPaletteItem(
+      estimate,
+      index,
+      labels.byReference[(estimate.reference || estimate.ref || "").trim()] || (estimate.id ? labels.byEstimateId[estimate.id] : undefined),
+    )),
   ];
 }
 

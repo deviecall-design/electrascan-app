@@ -127,7 +127,8 @@ export default async function handler(req, res) {
   if (req.method === "PATCH") {
     const body = readBody(req);
     const approval = body.approval_status;
-    if (!APPROVAL_TO_STATUS[approval]) {
+    const renaming = Object.prototype.hasOwnProperty.call(body, "display_label");
+    if (!renaming && !APPROVAL_TO_STATUS[approval]) {
       res.status(400).json({ error: "Choose a valid approval status." });
       return;
     }
@@ -142,6 +143,21 @@ export default async function handler(req, res) {
     }
     if (!isUuid(id)) {
       res.status(404).json({ error: "That quote was not found." });
+      return;
+    }
+    if (renaming && !APPROVAL_TO_STATUS[approval]) {
+      const display_label = String(body.display_label || "").trim().slice(0, 200) || null;
+      const saved = await updateVesh("estimates", id, { display_label });
+      if (!saved.ok && missingColumn(saved, "display_label")) {
+        res.status(200).json({ data: null, stored: "browser" });
+        return;
+      }
+      const row = firstRow(saved);
+      if (!saved.ok || !row) {
+        sendResult(res, saved.ok ? { ok: false, status: 404, error: "That quote was not found." } : saved, { data: null });
+        return;
+      }
+      res.status(200).json({ data: row, stored: "database" });
       return;
     }
     const patch = { approval_status: approval, status: APPROVAL_TO_STATUS[approval] };
