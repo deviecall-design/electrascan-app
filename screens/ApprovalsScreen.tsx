@@ -7,11 +7,11 @@ import { fetchEstimates, fetchScans } from "../services/supabaseData";
 import { estimateDisplayRef, formatQuotedValue } from "../lib/estimateMoney";
 import { linesFromDetected, materialsExGst } from "../lib/variationDiff";
 import { approvalsHref } from "../lib/approvalsLink";
+import { displayClient } from "../lib/jobLink";
 import { readDetectedItems, type StoredDetectedItem } from "../lib/scanRecord";
 import { formatVerified, verifiedFromEstimate } from "../lib/takeoff";
 import { APPROVAL_LABEL, approvalFromRow, type ApprovalStatus } from "../lib/approvalStatus";
 import { marginForQuote } from "../lib/margin";
-import { jobKey } from "../lib/jobTracker";
 import { getActiveCompanyProfile } from "../services/companyProfile";
 import SignOrderStep from "../components/desktop/SignOrderStep";
 import { readScopeFromEstimate } from "../lib/scopeOfWorks";
@@ -102,7 +102,7 @@ export default function ApprovalsScreen() {
               empty="No saved quote is waiting. Save a priced takeoff and it will land here."
               rows={awaiting.map((row: { id: string; client?: string; value?: number; status?: string; approval_status?: string; reference?: string; ref?: string }) => ({
                 id: row.id,
-                label: `${estimateDisplayRef(row)} · ${row.client || "Client not set"}`,
+                label: `${estimateDisplayRef(row)} · ${displayClient({ client: row.client, projectName: (row as { project_name?: string }).project_name, drawingFile: (row as { drawing_file?: string }).drawing_file })}`,
                 detail: `${formatQuotedValue(Number(row.value) || 0)} · ${APPROVAL_LABEL[statusOf(row)]}`,
                 href: approvalsHref(scans.find((scan: { estimate_ref?: string | null }) => scan.estimate_ref === estimateDisplayRef(row))?.id, estimateDisplayRef(row)),
                 active: estimateDisplayRef(row) === reference,
@@ -138,16 +138,19 @@ export default function ApprovalsScreen() {
           {(selectedScan || selectedEstimate) && (
             <div style={{ marginTop: 16 }}>
               {verified && <p style={{ marginTop: 0, color: C.orange, fontWeight: 600 }}>{verified}</p>}
-              {selectedEstimate && ["approved", "materials_sent"].includes(statusOf(selectedEstimate)) && (
-                <p style={{ marginTop: 0 }}>
-                  <Link to={`/jobs/${encodeURIComponent(jobKey(selectedEstimate.client, selectedEstimate.project_name))}/burndown`}>Open burndown</Link>
-                </p>
-              )}
+              <p style={{ marginTop: 0 }}>
+                <Link to={`/jobs/${encodeURIComponent(reference || selectedEstimate?.id || selectedScan?.id || jobName)}/burndown`}>Open burndown</Link>
+              </p>
               <SignOrderStep
                 items={items}
                 reference={reference}
                 jobName={jobName}
-                clientName={selectedScan?.client || selectedEstimate?.client || ""}
+                clientName={displayClient({
+                  client: selectedScan?.client || selectedEstimate?.client,
+                  projectName: selectedEstimate?.project_name,
+                  drawingFile: selectedScan?.file_name || selectedEstimate?.drawing_file,
+                  fileName: selectedScan?.file_name,
+                })}
                 drawingFile={selectedScan?.file_name || selectedEstimate?.drawing_file}
                 siteAddress={getActiveCompanyProfile().address || ""}
                 scanId={selectedScan?.id}
