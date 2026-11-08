@@ -9,6 +9,7 @@
  */
 
 import { matchAssembly, materialCostOf, type Assembly, DEFAULT_LABOUR_RATE } from "./assemblies";
+import { labourCost, type LabourLine, type LabourRole } from "./labourRates";
 import type { StoredContractorPrice } from "./priceFile";
 import type { RateLike } from "./takeoff";
 
@@ -20,6 +21,7 @@ export interface QuotePrice {
   source: "rate" | "price-list" | "assembly" | "stored";
   assemblyId: string | null;
   assemblyName: string | null;
+  labourLines: LabourLine[];
 }
 
 function round(n: number) {
@@ -75,6 +77,7 @@ export function priceItem(
   assemblies: Assembly[] = [],
   labourRate: number = DEFAULT_LABOUR_RATE,
   priceList: StoredContractorPrice[] = [],
+  card: LabourRole[] | null = null,
 ): QuotePrice {
   if (item.manualPrice && typeof item.unitPrice === "number" && item.unitPrice > 0) {
     return storedPrice(item);
@@ -93,6 +96,7 @@ export function priceItem(
         source: "rate",
         assemblyId: null,
         assemblyName: null,
+        labourLines: [],
       };
     }
   }
@@ -101,16 +105,23 @@ export function priceItem(
   if (listed) {
     const assembly = matchAssembly(item, assemblies);
     const materialUnit = round(listed.cost);
-    const labourHours = assembly ? Math.max(0, assembly.labourHours) : 0;
-    const labourUnit = round(labourHours * Math.max(0, labourRate));
+    const worked = labourCost({
+      hours: assembly?.labourHours,
+      roleId: assembly?.labourRoleId,
+      mix: assembly?.labourMix,
+      card,
+      fallbackRate: labourRate,
+    });
+    const labourUnit = worked.amount;
     return {
       materialUnit,
       labourUnit,
-      labourHours,
+      labourHours: worked.hours,
       sellUnit: round(materialUnit + labourUnit),
       source: "price-list",
       assemblyId: assembly?.id ?? listed.assemblyId ?? null,
       assemblyName: assembly?.name ?? null,
+      labourLines: worked.lines,
     };
   }
 
@@ -118,19 +129,25 @@ export function priceItem(
 
   const assembly = matchAssembly(item, assemblies);
   if (assembly) {
-    const hours = Math.max(0, assembly.labourHours);
-    const labourFromHours = round(hours * Math.max(0, labourRate));
-    const fallback = materialCostOf(assembly) + labourFromHours;
+    const worked = labourCost({
+      hours: assembly.labourHours,
+      roleId: assembly.labourRoleId,
+      mix: assembly.labourMix,
+      card,
+      fallbackRate: labourRate,
+    });
+    const fallback = materialCostOf(assembly) + worked.amount;
     const sellUnit = assembly.sellPrice > 0 ? assembly.sellPrice : fallback;
-    const labourUnit = Math.min(labourFromHours, sellUnit);
+    const labourUnit = Math.min(worked.amount, sellUnit);
     return {
       materialUnit: round(sellUnit - labourUnit),
       labourUnit,
-      labourHours: hours,
+      labourHours: worked.hours,
       sellUnit,
       source: "assembly",
       assemblyId: assembly.id,
       assemblyName: assembly.name,
+      labourLines: scaleLabourLines(worked.lines, labourUnit),
     };
   }
 
@@ -157,5 +174,15 @@ function storedPrice(item: {
     source: "stored",
     assemblyId: null,
     assemblyName: null,
+    labourLines: [],
   };
+}
+
+function scaleLabourLines(lines: LabourLine[], target: number): LabourLine[] {
+  const raw = lines.reduce((sum, line) => sum + line.amount, 0);
+  if (lines.length === 0 || raw <= 0 || Math.abs(raw - target) < 0.001) return lines;
+  const scaled = lines.map(line => ({ ...line, amount: round(line.amount * target / raw) }));
+  const drift = round(target - scaled.reduce((sum, line) => sum + line.amount, 0));
+  scaled[scaled.length - 1].amount = round(scaled[scaled.length - 1].amount + drift);
+  return scaled;
 }

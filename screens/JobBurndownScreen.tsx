@@ -7,6 +7,7 @@ import useSupabaseQuery from "../hooks/useSupabaseQuery";
 import { fetchEstimates, fetchMilestoneClaimsForProject, fetchScans } from "../services/supabaseData";
 import { loadAssemblies, loadLabourRate } from "../lib/assemblies";
 import { priceItem } from "../lib/quoteSource";
+import { defaultLabourRole, loadLabourCard } from "../lib/labourRates";
 import { readDetectedItems } from "../lib/scanRecord";
 import { jobKey } from "../lib/jobTracker";
 import { marginForQuote } from "../lib/margin";
@@ -53,12 +54,14 @@ export default function JobBurndownScreen() {
     const estimate = (estimates as Array<{ client?: string | null; project_name?: string | null; reference?: string | null; ref?: string | null; margin_pct?: number | null; status?: string | null; approval_status?: string | null; value?: number | null }>).find(row => jobKey(row.client, row.project_name) === jobId);
     let sell = 0;
     let hours = 0;
+    let labourDollars = 0;
     for (const scan of matched) {
       for (const item of readDetectedItems(scan.detected_items)) {
         if (item.status === "rejected" || item.qty <= 0) continue;
-        const quote = priceItem(item, [], assemblies, labourRate);
+        const quote = priceItem(item, [], assemblies, labourRate, [], loadLabourCard());
         sell += item.qty * quote.sellUnit;
         hours += item.qty * quote.labourHours;
+        labourDollars += item.qty * quote.labourUnit;
       }
     }
     const margin = marginForQuote(estimate?.margin_pct);
@@ -70,6 +73,7 @@ export default function JobBurndownScreen() {
       approved,
       sell,
       hours,
+      labourDollars,
       margin,
       contract: contract.total,
       scanId: matched[0]?.id,
@@ -165,7 +169,8 @@ export default function JobBurndownScreen() {
     event.preventDefault();
     const materials = Math.max(0, Number(form.materials) || 0);
     const labourHours = Math.max(0, Number(form.hours) || 0);
-    const labourCost = Math.max(0, Number(form.cost) || labourHours * labourRate);
+    const roleRate = defaultLabourRole(loadLabourCard() || [])?.rate;
+    const labourCost = Math.max(0, Number(form.cost) || labourHours * (roleRate || labourRate));
     if (!form.date || (materials === 0 && labourHours === 0 && labourCost === 0)) return;
     const entry: ActualEntry = {
       id: `local-${Date.now()}`,
@@ -280,7 +285,7 @@ export default function JobBurndownScreen() {
       <Card style={{ padding: 16, marginBottom: 16 }}>
         <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>Hours</h2>
         <p style={{ margin: "0 0 8px", color: C.textMuted, fontSize: 14 }}>
-          Planned hours are the labour hours on the quoted assemblies ({Math.round(job.hours * 10) / 10} h). Actual hours come from the log.
+          Planned hours are the labour hours on the quoted assemblies ({Math.round(job.hours * 10) / 10} h). Planned labour cost is {formatQuotedValue(job.labourDollars)} ex GST at the same rates. Actual hours come from the log.
         </p>
         <BurndownChart weeks={weeks} plannedKey="plannedHours" actualKey="actualHours" max={Math.max(job.hours, totals.hours, 1)} format={value => `${Math.round(value)} h`} />
       </Card>

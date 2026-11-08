@@ -15,6 +15,7 @@ export interface EstimateTableLine {
   rate: number;
   total: number;
   ids?: number[];
+  labourNote?: string;
 }
 
 export interface EstimateTableSection {
@@ -53,6 +54,7 @@ export default function EstimateBoard({
   unpricedCount,
   materials,
   labour,
+  labourByRole,
   sections,
   onQty,
   onRate,
@@ -89,6 +91,7 @@ export default function EstimateBoard({
   unpricedCount: number;
   materials: number;
   labour: number;
+  labourByRole?: Array<{ roleName: string; hours: number; rate: number; multiplier: number; amount: number }>;
   sections: EstimateTableSection[];
   onQty: (ids: number[] | undefined, qty: number) => void;
   onRate: (ids: number[] | undefined, rate: number) => void;
@@ -197,7 +200,10 @@ export default function EstimateBoard({
                   <tbody>
                     {section.lines.map((line, index) => (
                       <tr key={line.key} style={{ background: index % 2 === 1 ? "#f8fafc" : "#fff" }}>
-                        <td style={{ padding: "8px", overflowWrap: "anywhere" }}>{line.description}</td>
+                        <td style={{ padding: "8px", overflowWrap: "anywhere" }}>
+                          {line.description}
+                          {line.labourNote && <div style={{ marginTop: 2, fontSize: 12, color: C.textMuted }}>{line.labourNote}</div>}
+                        </td>
                         <td style={{ padding: "8px", textAlign: "right" }}>
                           <input
                             aria-label={`Quantity for ${line.description}`}
@@ -227,6 +233,18 @@ export default function EstimateBoard({
           </Card>
         );
       })}
+
+      {labourByRole && labourByRole.length > 0 && (
+        <Card style={{ padding: 18 }}>
+          <h3 style={{ margin: "0 0 8px", fontFamily: FONT.heading, fontSize: 16 }}>Labour by role</h3>
+          {labourByRole.map(row => (
+            <div key={`${row.roleName}-${row.multiplier}`} style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "8px 0", borderTop: `1px solid ${C.border}` }}>
+              <span>{row.roleName}{row.multiplier !== 1 ? ` × ${row.multiplier}` : ""}</span>
+              <span style={{ fontFamily: FONT.mono }}>{row.hours} h × ${formatAud(row.rate)}/h · ${formatAud(row.amount)}</span>
+            </div>
+          ))}
+        </Card>
+      )}
 
       {scopeSection ?? (
         <Card style={{ padding: 18 }}>

@@ -130,6 +130,7 @@ export function buildEstimateWorkbook(input: {
   estimateId: string;
   marginPct: number;
   lines: WorkbookLine[];
+  labourByRole?: Array<{ roleName: string; hours: number; rate: number; multiplier: number; amount: number }>;
 }): XLSX.WorkBook {
   const aoa: Array<Array<string | number>> = [HEADERS];
   input.lines.forEach(line => {
@@ -192,6 +193,13 @@ export function buildEstimateWorkbook(input: {
   const book = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(book, lines, "Lines");
   XLSX.utils.book_append_sheet(book, summary, "Summary");
+  if (input.labourByRole && input.labourByRole.length > 0) {
+    const labour = XLSX.utils.aoa_to_sheet([
+      ["Role", "Hours", "Rate ex GST", "Overtime multiplier", "Amount"],
+      ...input.labourByRole.map(row => [row.roleName, row.hours, row.rate, row.multiplier, row.amount]),
+    ]);
+    XLSX.utils.book_append_sheet(book, labour, "Labour");
+  }
   XLSX.utils.book_append_sheet(book, info, "Info");
   return book;
 }

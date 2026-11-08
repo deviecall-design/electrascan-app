@@ -42,6 +42,7 @@ import { timeGreeting } from "../lib/greeting";
 import { readDetectedItems, scanListStatus } from "../lib/scanRecord";
 import { attentionFromPipeline } from "../lib/pipelineAttention";
 import { loadAssemblies, loadLabourRate } from "../lib/assemblies";
+import { loadLabourCard } from "../lib/labourRates";
 import { priceItem } from "../lib/quoteSource";
 import { loadPriceList } from "../lib/contractorPrices";
 import { computeQuoteTotals } from "../lib/quoteTotals";
@@ -90,7 +91,7 @@ export default function DashboardScreen() {
       .reduce((sum: number, scan: { detected_items?: unknown }) => {
         const sell = readDetectedItems(scan.detected_items)
           .filter(item => item.status !== "rejected" && item.qty > 0)
-          .reduce((lineSum, item) => lineSum + item.qty * priceItem(item, rates, assemblies, labourRate, loadPriceList()).sellUnit, 0);
+          .reduce((lineSum, item) => lineSum + item.qty * priceItem(item, rates, assemblies, labourRate, loadPriceList(), loadLabourCard()).sellUnit, 0);
         return sum + sell;
       }, 0);
     return computeQuoteTotals(subtotal, loadDefaultMargin()).total;
@@ -200,7 +201,7 @@ export default function DashboardScreen() {
                           {[
                             scan.client,
                             scan.items_detected != null ? `${scan.items_detected} items` : null,
-                            formatQuotedValue(readDetectedItems(scan.detected_items).filter((item: { status?: string; qty: number }) => item.status !== "rejected" && item.qty > 0).reduce((sum: number, item: { qty: number; rateCode?: string; desc: string; unitPrice?: number; symbol?: string }) => sum + item.qty * priceItem(item, rates, loadAssemblies(), loadLabourRate(), loadPriceList()).sellUnit, 0)) + " sell",
+                            formatQuotedValue(readDetectedItems(scan.detected_items).filter((item: { status?: string; qty: number }) => item.status !== "rejected" && item.qty > 0).reduce((sum: number, item: { qty: number; rateCode?: string; desc: string; unitPrice?: number; symbol?: string }) => sum + item.qty * priceItem(item, rates, loadAssemblies(), loadLabourRate(), loadPriceList(), loadLabourCard()).sellUnit, 0)) + " sell",
                             when !== "—" ? when : null,
                           ].filter(Boolean).join(" · ")}
                         </span>
