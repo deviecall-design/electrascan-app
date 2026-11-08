@@ -22,7 +22,7 @@ import ScanFailure from "../components/ScanFailure";
 import { billableItems, canSendQuote, formatVerified, verifiedPercent } from "../lib/takeoff";
 import { generateScope, scopeLineItem, type ScopeOfWorks } from "../lib/scopeOfWorks";
 import { loadAssemblies, loadLabourRate } from "../lib/assemblies";
-import { labourForItem, labourNote, loadLabourCard, sumLabourByRole, type LabourLine } from "../lib/labourRates";
+import { fetchLabourCard, labourForItem, labourNote, loadLabourCard, sumLabourByRole, type LabourLine, type LabourRole } from "../lib/labourRates";
 import ScopeOfWorksCard, { ScopePreview } from "../components/desktop/ScopeOfWorksCard";
 import { estimateSubtotal, groupEstimateLines, scaleMemberQtys } from "../lib/groupEstimateLines";
 import { buildEstimateWorkbook, checkWorkbookUpload, linesFromDetections, workbookToArrayBuffer, type WorkbookPreview } from "../lib/estimateWorkbook";
@@ -1430,7 +1430,14 @@ function StepQuote({
 
   const [marginPct, setMarginPct] = useState(bound?.marginPct ?? loadDefaultMargin);
   const [marginTouched, setMarginTouched] = useState(false);
-  const labourCard = loadLabourCard();
+  const [labourCard, setLabourCard] = useState<LabourRole[] | null>(() => loadLabourCard());
+  useEffect(() => {
+    let cancelled = false;
+    fetchLabourCard().then(result => {
+      if (!cancelled && result.roles.length) setLabourCard(result.roles);
+    });
+    return () => { cancelled = true; };
+  }, []);
   const pricedLines = useMemo(() => source.filter(item => !isUnpriced(item)).map(item => {
     const worked = labourCard ? labourForItem(item, loadAssemblies(), labourCard, loadLabourRate()) : null;
     return {
