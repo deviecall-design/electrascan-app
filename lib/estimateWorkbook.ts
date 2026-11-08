@@ -7,6 +7,7 @@ import * as XLSX from "xlsx";
 import { groupEstimateLines, scaleMemberQtys } from "./groupEstimateLines";
 import { priceItem } from "./quoteSource";
 import { computeQuoteTotals, lineTotal, type QuoteTotals } from "./quoteTotals";
+import { incGst } from "./labourRates";
 
 export const WORKBOOK_VERSION = "1";
 
@@ -130,7 +131,7 @@ export function buildEstimateWorkbook(input: {
   estimateId: string;
   marginPct: number;
   lines: WorkbookLine[];
-  labourByRole?: Array<{ roleName: string; hours: number; rate: number; multiplier: number; amount: number }>;
+  labourByRole?: Array<{ roleName: string; hours: number; rate: number; multiplier: number; amount: number; chargeType?: string }>;
 }): XLSX.WorkBook {
   const aoa: Array<Array<string | number>> = [HEADERS];
   input.lines.forEach(line => {
@@ -195,8 +196,8 @@ export function buildEstimateWorkbook(input: {
   XLSX.utils.book_append_sheet(book, summary, "Summary");
   if (input.labourByRole && input.labourByRole.length > 0) {
     const labour = XLSX.utils.aoa_to_sheet([
-      ["Role", "Hours", "Rate ex GST", "Overtime multiplier", "Amount"],
-      ...input.labourByRole.map(row => [row.roleName, row.hours, row.rate, row.multiplier, row.amount]),
+      ["Role", "Charge", "Hours", "Rate ex GST", "Rate inc GST", "Overtime multiplier", "Amount"],
+      ...input.labourByRole.map(row => [row.roleName, row.chargeType || "hourly", row.hours, row.rate, incGst(row.rate), row.multiplier, row.amount]),
     ]);
     XLSX.utils.book_append_sheet(book, labour, "Labour");
   }

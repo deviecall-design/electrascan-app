@@ -7,7 +7,7 @@ import useSupabaseQuery from "../hooks/useSupabaseQuery";
 import { fetchEstimates, fetchMilestoneClaimsForProject, fetchScans } from "../services/supabaseData";
 import { loadAssemblies, loadLabourRate } from "../lib/assemblies";
 import { priceItem } from "../lib/quoteSource";
-import { defaultLabourRole, loadLabourCard } from "../lib/labourRates";
+import { defaultHourlyRole, loadLabourCard } from "../lib/labourRates";
 import { readDetectedItems } from "../lib/scanRecord";
 import { jobKey } from "../lib/jobTracker";
 import { marginForQuote } from "../lib/margin";
@@ -169,7 +169,7 @@ export default function JobBurndownScreen() {
     event.preventDefault();
     const materials = Math.max(0, Number(form.materials) || 0);
     const labourHours = Math.max(0, Number(form.hours) || 0);
-    const roleRate = defaultLabourRole(loadLabourCard() || [])?.rate;
+    const roleRate = defaultHourlyRole(loadLabourCard() || [])?.rate;
     const labourCost = Math.max(0, Number(form.cost) || labourHours * (roleRate || labourRate));
     if (!form.date || (materials === 0 && labourHours === 0 && labourCost === 0)) return;
     const entry: ActualEntry = {

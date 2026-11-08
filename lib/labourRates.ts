@@ -6,12 +6,16 @@
 
 import { matchAssembly, type Assembly } from "./assemblies";
 
+export type LabourChargeType = "hourly" | "minimum" | "callout";
+
 export interface LabourRole {
   id: string;
   name: string;
-  /** Hourly rate ex GST. */
+  /** Always stored ex GST. An inc-GST entry is divided by 1.1 before it is saved. */
   rate: number;
-  /** Applied only when a share of hours is marked overtime. */
+  /** Hourly role, a fixed minimum charge, or a fixed call-out fee. */
+  chargeType: LabourChargeType;
+  /** Applied only when an hourly share is marked overtime. */
   overtimeMultiplier: number | null;
   isDefault: boolean;
 }
@@ -29,6 +33,21 @@ export interface LabourLine {
   rate: number;
   multiplier: number;
   amount: number;
+  chargeType: LabourChargeType;
+}
+
+const GST = 1.1;
+
+export function exGst(incGstAmount: number): number {
+  return round(Math.max(0, incGstAmount) / GST);
+}
+
+export function incGst(exGstAmount: number): number {
+  return round(Math.max(0, exGstAmount) * GST);
+}
+
+export function isHourlyCharge(chargeType: LabourChargeType | undefined): boolean {
+  return chargeType !== "minimum" && chargeType !== "callout";
 }
 
 const KEY = "es-labour-rates-v1";
@@ -42,13 +61,18 @@ export function normalizeRoles(roles: LabourRole[]): LabourRole[] {
   const clean = roles
     .map(role => ({
       id: (role.id || "").trim() || `role-${Math.random().toString(36).slice(2, 10)}`,
-      name: (role.name || "").trim().slice(0, 80),
+      name: (role.name || "").trim().slice(0, 120),
       rate: round(Math.max(0, Number(role.rate) || 0)),
+      chargeType: role.chargeType === "minimum" || role.chargeType === "callout" ? role.chargeType : "hourly",
       overtimeMultiplier: role.overtimeMultiplier && role.overtimeMultiplier > 0 ? round(role.overtimeMultiplier) : null,
       isDefault: Boolean(role.isDefault),
     }))
     .filter(role => role.name);
-  if (!clean.some(role => role.isDefault) && clean[0]) clean[0].isDefault = true;
+  const hourly = clean.filter(role => role.chargeType === "hourly");
+  if (!clean.some(role => role.isDefault)) {
+    const fallback = hourly[0] || clean[0];
+    if (fallback) fallback.isDefault = true;
+  }
   let seen = false;
   for (const role of clean) {
     if (role.isDefault && !seen) {
@@ -71,6 +95,12 @@ export function defaultLabourRole(roles: LabourRole[]): LabourRole | null {
   return roles.find(role => role.isDefault) || roles[0] || null;
 }
 
+/** Hourly charge-out used when a logged cost is left blank. A fixed fee is not an hourly rate. */
+export function defaultHourlyRole(roles: LabourRole[]): LabourRole | null {
+  const hourly = roles.filter(role => isHourlyCharge(role.chargeType));
+  return hourly.find(role => role.isDefault) || hourly[0] || null;
+}
+
 export function labourCost(input: {
   hours?: number;
   roleId?: string | null;
@@ -91,9 +121,21 @@ export function labourCost(input: {
     : [{ roleId: input.roleId || fallback?.id || "", hours }];
   const lines: LabourLine[] = [];
   for (const share of shares) {
-    if (!(share.hours > 0)) continue;
     const role = input.card.find(item => item.id === share.roleId) || fallback;
     if (!role || !(role.rate > 0)) continue;
+    if (!isHourlyCharge(role.chargeType)) {
+      lines.push({
+        roleId: role.id,
+        roleName: role.name,
+        hours: 0,
+        rate: role.rate,
+        multiplier: 1,
+        amount: role.rate,
+        chargeType: role.chargeType,
+      });
+      continue;
+    }
+    if (!(share.hours > 0)) continue;
     const multiplier = share.overtime && role.overtimeMultiplier ? role.overtimeMultiplier : 1;
     lines.push({
       roleId: role.id,
@@ -102,6 +144,7 @@ export function labourCost(input: {
       rate: role.rate,
       multiplier,
       amount: round(share.hours * role.rate * multiplier),
+      chargeType: "hourly",
     });
   }
   return {
@@ -145,32 +188,75 @@ export function labourForItem(
 
 export function labourNote(lines: LabourLine[]): string {
   return lines
-    .map(line => `${line.hours} h × ${line.roleName}${line.multiplier !== 1 ? ` × ${line.multiplier}` : ""} @ $${line.rate.toFixed(2)}/h`)
+    .map(line => {
+      const inc = incGst(line.rate).toFixed(2);
+      const ex = line.rate.toFixed(2);
+      if (!isHourlyCharge(line.chargeType)) {
+        const kind = line.chargeType === "callout" ? "call-out" : "minimum charge";
+        return `${line.roleName} ${kind} $${ex} ex GST ($${inc} inc GST)`;
+      }
+      return `${line.hours} h × ${line.roleName}${line.multiplier !== 1 ? ` × ${line.multiplier}` : ""} @ $${ex}/h ex GST ($${inc} inc GST)`;
+    })
     .join(" · ");
 }
 
+function csvCells(line: string): string[] {
+  return line.split(",").map(cell => cell.trim().replace(/^"|"$/g, ""));
+}
+
+function chargeTypeFrom(value: string): LabourChargeType {
+  const text = value.toLowerCase();
+  if (text.includes("min")) return "minimum";
+  if (text.includes("call")) return "callout";
+  return "hourly";
+}
+
+function enteredIncGst(value: string): boolean {
+  const text = value.toLowerCase().replace(/\s+/g, " ");
+  if (!text || text.startsWith("ex")) return false;
+  return text.includes("inc") || text === "gst";
+}
+
+/**
+ * CSV columns: role, rate, GST (inc or ex), charge (hourly, minimum, callout),
+ * overtime multiplier, default. A missing GST column means the rate is already ex GST.
+ * The sample at docs/samples/vesh-rate-card.csv is not loaded by the app.
+ */
 export function parseLabourCsv(text: string): { roles: LabourRole[]; error: string | null } {
-  const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  const lines = text.split(/\r?\n/).map(line => line.trim()).filter(line => line && !line.startsWith("#"));
   if (lines.length === 0) return { roles: [], error: "The file has no rows." };
-  const header = lines[0].toLowerCase();
-  const start = header.includes("rate") || header.includes("role") || header.includes("name") ? 1 : 0;
+  const headerCells = csvCells(lines[0]).map(cell => cell.toLowerCase());
+  const named = headerCells.some(cell => cell === "role" || cell === "name" || cell === "rate" || cell.includes("gst") || cell === "charge");
+  const index = (names: string[], fallback: number) => {
+    const found = headerCells.findIndex(cell => names.includes(cell));
+    return found >= 0 ? found : fallback;
+  };
+  const nameAt = named ? index(["role", "name"], 0) : 0;
+  const rateAt = named ? index(["rate", "hourly rate", "amount"], 1) : 1;
+  const gstAt = named ? headerCells.findIndex(cell => cell === "gst" || cell.includes("gst")) : -1;
+  const chargeAt = named ? headerCells.findIndex(cell => cell === "charge" || cell === "type") : -1;
+  const overtimeAt = named ? headerCells.findIndex(cell => cell.includes("overtime")) : 2;
+  const defaultAt = named ? headerCells.findIndex(cell => cell === "default") : 3;
   const roles: LabourRole[] = [];
-  for (const line of lines.slice(start)) {
-    const cells = line.split(",").map(cell => cell.trim().replace(/^"|"$/g, ""));
-    const name = cells[0] || "";
-    const rate = Number(String(cells[1] || "").replace(/[^0-9.]/g, ""));
-    const overtime = Number(cells[2]);
-    const isDefault = /^(y|yes|true|1|default)$/i.test(cells[3] || "");
+  for (const line of lines.slice(named ? 1 : 0)) {
+    const cells = csvCells(line);
+    const name = cells[nameAt] || "";
+    const entered = Number(String(cells[rateAt] || "").replace(/[^0-9.]/g, ""));
+    const inc = gstAt >= 0 && enteredIncGst(cells[gstAt] || "");
+    const rate = inc ? exGst(entered) : round(Math.max(0, entered));
+    const overtime = Number(overtimeAt >= 0 ? cells[overtimeAt] : "");
+    const isDefault = defaultAt >= 0 && /^(y|yes|true|1|default)$/i.test(cells[defaultAt] || "");
     if (!name || !(rate > 0)) continue;
     roles.push({
       id: `role-${roles.length + 1}`,
       name,
       rate,
+      chargeType: chargeAt >= 0 ? chargeTypeFrom(cells[chargeAt] || "") : "hourly",
       overtimeMultiplier: overtime > 0 ? overtime : null,
       isDefault,
     });
   }
-  if (roles.length === 0) return { roles: [], error: "No roles with a name and an hourly rate were found." };
+  if (roles.length === 0) return { roles: [], error: "No roles with a name and a rate were found." };
   return { roles: normalizeRoles(roles), error: null };
 }
 

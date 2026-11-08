@@ -3,14 +3,24 @@ import { C, FONT } from "./tokens";
 import { Card } from "../ui/anthropic";
 import { GhostButton, PrimaryButton } from "../ui/anthropic/Button";
 import {
+  exGst,
   fetchLabourCard,
+  incGst,
   parseLabourCsv,
   storeLabourCard,
+  type LabourChargeType,
   type LabourRole,
 } from "../../lib/labourRates";
 
 function blankRole(isDefault: boolean): LabourRole {
-  return { id: `role-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: "", rate: 0, overtimeMultiplier: null, isDefault };
+  return {
+    id: `role-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    name: "",
+    rate: 0,
+    chargeType: "hourly",
+    overtimeMultiplier: null,
+    isDefault,
+  };
 }
 
 export default function LabourRatesCard() {
@@ -64,7 +74,7 @@ export default function LabourRatesCard() {
           Labour rates
         </div>
         <p style={{ margin: 0, color: C.textMuted, fontSize: 14 }}>
-          Add each role and its hourly rate ex GST. One role is the default. Quotes keep the electrician hourly rate until this card is saved.
+          Add each role with a rate either inc GST or ex GST. The card stores the ex GST amount and shows both. One hourly role is the default. Quotes keep the electrician hourly rate until this card is saved.
         </p>
         {roles.length === 0 && <p style={{ margin: 0, fontSize: 14 }}>No labour roles yet.</p>}
         {roles.map(role => (
@@ -74,13 +84,20 @@ export default function LabourRatesCard() {
               <input aria-label="Role name" value={role.name} onChange={event => update(role.id, { name: event.target.value })} style={field} />
             </label>
             <label style={label}>
-              Hourly rate ex GST
-              <input aria-label={`Hourly rate for ${role.name || "role"}`} inputMode="decimal" value={role.rate || ""} onChange={event => update(role.id, { rate: Number(event.target.value) || 0 })} style={field} />
+              Charge
+              <select aria-label={`Charge type for ${role.name || "role"}`} value={role.chargeType || "hourly"} onChange={event => update(role.id, { chargeType: event.target.value as LabourChargeType })} style={field}>
+                <option value="hourly">Hourly</option>
+                <option value="minimum">Minimum charge</option>
+                <option value="callout">Call-out fee</option>
+              </select>
             </label>
-            <label style={label}>
-              Overtime multiplier
-              <input aria-label={`Overtime multiplier for ${role.name || "role"}`} inputMode="decimal" placeholder="Optional" value={role.overtimeMultiplier ?? ""} onChange={event => update(role.id, { overtimeMultiplier: event.target.value === "" ? null : Number(event.target.value) || null })} style={field} />
-            </label>
+            <GstRateFields role={role} onRate={rate => update(role.id, { rate })} />
+            {role.chargeType === "hourly" && (
+              <label style={label}>
+                Overtime multiplier
+                <input aria-label={`Overtime multiplier for ${role.name || "role"}`} inputMode="decimal" placeholder="Optional" value={role.overtimeMultiplier ?? ""} onChange={event => update(role.id, { overtimeMultiplier: event.target.value === "" ? null : Number(event.target.value) || null })} style={field} />
+              </label>
+            )}
             <label style={{ ...label, minHeight: 44, display: "flex", alignItems: "center", gap: 6 }}>
               <input type="radio" name="default-labour-role" checked={role.isDefault} onChange={() => makeDefault(role.id)} aria-label={`Default role ${role.name || "role"}`} />
               Default
@@ -101,11 +118,47 @@ export default function LabourRatesCard() {
             style={{ ...field, padding: "8px 12px" }}
           />
         </label>
-        <p style={{ margin: 0, color: C.textMuted, fontSize: 13 }}>Columns: role, hourly rate, overtime multiplier, default. The file is this workspace’s own card.</p>
+        <p style={{ margin: 0, color: C.textMuted, fontSize: 13 }}>Columns: role, rate, GST (inc or ex), charge (hourly, minimum, or callout), overtime multiplier, default. A rate marked inc GST is stored ex GST. A sample card lives in docs/samples and is not loaded on its own.</p>
         {error && <p role="alert" style={{ margin: 0, color: C.red }}>{error}</p>}
         {notice && <p role="status" style={{ margin: 0, color: C.textMuted, fontSize: 13 }}>{notice}</p>}
       </div>
     </Card>
+  );
+}
+
+function GstRateFields({ role, onRate }: { role: LabourRole; onRate: (ex: number) => void }) {
+  const [focus, setFocus] = useState<null | "ex" | "inc">(null);
+  const [draft, setDraft] = useState("");
+  const ex = role.rate || 0;
+  const inc = ex ? incGst(ex) : 0;
+  const fixed = role.chargeType === "minimum" || role.chargeType === "callout";
+  return (
+    <>
+      <label style={label}>
+        {fixed ? "Amount ex GST" : "Rate ex GST"}
+        <input
+          aria-label={`Ex GST rate for ${role.name || "role"}`}
+          inputMode="decimal"
+          value={focus === "ex" ? draft : (ex || "")}
+          onFocus={() => { setFocus("ex"); setDraft(ex ? String(ex) : ""); }}
+          onChange={event => { setDraft(event.target.value); onRate(Number(event.target.value) || 0); }}
+          onBlur={() => setFocus(null)}
+          style={field}
+        />
+      </label>
+      <label style={label}>
+        {fixed ? "Amount inc GST" : "Rate inc GST"}
+        <input
+          aria-label={`Inc GST rate for ${role.name || "role"}`}
+          inputMode="decimal"
+          value={focus === "inc" ? draft : (inc || "")}
+          onFocus={() => { setFocus("inc"); setDraft(inc ? String(inc) : ""); }}
+          onChange={event => { setDraft(event.target.value); onRate(exGst(Number(event.target.value) || 0)); }}
+          onBlur={() => setFocus(null)}
+          style={field}
+        />
+      </label>
+    </>
   );
 }
 

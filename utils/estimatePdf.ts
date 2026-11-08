@@ -17,6 +17,7 @@ import { CompanyProfile } from "../services/companyProfile";
 import { computeQuoteTotals, lineTotal as qtyRateTotal } from "../lib/quoteTotals";
 import type { ScopeOfWorks } from "../lib/scopeOfWorks";
 import { estimateSubtotal, groupEstimateLines } from "../lib/groupEstimateLines";
+import { incGst, isHourlyCharge } from "../lib/labourRates";
 
 // ─── Types ──────────────────────────────────────────────────────────────
 export interface EstimateLineItem {
@@ -42,7 +43,7 @@ export interface EstimatePDFInput {
   items: EstimateLineItem[];
   marginPercent: number;           // 15
   scope?: ScopeOfWorks | null;
-  labourByRole?: Array<{ roleName: string; hours: number; rate: number; multiplier: number; amount: number }>;
+  labourByRole?: Array<{ roleName: string; hours: number; rate: number; multiplier: number; amount: number; chargeType?: "hourly" | "minimum" | "callout" }>;
 }
 
 export interface VariationPDFInput {
@@ -362,7 +363,10 @@ function drawLabourByRole(
   for (const row of rows) {
     const label = `${row.roleName}${row.multiplier !== 1 ? ` × ${row.multiplier}` : ""}`;
     doc.text(label, PAGE.marginX, y);
-    doc.text(`${row.hours} h × $${row.rate.toFixed(2)}/h`, 110, y);
+    const basis = isHourlyCharge(row.chargeType)
+      ? `${row.hours} h × $${row.rate.toFixed(2)} ex / $${incGst(row.rate).toFixed(2)} inc`
+      : `Fixed $${row.rate.toFixed(2)} ex / $${incGst(row.rate).toFixed(2)} inc`;
+    doc.text(basis, 90, y);
     doc.text(money(row.amount), PAGE.width - PAGE.marginX, y, { align: "right" });
     y += 5;
   }

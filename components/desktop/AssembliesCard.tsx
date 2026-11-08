@@ -11,7 +11,7 @@ import {
   saveLabourRate,
   type Assembly,
 } from "../../lib/assemblies";
-import { fetchLabourCard, type LabourRole, type LabourShare } from "../../lib/labourRates";
+import { fetchLabourCard, isHourlyCharge, type LabourRole, type LabourShare } from "../../lib/labourRates";
 
 export default function AssembliesCard() {
   const [rows, setRows] = useState<Assembly[]>(() => loadAssemblies());
@@ -98,9 +98,9 @@ export default function AssembliesCard() {
               Role
               <select aria-label={`${row.name} labour role`} value={row.labourRoleId || ""} onChange={event => update(row.id, { labourRoleId: event.target.value || null })} style={field}>
                 <option value="">Default role</option>
-                {roles.map(role => <option key={role.id} value={role.id}>{role.name}{role.isDefault ? " (default)" : ""}</option>)}
+                {roles.map(role => <option key={role.id} value={role.id}>{role.name}{role.chargeType === "minimum" ? " (minimum charge)" : role.chargeType === "callout" ? " (call-out)" : ""}{role.isDefault ? " (default)" : ""}</option>)}
               </select>
-              <CrewMix row={row} roles={roles} onChange={mix => update(row.id, { labourMix: mix })} />
+              <CrewMix row={row} roles={roles.filter(role => isHourlyCharge(role.chargeType))} onChange={mix => update(row.id, { labourMix: mix })} />
             </label>
           )}
         </div>
@@ -130,9 +130,11 @@ function CrewMix({ row, roles, onChange }: { row: Assembly; roles: LabourRole[];
           </label>
         </div>
       ))}
-      <button type="button" onClick={() => onChange([...(mix), { roleId: roles.find(role => role.isDefault)?.id || roles[0].id, hours: 0 }])} style={{ minHeight: 44, marginTop: 6, fontWeight: 700, color: C.orange }}>
-        {mix.length ? "Add another role" : "Split hours across roles"}
-      </button>
+      {roles.length > 0 && (
+        <button type="button" onClick={() => onChange([...(mix), { roleId: roles.find(role => role.isDefault)?.id || roles[0].id, hours: 0 }])} style={{ minHeight: 44, marginTop: 6, fontWeight: 700, color: C.orange }}>
+          {mix.length ? "Add another role" : "Split hours across roles"}
+        </button>
+      )}
     </div>
   );
 }

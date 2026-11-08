@@ -1,0 +1,13 @@
+# Vesh Electrical sample rate card. Figures are inc GST.
+# This file is a template only. ElectraScan does not insert it into the database.
+# TODO: Confirm Home Automation Programming. Listed here as $203.50 inc GST; it may be $275.00 inc GST.
+Role,Rate,GST,Charge,Overtime,Default
+Service call,220.00,inc,hourly,,yes
+Tradesman,154.00,inc,hourly,,
+1st+2nd year Apprentice,86.90,inc,hourly,,
+3rd year Apprentice,108.90,inc,hourly,,
+4th year Apprentice,132.00,inc,hourly,,
+Minimum charge (tradesman service call + 1/2 hr),297.00,inc,minimum,,
+Weekend/after hours call-out fee only,275.00,inc,callout,,
+Consultancy,275.00,inc,hourly,,
+Home Automation Programming,203.50,inc,hourly,,
