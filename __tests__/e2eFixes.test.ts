@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { splitCostBreakdown } from "../lib/costBreakdown";
+import { formatGstMoney } from "../lib/estimateTotal";
 import { bindOpenedEstimate } from "../lib/quotePanel";
 import { milestoneWarning, showOverrunAlert } from "../lib/reportMilestone";
 import { variationChain } from "../lib/variationDiff";
@@ -7,6 +9,32 @@ import { roundCents } from "../lib/quoteTotals";
 const lines = [
   { qty: 10, unitPrice: 3378.5 },
 ];
+
+function signedExGst(amount: number): string {
+  return `${amount < 0 ? "−" : "+"}${formatGstMoney(Math.abs(amount), "ex")}`;
+}
+
+describe("variation cost impact label", () => {
+  it("says ex GST once", () => {
+    const label = signedExGst(133.5);
+    expect(label).toBe("+$133.50 ex GST");
+    expect(label.match(/ex GST/g)).toHaveLength(1);
+  });
+});
+
+describe("quote cost breakdown", () => {
+  it("uses the labour-by-role total and leaves the rest as materials", () => {
+    const split = splitCostBreakdown({
+      subtotal: 33785,
+      margin: 8446.25,
+      labourByRole: [{ amount: 3000 }, { amount: 2117 }],
+      fallbackLabour: 0,
+    });
+    expect(split.labour).toBe(5117);
+    expect(split.materials).toBe(28668);
+    expect(roundCents(split.materials + split.labour + split.margin)).toBe(roundCents(33785 + 8446.25));
+  });
+});
 
 describe("opened estimate panel", () => {
   const estimates = [
