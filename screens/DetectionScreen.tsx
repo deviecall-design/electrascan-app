@@ -16,6 +16,7 @@ import { fetchScans } from "../services/supabaseData";
 import QueryBanner from "../components/QueryBanner";
 import ScanFailure from "../components/ScanFailure";
 import { formatAuShortDateTime } from "../lib/dates";
+import { displayClient } from "../lib/jobLink";
 
 export default function DetectionScreen() {
   const navigate = useNavigate();
@@ -26,7 +27,7 @@ export default function DetectionScreen() {
     <div className="anim-in">
       {!error && <QueryBanner loading={loading} error={false} noun="scans" />}
       <PageHeader
-        title="Scans"
+        title="Upload plans"
         sub="Upload a floor plan and ElectraScan AI will turn it into a costed estimate."
         cta={
           <PrimaryButton
@@ -72,7 +73,7 @@ export default function DetectionScreen() {
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                     <div>
                       <div style={{ fontFamily: FONT.heading, fontWeight: 600 }}>{s.file_name ?? "Untitled scan"}</div>
-                      <div style={{ fontSize: 13, color: C.textMuted }}>{s.client || "Client not set"}</div>
+                      <div style={{ fontSize: 13, color: C.textMuted }}>{displayClient({ client: s.client, fileName: s.file_name })}</div>
                     </div>
                     <span style={{ fontSize: 12, fontWeight: 600, color: status === "Needs review" ? C.amber : C.green }}>{status}</span>
                   </div>

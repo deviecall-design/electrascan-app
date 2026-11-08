@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useOutletContext, useParams } from "react-router-dom";
 import { C, FONT } from "../components/desktop/tokens";
 import { PageHeader, Card, Footer } from "../components/ui/anthropic";
 import { GhostButton, PrimaryButton } from "../components/ui/anthropic/Button";
@@ -37,6 +37,7 @@ interface Schedule {
 export default function JobBurndownScreen() {
   const params = useParams();
   const jobId = decodeURIComponent(params.jobKey || "");
+  const embedded = Boolean(useOutletContext<{ embedded?: boolean } | undefined>()?.embedded);
   const { data: scans, loading, error } = useSupabaseQuery(fetchScans);
   const { data: estimates, loading: estimatesLoading } = useSupabaseQuery(fetchEstimates);
   const assemblies = loadAssemblies();
@@ -227,17 +228,21 @@ export default function JobBurndownScreen() {
   return (
     <div className="anim-in">
       <QueryBanner loading={loading || estimatesLoading} error={error} noun="the job" />
-      <PageHeader
-        crumb="Jobs"
-        title={job.name || "Job burndown"}
-        sub={[job.reference, `${job.margin}% margin from the quote`, job.approved ? "Approved" : "Planned until approval"].filter(Boolean).join(" · ")}
-        cta={job.approved ? <span className="es-approved-badge">Approved</span> : <Link to="/jobs" style={burndownTab}>Jobs</Link>}
-      />
-      <p style={{ marginTop: 0 }}>
-        <Link to="/jobs">All jobs</Link>
-        {job.reference ? <> · <Link to="/approvals">Quote {job.reference}</Link></> : null}
-        {job.scanId ? <> · <Link to={`/detection/${job.scanId}`}>Takeoff</Link></> : null}
-      </p>
+      {!embedded && (
+        <>
+          <PageHeader
+            crumb="Jobs"
+            title={job.name || "Job burndown"}
+            sub={[job.reference, `${job.margin}% margin from the quote`, job.approved ? "Approved" : "Planned until approval"].filter(Boolean).join(" · ")}
+            cta={job.approved ? <span className="es-approved-badge">Approved</span> : <Link to="/jobs" style={burndownTab}>Jobs</Link>}
+          />
+          <p style={{ marginTop: 0 }}>
+            <Link to="/jobs">All jobs</Link>
+            {job.reference ? <> · <Link to="/approvals">Quote {job.reference}</Link></> : null}
+            {job.scanId ? <> · <Link to={`/detection/${job.scanId}`}>Takeoff</Link></> : null}
+          </p>
+        </>
+      )}
       {!job.approved && !loading && !estimatesLoading && (
         <p role="status" style={{ color: C.ink, background: C.amberSoft, borderRadius: 12, padding: "12px 14px" }}>{trackingNote}</p>
       )}

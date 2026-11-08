@@ -23,6 +23,7 @@ import {
   daysSinceSent,
 } from "../lib/estimateMoney";
 import QueryBanner from "../components/QueryBanner";
+import { displayClient } from "../lib/jobLink";
 import { verifiedFromEstimate } from "../lib/takeoff";
 
 export default function EstimateScreen() {
@@ -135,7 +136,7 @@ export default function EstimateScreen() {
                         {estimateDisplayRef(e)}
                       </span>
                     </Td>
-                    <Td label="Client">{e.client}</Td>
+                    <Td label="Client">{displayClient({ client: e.client, projectName: e.project_name, drawingFile: e.drawing_file })}</Td>
                     <Td align="right" mono label="Value">
                       <span style={{ fontWeight: 500 }}>{formatQuotedValue(quotedTotalIncGst(e))}</span>
                     </Td>
