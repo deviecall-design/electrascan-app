@@ -144,13 +144,21 @@ export default function EstimateBoard({
         </div>
       </Card>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10 }}>
-        <Tile label="Subtotal" value={`$${formatAud(totals.subtotal)}`} />
-        <Tile label="Margin" value={`${formatAud(totals.marginPct, true)}% · $${formatAud(totals.marginAmount)}`} />
-        <Tile label="GST" value={`$${formatAud(totals.gst)}`} />
-        <Tile label="Total inc GST" value={`$${formatAud(totals.total)}`} emphasis />
-        <Tile label="Lines" value={String(lineCount)} />
-        <Tile label="Unpriced" value={String(unpricedCount)} warn={unpricedCount > 0} />
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <div style={{ background: "#0D1B2A", color: "#fff", borderRadius: 14, padding: 16, width: "min(360px, 100%)" }}>
+          <SummaryLine label="Subtotal" value={`$${formatAud(totals.subtotal)}`} />
+          <label style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", padding: "8px 0", fontSize: 13, color: "#CBD5E1" }}>
+            Margin %
+            <input aria-label="Quote margin percent" inputMode="decimal" value={marginPct} disabled={marginLocked} onChange={event => onMargin(event.target.value)} style={{ width: 72, minHeight: 36, textAlign: "right", borderRadius: 8, border: "1px solid #334155", background: "#0f172a", color: "#fff", fontSize: 16 }} />
+          </label>
+          <SummaryLine label="Margin" value={`$${formatAud(totals.marginAmount)}`} />
+          <SummaryLine label="GST" value={`$${formatAud(totals.gst)}`} />
+          <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 8, borderTop: "1px solid #334155", fontWeight: 800, fontSize: 18 }}>
+            <span>Total</span>
+            <span>${formatAud(totals.total)}</span>
+          </div>
+          <div style={{ marginTop: 8, fontSize: 12, color: "#94A3B8" }}>{lineCount} lines{unpricedCount > 0 ? ` · ${unpricedCount} unpriced` : ""}</div>
+        </div>
       </div>
 
       <Card style={{ padding: 16 }}>
@@ -286,17 +294,6 @@ export default function EstimateBoard({
       )}
 
       <Card style={{ padding: 18, display: "flex", flexDirection: "column", gap: 12 }}>
-        <label style={{ fontSize: 13, color: C.textMuted }}>
-          Quote margin %
-          <input
-            aria-label="Quote margin percent"
-            inputMode="decimal"
-            value={marginPct}
-            disabled={marginLocked}
-            onChange={event => onMargin(event.target.value)}
-            style={{ display: "block", width: "100%", maxWidth: 220, minHeight: 44, marginTop: 6, borderRadius: 10, border: `1px solid ${C.border}`, padding: "0 12px", fontSize: 16 }}
-          />
-        </label>
         {marginLocked && <p style={{ margin: 0, color: C.textMuted, fontSize: 13 }}>This quote keeps the {totals.marginPct}% margin it was saved with.</p>}
         <p style={{ margin: 0, fontSize: 14 }}>{suggestion}</p>
         {blockReason && (
@@ -344,6 +341,15 @@ const cellInput: React.CSSProperties = {
   border: `1px solid ${C.border}`,
   padding: "0 8px",
 };
+
+function SummaryLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "6px 0", color: "#CBD5E1", fontSize: 13 }}>
+      <span>{label}</span>
+      <span style={{ color: "#fff", fontWeight: 700 }}>{value}</span>
+    </div>
+  );
+}
 
 function Fact({ label, value }: { label: string; value: string }) {
   return (

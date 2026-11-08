@@ -49,6 +49,8 @@ export default function VariationReportScreen() {
   const [addedScans, setAddedScans] = useState<ChainScan[]>([]);
   const [busy, setBusy] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [noteFor, setNoteFor] = useState<string | null>(null);
 
   const rateRows = rates as RateLike[];
   const known = scans.filter((scan: { detected_items?: unknown }) => linesFromDetected(scan.detected_items).length > 0);
@@ -204,12 +206,56 @@ export default function VariationReportScreen() {
           {uploadError && <p style={{ color: C.red }}>{uploadError}</p>}
 
           {latest && (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 16 }}>
-              <Stat label="Materials change" value={signedMoney(materialNet)} />
-              <Stat label="Labour change" value={signedMoney(labourNet)} />
-              <Stat label="Combined change" value={signedMoney(materialNet + labourNet)} />
-              <Stat label="Items changed" value={String(latest.changes.length)} />
-            </div>
+            <>
+              <div style={{ display: "flex", alignItems: "stretch", gap: 12, flexWrap: "wrap", background: "#0D1B2A", color: "#fff", borderRadius: 14, padding: 16, marginBottom: 16 }}>
+                <VersionBadge code="V001" label="Base estimate" amount={formatQuotedValue(versions[0].materials + versions[0].labour)} />
+                <div style={{ flex: 1, textAlign: "center", minWidth: 160 }}>
+                  <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#94A3B8" }}>Net variation</div>
+                  <div style={{ fontSize: 28, fontWeight: 800, color: materialNet + labourNet >= 0 ? "#FCA5A5" : "#6EE7B7" }}>{signedMoney(materialNet + labourNet)}</div>
+                </div>
+                <VersionBadge code={`V${String(versions.length).padStart(3, "0")}`} label="Revised estimate" amount={formatQuotedValue(latest.materials + latest.labour)} />
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16, alignItems: "center" }}>
+                <Chip color="#10B981" text={`${latest.changes.filter(line => line.change === "added").length} added`} />
+                <Chip color="#EF4444" text={`${latest.changes.filter(line => line.change === "removed").length} removed`} />
+                <Chip color="#F59E0B" text={`${latest.changes.filter(line => line.change === "increased" || line.change === "decreased").length} changed`} />
+                <button type="button" onClick={() => window.print()} style={quiet}>Export PDF</button>
+                <button type="button" onClick={() => downloadCsvFile("variation.csv", variationCsv(latest.changes))} style={quiet}>Export CSV</button>
+              </div>
+              <Card style={{ padding: 0, marginBottom: 16, overflow: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720, fontSize: 14 }}>
+                  <thead>
+                    <tr>{["Change type", "Component", "V001 qty", "Later qty", "Cost impact"].map(heading => <th key={heading} style={{ textAlign: "left", padding: 10, background: "#F8FAFC", color: "#94A3B8", fontSize: 11 }}>{heading}</th>)}</tr>
+                  </thead>
+                  <tbody>
+                    {latest.changes.map(line => (
+                      <tr key={`${line.change}-${line.description}`}>
+                        <td style={{ padding: 10, borderTop: `1px solid ${C.border}` }}>{TONE[line.change].label}</td>
+                        <td style={{ padding: 10, borderTop: `1px solid ${C.border}` }}>{line.description}</td>
+                        <td style={{ padding: 10, borderTop: `1px solid ${C.border}` }}>{line.prevQty || "—"}</td>
+                        <td style={{ padding: 10, borderTop: `1px solid ${C.border}` }}>{line.newQty || "—"}</td>
+                        <td style={{ padding: 10, borderTop: `1px solid ${C.border}`, fontWeight: 700 }}>{signedMoney(line.materialDelta + line.labourDelta)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Card>
+              <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: C.textMuted, marginBottom: 8 }}>Risk flags</div>
+              {latest.changes.filter(line => Math.abs(line.materialDelta + line.labourDelta) >= 200 || line.change === "removed").slice(0, 6).map(line => (
+                <Card key={`risk-${line.description}`} style={{ padding: 12, marginBottom: 8, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700 }}>{TONE[line.change].label} line</div>
+                    <div style={{ color: C.textMuted, fontSize: 13 }}>{signedMoney(line.materialDelta + line.labourDelta)} · see the change table</div>
+                    {notes[line.description] && <div style={{ marginTop: 4, fontSize: 13 }}>{notes[line.description]}</div>}
+                  </div>
+                  {noteFor === line.description ? (
+                    <input aria-label={`Note for ${line.description}`} value={notes[line.description] || ""} onChange={event => setNotes(current => ({ ...current, [line.description]: event.target.value }))} onBlur={() => setNoteFor(null)} style={{ minHeight: 44, fontSize: 16, borderRadius: 8, border: `1px solid ${C.border}`, padding: "0 8px" }} />
+                  ) : (
+                    <button type="button" onClick={() => setNoteFor(line.description)} style={quiet}>Add note</button>
+                  )}
+                </Card>
+              ))}
+            </>
           )}
 
           <p style={{ color: C.textMuted, fontSize: 14 }}>
@@ -236,9 +282,9 @@ export default function VariationReportScreen() {
                 </p>
               ) : version.changes.length === 0 ? (
                 <p style={{ margin: 0, padding: "0 18px 16px", color: C.textMuted }}>This plan matches the previous takeoff.</p>
-              ) : version.changes.map(line => (
-                <ChangeRow key={`${version.scan.id}-${line.change}-${line.description}`} line={line} />
-              ))}
+              ) : (
+                <p style={{ margin: 0, padding: "0 18px 16px", color: C.textMuted }}>{version.changes.length} line changes are in the table above.</p>
+              )}
             </Card>
           ))}
         </>
@@ -246,6 +292,27 @@ export default function VariationReportScreen() {
       <Footer />
     </div>
   );
+}
+
+function VersionBadge({ code, label, amount }: { code: string; label: string; amount: string }) {
+  return (
+    <div style={{ minWidth: 140 }}>
+      <div style={{ color: "#93C5FD", fontWeight: 800 }}>{code}</div>
+      <div style={{ color: "#94A3B8", fontSize: 12 }}>{label}</div>
+      <div style={{ fontWeight: 800, fontSize: 18 }}>{amount}</div>
+    </div>
+  );
+}
+
+function Chip({ color, text }: { color: string; text: string }) {
+  return <span style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 12, border: `1px solid ${C.border}`, background: "#fff", fontWeight: 700 }}><span style={{ width: 8, height: 8, borderRadius: 99, background: color }} />{text}</span>;
+}
+
+const quiet: React.CSSProperties = { minHeight: 36, padding: "0 12px", borderRadius: 8, border: `1px solid ${C.border}`, background: "#fff", fontWeight: 700 };
+
+function variationCsv(lines: VariationLine[]): string {
+  const rows = [["Change type", "Component", "V001 qty", "Later qty", "Cost impact"], ...lines.map(line => [line.change, line.description, String(line.prevQty), String(line.newQty), String(line.materialDelta + line.labourDelta)])];
+  return rows.map(row => row.map(cell => `"${cell.replace(/"/g, '""')}"`).join(",")).join("\n");
 }
 
 function ChangeRow({ line }: { line: VariationLine }) {

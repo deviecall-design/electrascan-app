@@ -35,6 +35,8 @@ export default function ApprovalsScreen() {
   const { data: scans, loading: scansLoading, error: scansError } = useSupabaseQuery(fetchScans);
   const [materials, setMaterials] = useState<MaterialRequestRow[]>([]);
   const [approvalOverrides, setApprovalOverrides] = useState<Record<string, ApprovalStatus>>({});
+  const [approvalTab, setApprovalTab] = useState<"audit" | "estimates" | "parties">("audit");
+  const [localEvents, setLocalEvents] = useState<Array<{ id: string; ts: string; actor: string; role: string; label: string; note: string; doc: string }>>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,7 +86,52 @@ export default function ApprovalsScreen() {
       ? `Takeoff ${verifiedFromEstimate(selectedEstimate)}% verified`
       : null
   );
+  const hero = selectedEstimate || awaiting[0] || null;
+  const heroRef = hero ? estimateDisplayRef(hero) : "";
+  const heroScan = scans.find((scan: { estimate_ref?: string | null }) => scan.estimate_ref === heroRef);
+  const heroTotal = hero ? estimateTotal({
+    items: readDetectedItems(heroScan?.detected_items),
+    subtotal: hero.subtotal,
+    marginPct: hero.margin_pct,
+    value: hero.value,
+  }).incGst : 0;
+  const heroClient = displayClient({
+    client: heroScan?.client || hero?.client,
+    projectName: hero?.project_name,
+    drawingFile: heroScan?.file_name || hero?.drawing_file,
+    fileName: heroScan?.file_name,
+  });
+  const heroStatus = hero ? statusOf(hero) : "ready_for_approval";
+  const heroName = (heroRef && labels.byReference[heroRef]) || heroClient;
+  const prior = awaiting.find((row: { reference?: string; ref?: string; id?: string }) => hero && estimateDisplayRef(row) !== heroRef && (labels.byReference[estimateDisplayRef(row)] || "").replace(/\s*\(v\d+\)$/i, "") === heroName.replace(/\s*\(v\d+\)$/i, ""));
+  const priorTotal = prior ? estimateTotal({
+    items: readDetectedItems(scans.find((scan: { estimate_ref?: string | null }) => scan.estimate_ref === estimateDisplayRef(prior))?.detected_items),
+    subtotal: prior.subtotal,
+    marginPct: prior.margin_pct,
+    value: prior.value,
+  }).incGst : null;
+  const heroDelta = priorTotal == null ? null : Math.round((heroTotal - priorTotal) * 100) / 100;
+  const company = getActiveCompanyProfile();
   const pageLoading = loading || scansLoading;
+
+  async function setHeroApproval(next: ApprovalStatus, label: string) {
+    if (!heroRef) return;
+    setApprovalOverrides(current => ({ ...current, [heroRef]: next }));
+    setLocalEvents(current => [...current, {
+      id: `${heroRef}-${Date.now()}`,
+      ts: new Date().toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }),
+      actor: company.name,
+      role: "Electrician",
+      label,
+      note: "Recorded from this approval screen. The entry stays with this quote.",
+      doc: heroRef,
+    }]);
+    await fetch(`/api/beta/estimates?reference=${encodeURIComponent(heroRef)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approval_status: next, reference: heroRef }),
+    }).catch(() => undefined);
+  }
   const nothing = !pageLoading && awaiting.length === 0 && takeoffs.length === 0 && !selectedScan && !selectedEstimate;
 
   return (
@@ -95,8 +142,48 @@ export default function ApprovalsScreen() {
         title="Approvals"
         sub="Quotes waiting for a signature, and materials requests for the supplier. This is the only place those are sent."
       />
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+        <button type="button" onClick={() => window.print()} style={quiet}>Export audit log</button>
+        <button type="button" onClick={() => { if (heroRef) void setHeroApproval("sent_for_signature", `${heroRef} sent for approval`); }} style={quiet}>Send for approval</button>
+      </div>
+      {hero && (
+        <div style={{ background: heroStatus === "approved" || heroStatus === "materials_sent" ? "linear-gradient(135deg,#065F46,#022C22)" : "linear-gradient(135deg,#1A3A5C,#0D1B2A)", borderRadius: 14, padding: "18px 22px", marginBottom: 16, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#93C5FD", letterSpacing: "0.04em", textTransform: "uppercase" }}>{heroStatus === "approved" || heroStatus === "materials_sent" ? "Approved" : "Pending approval"}</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginTop: 4 }}>{heroRef} awaiting review by {heroClient}</div>
+            <div style={{ fontSize: 13, color: "#CBD5E1", marginTop: 4 }}>
+              {formatGstMoney(heroTotal, "inc")}
+              {heroDelta != null ? ` · ${heroDelta >= 0 ? "+" : "−"}${formatGstMoney(Math.abs(heroDelta), "inc")} vs the previous estimate` : ""}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button type="button" onClick={() => void setHeroApproval("approved", `${heroRef} approved`)} style={{ ...actionBtn, background: "#10B981" }}>Approve</button>
+            <button type="button" onClick={() => void setHeroApproval("ready_for_approval", `${heroRef} returned`)} style={{ ...actionBtn, background: "#EF4444" }}>Return</button>
+          </div>
+        </div>
+      )}
+      <ApprovalStepper status={heroStatus} />
+      <div role="tablist" style={{ display: "flex", gap: 4, borderBottom: `2px solid ${C.border}`, margin: "16px 0" }}>
+        {([["audit", "Audit trail"], ["estimates", "Estimates"], ["parties", "Parties"]] as const).map(([id, label]) => (
+          <button key={id} type="button" role="tab" aria-selected={approvalTab === id} onClick={() => setApprovalTab(id)} style={{ minHeight: 44, padding: "8px 14px", border: "none", borderBottom: `2px solid ${approvalTab === id ? "#1D6EFD" : "transparent"}`, background: "transparent", color: approvalTab === id ? "#1D6EFD" : C.textMuted, fontWeight: 700, marginBottom: -2 }}>{label}</button>
+        ))}
+      </div>
+      {approvalTab === "audit" && (
+        <Card style={{ padding: 16, marginBottom: 16 }}>
+          <p style={{ marginTop: 0, color: C.textMuted, fontSize: 13 }}>{(hero ? 1 : 0) + localEvents.length} timestamped events from this quote. New approve and return actions are appended and are not rewritten.</p>
+          {hero && <AuditRow ts={hero.created_at ? String(hero.created_at).slice(0, 16).replace("T", " ") : "Saved quote"} actor={company.name} role="Electrician" label={`${heroRef} ${APPROVAL_LABEL[heroStatus]}`} note={heroName} doc={heroRef} />}
+          {localEvents.filter(event => event.doc === heroRef).map(event => <AuditRow key={event.id} {...event} />)}
+          {!hero && <p style={{ color: C.textMuted }}>Save a quote and it will be listed here.</p>}
+        </Card>
+      )}
+      {approvalTab === "parties" && (
+        <Card style={{ padding: 16, marginBottom: 16 }}>
+          <Party name={company.name} detail={company.email} role="Electrician" />
+          <Party name={heroClient} detail={heroName} role="Builder" />
+        </Card>
+      )}
 
-      {nothing ? (
+      {approvalTab !== "estimates" ? null : nothing ? (
         <EmptyState
           title="Nothing is waiting"
           body="Save a quote from a scan, or open Sign and order on a takeoff. It will be listed here."
@@ -214,6 +301,65 @@ function itemsFromEstimate(estimate: { line_items?: unknown } | null): StoredDet
     }];
   });
 }
+
+const STEPS = ["Draft", "Submitted", "Builder review", "Re-estimate request", "New estimate", "Final approval"];
+
+function ApprovalStepper({ status }: { status: ApprovalStatus }) {
+  const current = status === "approved" || status === "materials_sent" ? 6 : status === "sent_for_signature" ? 2 : 1;
+  return (
+    <div style={{ background: "#fff", borderRadius: 12, border: `1px solid ${C.border}`, padding: "16px 12px", overflowX: "auto" }}>
+      <div style={{ display: "flex", minWidth: 640 }}>
+        {STEPS.map((step, index) => {
+          const done = index < current;
+          const active = index === current;
+          const color = done ? "#10B981" : active ? "#1D6EFD" : "#94A3B8";
+          return (
+            <div key={step} style={{ flex: 1, textAlign: "center" }}>
+              <div style={{ width: 36, height: 36, borderRadius: 18, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "center", background: done ? "#10B981" : active ? "#1D6EFD" : "#F1F5F9", color: done || active ? "#fff" : "#94A3B8", fontWeight: 800 }}>{done ? "✓" : index + 1}</div>
+              <div style={{ marginTop: 6, fontSize: 11, fontWeight: 700, color }}>{step}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function AuditRow({ ts, actor, role, label, note, doc }: { ts: string; actor: string; role: string; label: string; note: string; doc: string }) {
+  const roleColor = role === "Builder" ? "#8B5CF6" : "#1D6EFD";
+  return (
+    <div style={{ display: "flex", gap: 12, padding: "10px 0", borderTop: `1px solid ${C.border}` }}>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontWeight: 700 }}>{label}</div>
+        <div style={{ marginTop: 4, fontSize: 12 }}>
+          <span style={{ fontWeight: 700, color: roleColor, background: `${roleColor}18`, borderRadius: 999, padding: "2px 8px" }}>{role}</span>
+          <span style={{ marginLeft: 8, color: C.textMuted }}>{actor}</span>
+        </div>
+        <div style={{ marginTop: 4, color: C.textMuted, fontSize: 13 }}>{note}</div>
+      </div>
+      <div style={{ textAlign: "right", fontSize: 12, color: C.textMuted }}>
+        <div>{ts}</div>
+        <div style={{ color: "#1D6EFD" }}>{doc}</div>
+        <div style={{ color: "#10B981", fontWeight: 700 }}>Verified</div>
+      </div>
+    </div>
+  );
+}
+
+function Party({ name, detail, role }: { name: string; detail: string; role: string }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "10px 0", borderTop: `1px solid ${C.border}` }}>
+      <div>
+        <div style={{ fontWeight: 700 }}>{name}</div>
+        <div style={{ color: C.textMuted, fontSize: 13 }}>{detail}</div>
+      </div>
+      <span style={{ fontSize: 12, fontWeight: 700, color: "#1D6EFD" }}>{role}</span>
+    </div>
+  );
+}
+
+const quiet: React.CSSProperties = { minHeight: 36, padding: "0 12px", borderRadius: 8, border: `1px solid ${C.border}`, background: "#fff", fontWeight: 700 };
+const actionBtn: React.CSSProperties = { minHeight: 44, padding: "0 18px", border: "none", borderRadius: 9, color: "#fff", fontWeight: 700 };
 
 function Queue({
   title,
