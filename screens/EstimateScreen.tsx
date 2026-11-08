@@ -23,7 +23,9 @@ import {
   daysSinceSent,
 } from "../lib/estimateMoney";
 import QueryBanner from "../components/QueryBanner";
-import { displayClient } from "../lib/jobLink";
+import { indexRows, readLocalDocumentLabels } from "../lib/documentLabel";
+import { saveDocumentLabel } from "../services/documentLabel";
+import RenameLabel from "../components/desktop/RenameLabel";
 import { verifiedFromEstimate } from "../lib/takeoff";
 
 export default function EstimateScreen() {
@@ -35,6 +37,11 @@ export default function EstimateScreen() {
     [liveEstimates],
   );
   const [filter, setFilter] = useState<"All" | "draft" | "sent" | "viewed" | "approved">("All");
+  const [localTick, setLocalTick] = useState(0);
+  const labels = useMemo(
+    () => indexRows(liveEstimates as Array<Record<string, unknown>>, [], readLocalDocumentLabels()),
+    [liveEstimates, localTick],
+  );
   const drafted = liveEstimates.length;
   const sentCount = liveEstimates.filter((e: any) => e.status === "sent").length;
   const approvedCount = liveEstimates.filter((e: any) => e.status === "approved").length;
@@ -111,8 +118,8 @@ export default function EstimateScreen() {
           <table className="es-data-table" style={{ width: "100%", fontSize: 14 }}>
             <thead>
               <tr style={{ backgroundColor: C.bg, borderBottom: `1px solid ${C.border}` }}>
+                <Th>Plan</Th>
                 <Th>Reference</Th>
-                <Th>Client</Th>
                 <Th align="right">Value (inc GST)</Th>
                 <Th>Verified</Th>
                 <Th>Status</Th>
@@ -131,12 +138,23 @@ export default function EstimateScreen() {
                       transition: "background-color 120ms",
                     }}
                   >
+                    <Td label="Plan">
+                      <div style={{ fontWeight: 700, overflowWrap: "anywhere" }}>
+                        {labels.byReference[estimateDisplayRef(e)] || labels.byEstimateId[e.id] || estimateDisplayRef(e)}
+                      </div>
+                      <RenameLabel
+                        label={labels.byReference[estimateDisplayRef(e)] || estimateDisplayRef(e)}
+                        onSave={async next => {
+                          await saveDocumentLabel({ label: next, reference: estimateDisplayRef(e), estimateId: e.id });
+                          setLocalTick(tick => tick + 1);
+                        }}
+                      />
+                    </Td>
                     <Td mono label="Reference">
-                      <span style={{ fontWeight: 500, fontSize: 13, letterSpacing: "-0.01em" }}>
+                      <span style={{ fontWeight: 500, fontSize: 13, letterSpacing: "-0.01em", color: C.textMuted }}>
                         {estimateDisplayRef(e)}
                       </span>
                     </Td>
-                    <Td label="Client">{displayClient({ client: e.client, projectName: e.project_name, drawingFile: e.drawing_file })}</Td>
                     <Td align="right" mono label="Value">
                       <span style={{ fontWeight: 500 }}>{formatQuotedValue(quotedTotalIncGst(e))}</span>
                     </Td>

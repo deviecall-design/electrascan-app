@@ -130,6 +130,7 @@ export function buildEstimateWorkbook(input: {
   estimateId: string;
   marginPct: number;
   lines: WorkbookLine[];
+  planLabel?: string;
 }): XLSX.WorkBook {
   const aoa: Array<Array<string | number>> = [HEADERS];
   input.lines.forEach(line => {
@@ -183,6 +184,7 @@ export function buildEstimateWorkbook(input: {
   summary.B5 = { t: "n", f: "B1+B3+B4" };
 
   const info = XLSX.utils.aoa_to_sheet([
+    ...(input.planLabel ? [["Plan", input.planLabel]] : []),
     ["Estimate ID", input.estimateId],
     ["Version", WORKBOOK_VERSION],
     ["Instructions", INSTRUCTIONS],

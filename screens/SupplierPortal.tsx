@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { C, FONT } from "../components/desktop/tokens";
 import { parseSupplierCsv, type PricedRequestLine } from "../lib/supplierLink";
+import { canonicalSupplierName } from "../lib/supplierName";
 
 export default function SupplierPortal() {
   const { token = "" } = useParams();
@@ -23,7 +24,7 @@ export default function SupplierPortal() {
           return;
         }
         setJobName(body.data?.jobName || "Materials request");
-        setSupplierName(body.data?.supplierName || "");
+        setSupplierName(canonicalSupplierName(body.data?.supplierName || "", ""));
         setLines(body.data?.lines || []);
         setDone(body.data?.status === "priced");
       })

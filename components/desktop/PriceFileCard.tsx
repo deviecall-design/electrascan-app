@@ -90,7 +90,7 @@ export default function PriceFileCard() {
           Pricing
         </div>
         <p style={{ margin: 0, color: C.textMuted, fontSize: 14 }}>
-          Upload this workspace’s own Lawrence & Hanson customer price file, or any invoice export with a code, description, unit, and cost. ElectraScan does not keep a supplier price book. Matched costs are used before the default assembly prices.
+          Upload this workspace’s own TLE customer price file, or any invoice export with a code, description, unit, and cost. ElectraScan does not keep a supplier price book. Matched costs are used before the default assembly prices.
         </p>
         <p style={{ margin: 0, fontSize: 14 }}>{savedCount > 0 ? `${savedCount} prices saved for this workspace.` : "No workspace price list yet."}</p>
         <label style={{ fontSize: 13, color: C.textMuted }}>

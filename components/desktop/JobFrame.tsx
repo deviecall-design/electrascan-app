@@ -1,10 +1,13 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { Link, NavLink, Outlet, useParams } from "react-router-dom";
 import { C, FONT } from "./tokens";
 import useSupabaseQuery from "../../hooks/useSupabaseQuery";
 import { fetchEstimates, fetchScans } from "../../services/supabaseData";
 import { readDetectedItems } from "../../lib/scanRecord";
-import { displayClient, quotedSellExGst, resolveJobTarget } from "../../lib/jobLink";
+import { quotedSellExGst, resolveJobTarget } from "../../lib/jobLink";
+import { indexRows, readLocalDocumentLabels } from "../../lib/documentLabel";
+import { saveDocumentLabel } from "../../services/documentLabel";
+import RenameLabel from "./RenameLabel";
 import { quoteContract } from "../../lib/burndown";
 import { marginForQuote } from "../../lib/margin";
 import { approvalFromRow } from "../../lib/approvalStatus";
@@ -38,23 +41,22 @@ export default function JobFrame() {
   const jobKey = decodeURIComponent(params.jobKey || "");
   const { data: scans, loading, error } = useSupabaseQuery(fetchScans);
   const { data: estimates, loading: estimatesLoading } = useSupabaseQuery(fetchEstimates);
+  const [localTick, setLocalTick] = useState(0);
   const job = useMemo(() => {
     const resolved = resolveJobTarget(jobKey, scans as never[], estimates as never[]);
-    const estimate = resolved.estimate as JobOutletContext["estimate"] & { margin_pct?: number | null; approval_status?: string | null; status?: string | null; reference?: string | null; ref?: string | null } | null;
+    const estimate = resolved.estimate as JobOutletContext["estimate"] & { id?: string; margin_pct?: number | null; approval_status?: string | null; status?: string | null; reference?: string | null; ref?: string | null } | null;
     const scan = resolved.scans[0] as { id?: string; file_name?: string | null; client?: string | null; detected_items?: unknown } | undefined;
+    const labels = indexRows(estimates as Array<Record<string, unknown>>, scans as Array<Record<string, unknown>>, readLocalDocumentLabels());
     const items = resolved.scans.flatMap(row => readDetectedItems((row as { detected_items?: unknown }).detected_items));
     const sell = quotedSellExGst(items);
     const margin = marginForQuote(estimate?.margin_pct);
     const approval = estimate ? approvalFromRow(estimate) : "";
+    const reference = estimate?.reference || estimate?.ref || scan && (scan as { estimate_ref?: string }).estimate_ref || "";
     return {
       embedded: true as const,
-      name: displayClient({
-        client: estimate?.client || scan?.client,
-        projectName: estimate?.project_name,
-        drawingFile: estimate?.drawing_file,
-        fileName: scan?.file_name,
-      }),
-      reference: estimate?.reference || estimate?.ref || scan && (scan as { estimate_ref?: string }).estimate_ref || "",
+      name: (reference && labels.byReference[reference]) || (estimate?.id && labels.byEstimateId[estimate.id]) || (scan?.id && labels.byScanId[scan.id]) || "Untitled plan",
+      estimateId: estimate?.id,
+      reference,
       scanId: scan?.id,
       contract: quoteContract(sell, margin).total,
       margin,
@@ -64,7 +66,7 @@ export default function JobFrame() {
       estimate,
       stage: workflowStageIndex({ approval, hasEstimate: Boolean(estimate) }),
     };
-  }, [jobKey, scans, estimates]);
+  }, [jobKey, scans, estimates, localTick]);
 
   const base = `/jobs/${encodeURIComponent(jobKey)}`;
 
@@ -78,10 +80,20 @@ export default function JobFrame() {
       </nav>
       <header style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
         <div>
-          <h1 style={{ margin: 0, fontFamily: FONT.heading, fontSize: 28, letterSpacing: "-0.03em" }}>{job.name}</h1>
-          <p style={{ margin: "6px 0 0", color: C.textMuted }}>
-            {[job.reference, job.drawing].filter(Boolean).join(" · ") || "No estimate linked yet"}
-          </p>
+          <h1 style={{ margin: 0, fontFamily: FONT.heading, fontSize: 28, letterSpacing: "-0.03em", overflowWrap: "anywhere" }}>{job.name}</h1>
+          <p style={{ margin: "6px 0 0", color: C.textMuted }}>{job.reference || "No estimate linked yet"}</p>
+          <RenameLabel
+            label={job.name}
+            onSave={async next => {
+              await saveDocumentLabel({
+                label: next,
+                reference: job.reference,
+                estimateId: job.estimateId,
+                scanId: job.scanId,
+              });
+              setLocalTick(tick => tick + 1);
+            }}
+          />
           <StagePipeline index={job.stage} />
         </div>
       </header>

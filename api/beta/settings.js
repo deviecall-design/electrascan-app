@@ -9,10 +9,11 @@ import {
   requireBeta,
   VESH_TENANT_ID,
 } from "../_lib/veshAdmin.js";
+import { canonicalSupplierName, TLE_SUPPLIER_NAME } from "../_lib/supplierName.js";
 
 const DEFAULTS = {
   minVerifiedPct: null,
-  supplierName: "Lawrence & Hanson",
+  supplierName: TLE_SUPPLIER_NAME,
   supplierEmail: "",
   defaultMarginPct: null,
   marginStored: false,
@@ -30,7 +31,7 @@ function present(row, marginStored = false) {
   const margin = row.default_margin_pct;
   return {
     minVerifiedPct: pct == null || pct === "" ? null : Math.max(0, Math.min(100, Number(pct))),
-    supplierName: row.supplier_name || DEFAULTS.supplierName,
+    supplierName: canonicalSupplierName(row.supplier_name, DEFAULTS.supplierName),
     supplierEmail: row.supplier_email || "",
     defaultMarginPct: margin == null || margin === "" ? null : clampMargin(margin),
     marginStored,
@@ -92,7 +93,7 @@ export default async function handler(req, res) {
   const row = {
     tenant_id: VESH_TENANT_ID,
     min_verified_pct: min == null || min === "" ? null : Math.max(0, Math.min(100, Math.round(Number(min)))),
-    supplier_name: String(body.supplierName || DEFAULTS.supplierName).slice(0, 120),
+    supplier_name: canonicalSupplierName(body.supplierName, DEFAULTS.supplierName).slice(0, 120),
     supplier_email: String(body.supplierEmail || "").slice(0, 200),
     ...(margin == null ? {} : { default_margin_pct: margin }),
     updated_at: new Date().toISOString(),

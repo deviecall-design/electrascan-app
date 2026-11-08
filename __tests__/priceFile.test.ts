@@ -19,7 +19,7 @@ const xml = `<?xml version="1.0"?>
 
 describe("supplier price file", () => {
   it("reads CSV and XML into code, description, unit, and cost", () => {
-    const parsed = parsePriceFile(csv, "lh-customer.csv");
+    const parsed = parsePriceFile(csv, "tle-customer.csv");
     expect(parsed.error).toBeNull();
     expect(parsed.rows).toEqual([
       { code: "CLIPSAL-3025", description: "Double powerpoint 10A", unit: "EA", cost: 8.4 },

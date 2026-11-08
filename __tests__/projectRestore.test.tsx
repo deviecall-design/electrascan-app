@@ -43,7 +43,7 @@ describe("restored project surfaces", () => {
         <ProjectReportsScreen />
       </MemoryRouter>,
     );
-    expect(await screen.findByRole("heading", { name: "Mark Arnesen plan.pdf" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Mark Arnesen plan" })).toBeInTheDocument();
     expect(screen.getByText("Progress payments")).toBeInTheDocument();
     expect(screen.getByText("Deposit on signing")).toBeInTheDocument();
     expect(screen.getByText("Retention holdback")).toBeInTheDocument();

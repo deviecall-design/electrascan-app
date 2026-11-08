@@ -82,13 +82,13 @@ describe("materials request", () => {
       jobName: "Harbour",
       siteAddress: "1 Test St",
       requiredBy: "2026-11-01",
-      supplierName: "Lawrence & Hanson",
-      supplierEmail: "orders@lh.example",
+      supplierName: "TLE",
+      supplierEmail: "orders@tle.example",
       notes: "Use our trade account",
       lines,
       status: "draft",
     });
-    expect(href?.startsWith("mailto:orders@lh.example")).toBe(true);
+    expect(href?.startsWith("mailto:orders@tle.example")).toBe(true);
     expect(decodeURIComponent(href || "")).not.toMatch(/\$|discount/);
     expect(stripSupplierPrices({ product: "GPO", qty: 2, price: 99, discount: 10, brand: "Clipsal" })).toEqual({
       product: "GPO",
