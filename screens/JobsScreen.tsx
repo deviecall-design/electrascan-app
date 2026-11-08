@@ -5,11 +5,10 @@ import { PageHeader, Card, Footer } from "../components/ui/anthropic";
 import useSupabaseQuery from "../hooks/useSupabaseQuery";
 import { fetchEstimates, fetchScans } from "../services/supabaseData";
 import { readDetectedItems } from "../lib/scanRecord";
-import { quotedSellExGst } from "../lib/jobLink";
+import { estimateTotal, formatGstMoney } from "../lib/estimateTotal";
 import { indexRows, readLocalDocumentLabels } from "../lib/documentLabel";
 import { workflowStageIndex } from "../lib/workflowStage";
 import StagePipeline from "../components/desktop/StagePipeline";
-import { formatQuotedValue } from "../lib/estimateMoney";
 import QueryBanner from "../components/QueryBanner";
 
 export default function JobsScreen() {
@@ -28,7 +27,12 @@ export default function JobsScreen() {
         key: reference || row.id || scan?.id || "job",
         routeKey: reference || row.id || scan?.id || "job",
         name: labels.byReference[reference] || (row.id ? labels.byEstimateId[row.id] : "") || reference || "Untitled plan",
-        quoted: quotedSellExGst(readDetectedItems(scan?.detected_items)),
+        quoted: estimateTotal({
+          items: readDetectedItems(scan?.detected_items),
+          marginPct: (row as { margin_pct?: number | null }).margin_pct,
+          subtotal: (row as { subtotal?: number | null }).subtotal,
+          value: (row as { value?: number | null }).value,
+        }).incGst,
         reference: reference || null,
         approved,
         stage: workflowStageIndex({ approval: row.approval_status || row.status, hasEstimate: true }),
@@ -41,7 +45,7 @@ export default function JobsScreen() {
         key: scan.id || scan.file_name || "scan",
         routeKey: scan.id || scan.file_name || "scan",
         name: (scan.id && labels.byScanId[scan.id]) || scan.file_name || "Untitled plan",
-        quoted: quotedSellExGst(readDetectedItems(scan.detected_items)),
+        quoted: estimateTotal({ items: readDetectedItems(scan.detected_items) }).incGst,
         reference: scan.estimate_ref || null,
         approved: false,
         stage: 0,
@@ -66,7 +70,7 @@ export default function JobsScreen() {
               <div style={{ fontWeight: 800, fontSize: 18, overflowWrap: "anywhere" }}>{job.name}</div>
               <p style={{ margin: "4px 0 0", color: C.textMuted, fontSize: 14 }}>
                 {job.reference ? `${job.reference} · ` : ""}
-                Quoted {formatQuotedValue(job.quoted)} ex GST
+                Quoted {formatGstMoney(job.quoted, "inc")}
               </p>
             </div>
             <StagePipeline index={job.stage} label={`Stage for ${job.name}`} />

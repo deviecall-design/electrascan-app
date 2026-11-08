@@ -31,6 +31,7 @@ interface ChainScan {
   id: string;
   file_name?: string;
   client?: string | null;
+  revision_of?: string | null;
   started_at?: string | null;
   detected_items?: unknown;
 }
@@ -94,6 +95,7 @@ export default function VariationReportScreen() {
         id: savedId || `local-${Date.now()}`,
         file_name: write.file_name,
         client: write.client,
+        revision_of: variationProjectKey(base),
         started_at: new Date().toISOString(),
         detected_items: write.detected_items,
       }]);

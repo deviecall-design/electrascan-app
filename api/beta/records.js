@@ -12,6 +12,8 @@ const TABLES = {
   labour: "labour_rate_cards",
   actuals: "job_actuals",
   schedules: "job_schedules",
+  costs: "job_costs",
+  claims: "milestone_claims",
 };
 
 function kindOf(req) {
@@ -27,6 +29,8 @@ function migrationFor(kind) {
   if (kind === "actuals" || kind === "schedules") return "20261104040000_job_actuals.sql";
   if (kind === "prices") return "20261105090000_contractor_price_list_and_scope.sql";
   if (kind === "labour") return "20261108010000_labour_rate_cards.sql";
+  if (kind === "costs") return "20261108050000_job_costs.sql";
+  if (kind === "claims") return "20261108040000_milestone_claims_project_id.sql";
   return "20261103140000_assemblies_reviews_supplier_invoices_jobs.sql";
 }
 
@@ -34,7 +38,7 @@ export default async function handler(req, res) {
   if (!requireBeta(res)) return;
   const table = TABLES[kindOf(req)];
   if (!table) {
-    res.status(400).json({ error: "Choose assemblies, corrections, invoices, jobs, prices, labour, actuals, or schedules." });
+    res.status(400).json({ error: "Choose assemblies, corrections, invoices, jobs, prices, labour, actuals, schedules, costs, or claims." });
     return;
   }
 
@@ -45,7 +49,14 @@ export default async function handler(req, res) {
       res.status(200).json({ data: [], migration: migrationFor(kindOf(req)) });
       return;
     }
-    sendResult(res, fallback.ok ? fallback : result, { data: Array.isArray((fallback.ok ? fallback : result).data) ? (fallback.ok ? fallback : result).data : [] });
+    const rows = Array.isArray((fallback.ok ? fallback : result).data) ? (fallback.ok ? fallback : result).data : [];
+    if (kindOf(req) === "claims" && rows.length > 0 && rows.every(row => row.project_id == null)) {
+      res.status(200).json({ data: [], migration: migrationFor("claims") });
+      return;
+    }
+    const project = new URL(req.url || "/", "http://localhost").searchParams.get("project");
+    const filtered = kindOf(req) === "claims" && project ? rows.filter(row => row.project_id === project) : rows;
+    sendResult(res, fallback.ok ? fallback : result, { data: filtered });
     return;
   }
 

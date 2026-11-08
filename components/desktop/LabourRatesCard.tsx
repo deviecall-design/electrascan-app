@@ -28,6 +28,7 @@ export default function LabourRatesCard() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -102,6 +103,15 @@ export default function LabourRatesCard() {
               <input type="radio" name="default-labour-role" checked={role.isDefault} onChange={() => makeDefault(role.id)} aria-label={`Default role ${role.name || "role"}`} />
               Default
             </label>
+            {confirmRemove === role.id ? (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                <span>Remove {role.name || "this role"}?</span>
+                <button type="button" onClick={() => { setRoles(current => current.filter(item => item.id !== role.id)); setConfirmRemove(null); }} style={danger}>Confirm remove</button>
+                <button type="button" onClick={() => setConfirmRemove(null)} style={quiet}>Cancel</button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => setConfirmRemove(role.id)} aria-label={`Remove ${role.name || "role"}`} style={quiet}>Remove</button>
+            )}
           </div>
         ))}
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -162,6 +172,8 @@ function GstRateFields({ role, onRate }: { role: LabourRole; onRate: (ex: number
   );
 }
 
+const quiet: React.CSSProperties = { minHeight: 44, padding: "0 12px", borderRadius: 10, border: `1px solid ${C.border}`, background: C.bgCard, fontWeight: 700 };
+const danger: React.CSSProperties = { ...quiet, background: C.red, color: "#fff", borderColor: C.red };
 const label: React.CSSProperties = { fontSize: 13, color: C.textMuted };
 const field: React.CSSProperties = {
   display: "block",

@@ -4,12 +4,11 @@ import { C, FONT } from "./tokens";
 import useSupabaseQuery from "../../hooks/useSupabaseQuery";
 import { fetchEstimates, fetchScans } from "../../services/supabaseData";
 import { readDetectedItems } from "../../lib/scanRecord";
-import { quotedSellExGst, resolveJobTarget } from "../../lib/jobLink";
+import { resolveJobTarget } from "../../lib/jobLink";
+import { estimateTotal } from "../../lib/estimateTotal";
 import { indexRows, readLocalDocumentLabels } from "../../lib/documentLabel";
 import { saveDocumentLabel } from "../../services/documentLabel";
 import RenameLabel from "./RenameLabel";
-import { quoteContract } from "../../lib/burndown";
-import { marginForQuote } from "../../lib/margin";
 import { approvalFromRow } from "../../lib/approvalStatus";
 import { workflowStageIndex } from "../../lib/workflowStage";
 import StagePipeline from "./StagePipeline";
@@ -29,6 +28,7 @@ export interface JobOutletContext {
   reference: string;
   scanId?: string;
   contract: number;
+  contractExGst: number;
   margin: number;
   approved: boolean;
   approval: string;
@@ -48,8 +48,13 @@ export default function JobFrame() {
     const scan = resolved.scans[0] as { id?: string; file_name?: string | null; client?: string | null; detected_items?: unknown } | undefined;
     const labels = indexRows(estimates as Array<Record<string, unknown>>, scans as Array<Record<string, unknown>>, readLocalDocumentLabels());
     const items = resolved.scans.flatMap(row => readDetectedItems((row as { detected_items?: unknown }).detected_items));
-    const sell = quotedSellExGst(items);
-    const margin = marginForQuote(estimate?.margin_pct);
+    const total = estimateTotal({
+      items,
+      subtotal: (estimate as { subtotal?: number | null } | null)?.subtotal,
+      marginPct: estimate?.margin_pct,
+      value: (estimate as { value?: number | null } | null)?.value,
+    });
+    const margin = total.marginPct;
     const approval = estimate ? approvalFromRow(estimate) : "";
     const reference = estimate?.reference || estimate?.ref || scan && (scan as { estimate_ref?: string }).estimate_ref || "";
     return {
@@ -58,7 +63,8 @@ export default function JobFrame() {
       estimateId: estimate?.id,
       reference,
       scanId: scan?.id,
-      contract: quoteContract(sell, margin).total,
+      contract: total.incGst,
+      contractExGst: total.contractExGst,
       margin,
       approved: approval === "approved" || approval === "materials_sent",
       approval,

@@ -14,10 +14,11 @@ import {
 } from "../components/ui/anthropic";
 import { PrimaryButton } from "../components/ui/anthropic/Button";
 import useSupabaseQuery from "../hooks/useSupabaseQuery";
-import { fetchEstimates } from "../services/supabaseData";
+import { fetchEstimates, fetchScans } from "../services/supabaseData";
+import { readDetectedItems } from "../lib/scanRecord";
+import { estimateTotal, formatGstMoney } from "../lib/estimateTotal";
 import {
   computeDashboardMoneyStats,
-  quotedTotalIncGst,
   formatQuotedValue,
   estimateDisplayRef,
   daysSinceSent,
@@ -31,6 +32,7 @@ import { verifiedFromEstimate } from "../lib/takeoff";
 export default function EstimateScreen() {
   const navigate = useNavigate();
   const { data: liveEstimates, loading, error } = useSupabaseQuery(fetchEstimates);
+  const { data: scans } = useSupabaseQuery(fetchScans);
 
   const stats = useMemo(
     () => computeDashboardMoneyStats(liveEstimates),
@@ -156,7 +158,12 @@ export default function EstimateScreen() {
                       </span>
                     </Td>
                     <Td align="right" mono label="Value">
-                      <span style={{ fontWeight: 500 }}>{formatQuotedValue(quotedTotalIncGst(e))}</span>
+                      <span style={{ fontWeight: 500 }}>{formatGstMoney(estimateTotal({
+                        items: readDetectedItems((scans as Array<{ estimate_ref?: string | null; detected_items?: unknown }>).find(scan => scan.estimate_ref === estimateDisplayRef(e))?.detected_items),
+                        subtotal: e.subtotal,
+                        marginPct: e.margin_pct,
+                        value: e.value,
+                      }).incGst, "inc")}</span>
                     </Td>
                     <Td label="Verified">
                       {verifiedFromEstimate(e) == null ? "—" : `Takeoff ${verifiedFromEstimate(e)}% verified`}

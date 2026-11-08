@@ -5,6 +5,7 @@ import { PageHeader, Card, Footer, EmptyState } from "../components/ui/anthropic
 import useSupabaseQuery from "../hooks/useSupabaseQuery";
 import { fetchEstimates, fetchScans } from "../services/supabaseData";
 import { estimateDisplayRef, formatQuotedValue } from "../lib/estimateMoney";
+import { estimateTotal, formatGstMoney } from "../lib/estimateTotal";
 import { linesFromDetected, materialsExGst } from "../lib/variationDiff";
 import { approvalsHref } from "../lib/approvalsLink";
 import { displayClient } from "../lib/jobLink";
@@ -108,10 +109,15 @@ export default function ApprovalsScreen() {
             <Queue
               title="Ready for approval"
               empty="No saved quote is waiting. Save a priced takeoff and it will land here."
-              rows={awaiting.map((row: { id: string; client?: string; value?: number; status?: string; approval_status?: string; reference?: string; ref?: string }) => ({
+              rows={awaiting.map((row: { id: string; client?: string; value?: number; subtotal?: number | null; margin_pct?: number | null; status?: string; approval_status?: string; reference?: string; ref?: string }) => ({
                 id: row.id,
                 label: labels.byReference[estimateDisplayRef(row)] || estimateDisplayRef(row),
-                detail: `${estimateDisplayRef(row)} · ${formatQuotedValue(Number(row.value) || 0)} · ${APPROVAL_LABEL[statusOf(row)]}`,
+                detail: `${estimateDisplayRef(row)} · ${formatGstMoney(estimateTotal({
+                  items: readDetectedItems((scans as Array<{ estimate_ref?: string | null; detected_items?: unknown }>).find(scan => scan.estimate_ref === estimateDisplayRef(row))?.detected_items),
+                  subtotal: row.subtotal,
+                  marginPct: row.margin_pct,
+                  value: row.value,
+                }).incGst, "inc")} · ${APPROVAL_LABEL[statusOf(row)]}`,
                 href: approvalsHref(scans.find((scan: { estimate_ref?: string | null }) => scan.estimate_ref === estimateDisplayRef(row))?.id, estimateDisplayRef(row)),
                 active: estimateDisplayRef(row) === reference,
               }))}

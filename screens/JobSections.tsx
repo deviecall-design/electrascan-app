@@ -3,6 +3,7 @@ import { Link, useOutletContext } from "react-router-dom";
 import { C, FONT } from "../components/desktop/tokens";
 import { Card } from "../components/ui/anthropic";
 import { formatAud } from "../lib/quoteTotals";
+import { formatGstMoney } from "../lib/estimateTotal";
 import { paymentSchedule } from "../lib/burndown";
 import { readScopeFromEstimate } from "../lib/scopeOfWorks";
 import { ScopePreview } from "../components/desktop/ScopeOfWorksCard";
@@ -18,7 +19,7 @@ export function JobEstimateTab() {
     <Card style={{ padding: 18 }}>
       <h2 style={{ marginTop: 0, fontFamily: FONT.heading }}>Estimate</h2>
       <p style={{ color: C.textMuted }}>
-        {job.reference || "No estimate saved yet"} · {job.margin}% margin · ${formatAud(job.contract)} inc GST
+        {job.reference || "No estimate saved yet"} · {job.margin}% margin · {formatGstMoney(job.contract, "inc")}
       </p>
       <p>{job.approved ? "This quote is approved." : "This quote is still moving through approval."}</p>
       {job.scanId ? (

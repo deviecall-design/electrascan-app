@@ -1,35 +1,24 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useOutletContext, useParams } from "react-router-dom";
-import { C, FONT } from "../components/desktop/tokens";
+import { C } from "../components/desktop/tokens";
 import { PageHeader, Card, Footer } from "../components/ui/anthropic";
-import { GhostButton, PrimaryButton } from "../components/ui/anthropic/Button";
+import { PrimaryButton } from "../components/ui/anthropic/Button";
 import useSupabaseQuery from "../hooks/useSupabaseQuery";
 import { fetchEstimates, fetchMilestoneClaimsForProject, fetchScans } from "../services/supabaseData";
 import { loadAssemblies, loadLabourRate } from "../lib/assemblies";
 import { priceItem } from "../lib/quoteSource";
-import { defaultHourlyRole, loadLabourCard } from "../lib/labourRates";
+import { defaultHourlyRole, incGst, loadLabourCard } from "../lib/labourRates";
+import { buildLedger, ledgerRows, priceTimesheet, type CostKind, type LedgerCost } from "../lib/jobLedger";
+import LedgerChart from "../components/desktop/LedgerChart";
+import * as XLSX from "xlsx";
 import { readDetectedItems } from "../lib/scanRecord";
-import { quotedSellExGst, resolveJobTarget } from "../lib/jobLink";
+import { resolveJobTarget } from "../lib/jobLink";
+import { estimateTotal, formatGstMoney } from "../lib/estimateTotal";
 import { indexRows, readLocalDocumentLabels } from "../lib/documentLabel";
-import { marginForQuote } from "../lib/margin";
 import { approvalFromRow } from "../lib/approvalStatus";
-import { formatQuotedValue } from "../lib/estimateMoney";
-import { formatAud } from "../lib/quoteTotals";
-import BurndownChart from "../components/desktop/BurndownChart";
 import QueryBanner from "../components/QueryBanner";
-import {
-  burnPercent,
-  burnTone,
-  burndownWeeks,
-  milestoneStatus,
-  milestoneWeekIndex,
-  paymentSchedule,
-  quoteContract,
-  spendAheadWarning,
-  sumActuals,
-  type ActualEntry,
-  type BurndownMilestone,
-} from "../lib/burndown";
+import { milestoneWeekIndex, paymentSchedule, type ActualEntry } from "../lib/burndown";
+import { formatAud, roundCents } from "../lib/quoteTotals";
 
 interface Schedule {
   start: string;
@@ -49,29 +38,32 @@ export default function JobBurndownScreen() {
   const [migrationNote, setMigrationNote] = useState<string | null>(null);
   const [claims, setClaims] = useState<Array<{ milestone_id?: string; status?: string }>>([]);
   const [invoices, setInvoices] = useState<Array<{ id?: string; source_ref?: string | null; job_name?: string | null }>>([]);
-  const [form, setForm] = useState({ date: today(), materials: "", hours: "", cost: "", note: "" });
-  const [saving, setSaving] = useState(false);
+  const [costs, setCosts] = useState<LedgerCost[]>([]);
+  const [drawer, setDrawer] = useState<CostKind | null>(null);
+  const [gstMode, setGstMode] = useState<"ex" | "inc">("ex");
+  const [openWeek, setOpenWeek] = useState<string | null>(null);
+  const [costDraft, setCostDraft] = useState({ date: today(), roleId: "", hours: "", amount: "", supplier: "TLE", reference: "", note: "" });
 
   const job = useMemo(() => {
     const scanRows = scans as Array<{ id?: string; client?: string | null; file_name?: string | null; estimate_ref?: string | null; detected_items?: unknown }>;
     const estimateRows = estimates as Array<{ id?: string; client?: string | null; project_name?: string | null; drawing_file?: string | null; reference?: string | null; ref?: string | null; margin_pct?: number | null; status?: string | null; approval_status?: string | null }>;
     const resolved = resolveJobTarget(jobId, scanRows, estimateRows);
     const estimate = resolved.estimate;
-    let sell = 0;
+    const items = resolved.scans.flatMap(scan => readDetectedItems(scan.detected_items));
     let hours = 0;
     let labourDollars = 0;
-    for (const scan of resolved.scans) {
-      const items = readDetectedItems(scan.detected_items);
-      sell += quotedSellExGst(items);
-      for (const item of items) {
-        if (item.status === "rejected" || item.qty <= 0) continue;
-        const quote = priceItem(item, [], assemblies, labourRate, [], loadLabourCard());
-        hours += item.qty * quote.labourHours;
-        labourDollars += item.qty * quote.labourUnit;
-      }
+    for (const item of items) {
+      if (item.status === "rejected" || item.qty <= 0) continue;
+      const quote = priceItem(item, [], assemblies, labourRate, [], loadLabourCard());
+      hours += item.qty * quote.labourHours;
+      labourDollars += item.qty * quote.labourUnit;
     }
-    const margin = marginForQuote(estimate?.margin_pct);
-    const contract = quoteContract(sell, margin);
+    const total = estimateTotal({
+      items,
+      subtotal: (estimate as { subtotal?: number | null } | null)?.subtotal,
+      marginPct: estimate?.margin_pct,
+      value: (estimate as { value?: number | null } | null)?.value,
+    });
     const approved = estimate ? ["approved", "materials_sent"].includes(approvalFromRow(estimate)) : false;
     const labels = indexRows(estimateRows as Array<Record<string, unknown>>, scanRows as Array<Record<string, unknown>>, readLocalDocumentLabels());
     const reference = estimate?.reference || estimate?.ref || resolved.scans[0]?.estimate_ref || "";
@@ -79,11 +71,12 @@ export default function JobBurndownScreen() {
       name: (reference && labels.byReference[reference]) || (resolved.scans[0]?.id && labels.byScanId[resolved.scans[0].id]) || "Untitled plan",
       reference,
       approved,
-      sell,
+      sell: total.sellExGst,
       hours,
       labourDollars,
-      margin,
-      contract: contract.total,
+      margin: total.marginPct,
+      contract: total.incGst,
+      contractExGst: total.contractExGst,
       scanId: resolved.scans[0]?.id,
     };
   }, [scans, estimates, assemblies, labourRate, jobId]);
@@ -100,6 +93,22 @@ export default function JobBurndownScreen() {
     const savedActuals = readJson<ActualEntry[]>(`es-job-actuals:${jobId}`);
     if (savedDates?.start && savedDates.end) setSchedule(savedDates);
     if (Array.isArray(savedActuals)) setEntries(savedActuals);
+    const savedCosts = readJson<LedgerCost[]>(`es-job-costs:${jobId}`);
+    if (Array.isArray(savedCosts)) setCosts(savedCosts);
+    fetch("/api/beta/records?kind=costs")
+      .then(res => res.json())
+      .then(body => {
+        if (cancelled) return;
+        if (body.migration) setMigrationNote(`Job costs need ${body.migration}. New costs stay in this browser until then.`);
+        if (Array.isArray(body.data) && body.data.length > 0) {
+          const rows = body.data
+            .filter((row: { job_ref?: string }) => row.job_ref === jobId)
+            .map(costFromRow)
+            .filter((row: LedgerCost) => row.date);
+          if (rows.length) setCosts(rows);
+        }
+      })
+      .catch(() => undefined);
     let cancelled = false;
     fetch("/api/beta/records?kind=actuals")
       .then(res => res.json())
@@ -134,29 +143,62 @@ export default function JobBurndownScreen() {
     return () => { cancelled = true; };
   }, [jobId, job.reference]);
 
-  const totals = sumActuals(entries);
-  const weeks = schedule.start && schedule.end
-    ? burndownWeeks({ contract: job.contract, plannedHours: job.hours, start: schedule.start, end: schedule.end, actuals: entries })
-    : [];
-  const milestones: BurndownMilestone[] = paymentSchedule(job.contract).map((row, index) => {
-    const invoice = invoices.find(item => item.source_ref === row.id && (!item.job_name || item.job_name === job.name));
+  const legacyCosts: LedgerCost[] = entries.flatMap(entry => {
+    const rows: LedgerCost[] = [];
+    if (entry.materials > 0) rows.push({ id: `${entry.id || entry.date}-supplier`, date: entry.date, kind: "supplier", amount: entry.materials, supplier: "Supplier", note: entry.note });
+    if (entry.labourCost > 0 || entry.labourHours > 0) rows.push({ id: `${entry.id || entry.date}-labour`, date: entry.date, kind: "timesheet", amount: entry.labourCost, hours: entry.labourHours, note: entry.note });
+    return rows;
+  });
+  const span = buildLedger({
+    baselineExGst: job.contractExGst,
+    start: schedule.start,
+    end: schedule.end,
+    costs: [...legacyCosts, ...costs],
+    claims: [],
+  });
+  const scheduled = paymentSchedule(job.contractExGst);
+  const drift = roundCents(scheduled.reduce((sum, row) => sum + row.amount, 0) - job.contractExGst);
+  if (scheduled.length && drift) scheduled[scheduled.length - 1] = { ...scheduled[scheduled.length - 1], amount: roundCents(scheduled[scheduled.length - 1].amount - drift) };
+  const claimEvents = scheduled.map((row, index) => {
     const claim = claims.find(item => item.milestone_id === row.id);
+    const invoice = invoices.find(item => item.source_ref === row.id);
+    const status = claim?.status === "received" || claim?.status === "paid" ? "paid" : invoice || claim ? "invoiced" : "unpaid";
+    const weekIndex = span.weeks.length ? milestoneWeekIndex(index, scheduled.length, span.weeks.length) : 0;
     return {
-      ...row,
-      invoiceId: invoice?.id || null,
-      status: milestoneStatus({
-        index,
-        count: 6,
-        weeks,
-        invoiced: Boolean(invoice) || claim?.status === "invoiced_draft",
-        paid: claim?.status === "received",
-      }),
+      id: row.id,
+      date: span.weeks[weekIndex]?.start || "",
+      label: row.label,
+      amount: row.amount,
+      status: status as "paid" | "invoiced" | "unpaid",
+      kind: (invoice ? "invoice" : "claim") as "invoice" | "claim",
     };
   });
-  const burn = burnPercent(totals.cost, job.contract);
-  const tone = burnTone(burn);
-  const warning = spendAheadWarning(burn, milestones);
-  const remaining = Math.round((job.contract - totals.cost) * 100) / 100;
+  const ledger = buildLedger({
+    baselineExGst: job.contractExGst,
+    start: schedule.start,
+    end: schedule.end,
+    costs: [...legacyCosts, ...costs],
+    claims: claimEvents.filter(row => row.amount > 0 && row.date),
+  });
+  const show = (amountEx: number) => formatGstMoney(gstMode === "inc" ? incGst(amountEx) : amountEx, gstMode);
+  const milestoneMarks = claimEvents.map(row => ({
+    label: row.label,
+    amount: gstMode === "inc" ? incGst(row.amount) : row.amount,
+    status: row.status,
+    weekIndex: Math.max(0, ledger.weeks.findIndex(week => week.start === row.date)),
+  }));
+
+  function exportLedger() {
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(ledgerRows(ledger.weeks)), "Ledger");
+    const buffer = XLSX.write(book, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `${job.reference || "job"}-ledger.xlsx`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 2000);
+  }
 
   async function saveDates(event: React.FormEvent) {
     event.preventDefault();
@@ -173,165 +215,154 @@ export default function JobBurndownScreen() {
     }
   }
 
-  async function logActual(event: React.FormEvent) {
+  async function addCost(event: React.FormEvent) {
     event.preventDefault();
-    const materials = Math.max(0, Number(form.materials) || 0);
-    const labourHours = Math.max(0, Number(form.hours) || 0);
-    const roleRate = defaultHourlyRole(loadLabourCard() || [])?.rate;
-    const labourCost = Math.max(0, Number(form.cost) || labourHours * (roleRate || labourRate));
-    if (!form.date || (materials === 0 && labourHours === 0 && labourCost === 0)) return;
-    const entry: ActualEntry = {
+    if (!drawer || !costDraft.date) return;
+    const card = loadLabourCard() || [];
+    const role = card.find(item => item.id === costDraft.roleId) || defaultHourlyRole(card);
+    const hours = Math.max(0, Number(costDraft.hours) || 0);
+    const amount = drawer === "timesheet"
+      ? priceTimesheet(hours, role, labourRate)
+      : Math.max(0, Number(costDraft.amount) || 0);
+    if (!(amount > 0)) return;
+    const entry: LedgerCost = {
       id: `local-${Date.now()}`,
-      jobId,
-      date: form.date,
-      materials,
-      labourHours,
-      labourCost,
-      note: form.note.trim(),
+      date: costDraft.date,
+      kind: drawer,
+      amount,
+      hours: drawer === "timesheet" ? hours : undefined,
+      roleName: drawer === "timesheet" ? role?.name : undefined,
+      supplier: drawer === "supplier" ? costDraft.supplier || "TLE" : undefined,
+      reference: costDraft.reference || undefined,
+      note: costDraft.note || undefined,
     };
-    const next = [...entries, entry].sort((a, b) => a.date.localeCompare(b.date));
-    setEntries(next);
-    writeJson(`es-job-actuals:${jobId}`, next);
-    setSaving(true);
-    const res = await fetch("/api/beta/records?kind=actuals", {
+    const next = [...costs, entry];
+    setCosts(next);
+    writeJson(`es-job-costs:${jobId}`, next);
+    setDrawer(null);
+    await fetch("/api/beta/records?kind=costs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        job_id: jobId,
+        job_ref: jobId,
+        kind: entry.kind,
         spent_on: entry.date,
-        materials,
-        labour_hours: labourHours,
-        labour_cost: labourCost,
-        note: entry.note,
-      }),
-    }).catch(() => null);
-    setSaving(false);
-    if (!res || !res.ok) {
-      const body = res ? await res.json().catch(() => ({})) : {};
-      setMigrationNote(body.error || "The entry is kept in this browser.");
-    }
-    const summed = sumActuals(next);
-    await fetch("/api/beta/records?kind=jobs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        job_key: jobId,
-        name: job.name,
-        stage: "in_progress",
-        quoted_sell: job.sell,
-        actual_materials: summed.materials,
-        actual_hours: summed.hours,
-        labour_rate: labourRate,
+        hours: entry.hours || 0,
+        role_name: entry.roleName || null,
+        amount: entry.amount,
+        supplier: entry.supplier || null,
+        reference: entry.reference || null,
+        note: entry.note || null,
       }),
     }).catch(() => undefined);
-    setForm({ date: today(), materials: "", hours: "", cost: "", note: "" });
   }
-
-  const trackingNote = "This estimate is not approved yet. These figures are the planned budget and payment milestones. Cost tracking starts when it is approved.";
 
   return (
     <div className="anim-in">
       <QueryBanner loading={loading || estimatesLoading} error={error} noun="the job" />
       {!embedded && (
-        <>
-          <PageHeader
-            crumb="Jobs"
-            title={job.name || "Job burndown"}
-            sub={[job.reference, `${job.margin}% margin from the quote`, job.approved ? "Approved" : "Planned until approval"].filter(Boolean).join(" · ")}
-            cta={job.approved ? <span className="es-approved-badge">Approved</span> : <Link to="/jobs" style={burndownTab}>Jobs</Link>}
-          />
-          <p style={{ marginTop: 0 }}>
-            <Link to="/jobs">All jobs</Link>
-            {job.reference ? <> · <Link to="/approvals">Quote {job.reference}</Link></> : null}
-            {job.scanId ? <> · <Link to={`/detection/${job.scanId}`}>Takeoff</Link></> : null}
-          </p>
-        </>
+        <PageHeader
+          crumb="Jobs"
+          title={job.name || "Job burndown"}
+          sub={[job.reference, job.approved ? "Approved contract" : "Projected from the latest estimate"].filter(Boolean).join(" · ")}
+        />
       )}
-      {!job.approved && !loading && !estimatesLoading && (
-        <p role="status" style={{ color: C.ink, background: C.amberSoft, borderRadius: 12, padding: "12px 14px" }}>{trackingNote}</p>
-      )}
-      {migrationNote && (
-        <p style={{ color: C.amber, background: C.amberSoft, borderRadius: 12, padding: "10px 12px" }}>{migrationNote}</p>
-      )}
-
-      <div className="es-stat-grid" style={{ marginBottom: 16 }}>
-        <Stat label={job.approved ? "Budget burn" : "Tracking"} value={job.approved ? `${burn}%` : "Starts on approval"} tone={job.approved ? (tone === "red" ? C.red : tone === "amber" ? C.amber : C.green) : C.text} />
-        <Stat label="Quoted contract" value={`$${formatAud(job.contract)}`} />
-        <Stat label="Spent" value={formatQuotedValue(totals.cost)} />
-        <Stat label="Remaining" value={formatQuotedValue(remaining)} />
+      <p role="status" style={{ color: C.ink, background: job.approved ? C.greenSoft : C.amberSoft, borderRadius: 12, padding: "12px 14px" }}>
+        {job.approved ? "Approved contract. Costs reduce what is left of that price." : "Projected. This estimate is not approved yet, so the baseline is the latest quote, not a signed contract."}
+      </p>
+      {migrationNote && <p style={{ color: C.amber }}>{migrationNote}</p>}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "12px 0" }}>
+        <button type="button" onClick={() => setGstMode(current => current === "ex" ? "inc" : "ex")} style={burndownTab}>
+          {gstMode === "ex" ? "Show inc GST" : "Show ex GST"}
+        </button>
+        <button type="button" onClick={() => setDrawer("timesheet")} style={quietBtn}>Add timesheet</button>
+        <button type="button" onClick={() => setDrawer("supplier")} style={quietBtn}>Add TLE invoice</button>
+        <button type="button" onClick={() => setDrawer("other")} style={quietBtn}>Add other cost</button>
+        <Link to="/projects" style={quietBtn}>Milestones</Link>
+        <button type="button" onClick={exportLedger} style={quietBtn}>Export Excel</button>
       </div>
-      {warning && (
-        <p style={{ color: C.red, fontWeight: 700, background: C.redSoft, borderRadius: 12, padding: "10px 12px" }}>{warning}</p>
-      )}
-
+      <form onSubmit={saveDates} style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+        <label style={labelStyle}>Start<input aria-label="Job start" type="date" value={schedule.start} onChange={event => setSchedule(current => ({ ...current, start: event.target.value }))} style={fieldStyle} /></label>
+        <label style={labelStyle}>End<input aria-label="Job end" type="date" value={schedule.end} onChange={event => setSchedule(current => ({ ...current, end: event.target.value }))} style={fieldStyle} /></label>
+        <PrimaryButton type="submit">Save dates</PrimaryButton>
+      </form>
+      <div className="es-stat-grid" style={{ marginBottom: 16 }}>
+        <Stat label={job.approved ? "Approved value" : "Projected value"} value={show(job.contractExGst)} />
+        <Stat label="Cost to date" value={show(ledger.summary.costToDate)} />
+        <Stat label="Remaining" value={show(ledger.summary.remaining)} tone={ledger.summary.remaining < 0 ? C.red : C.text} />
+        <Stat label="Claimed to date" value={show(ledger.summary.claimedToDate)} />
+        <Stat label="Paid to date" value={show(ledger.summary.paidToDate)} />
+        <Stat label="Margin to date" value={`${ledger.summary.marginToDatePct}%`} />
+        <Stat label="Forecast at completion" value={show(ledger.summary.forecastAtCompletion)} />
+      </div>
       <Card style={{ padding: 16, marginBottom: 16 }}>
-        <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>Job dates</h2>
-        <p style={{ margin: "0 0 12px", color: C.textMuted, fontSize: 14 }}>
-          The planned line spreads the quoted sell and labour hours from these dates. Nothing is assumed before you set them.
-        </p>
-        <form onSubmit={saveDates} style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          <label style={labelStyle}>Start
-            <input aria-label="Job start" type="date" value={schedule.start} onChange={event => setSchedule(current => ({ ...current, start: event.target.value }))} style={fieldStyle} />
-          </label>
-          <label style={labelStyle}>End
-            <input aria-label="Job end" type="date" value={schedule.end} onChange={event => setSchedule(current => ({ ...current, end: event.target.value }))} style={fieldStyle} />
-          </label>
-          <PrimaryButton type="submit">Save dates</PrimaryButton>
-        </form>
+        {ledger.weeks.length === 0 ? (
+          <p style={{ margin: 0, color: C.textMuted }}>No weeks yet. Set a start and end, or add a cost, and the ledger will open.</p>
+        ) : (
+          <LedgerChart weeks={ledger.weeks} milestones={milestoneMarks} format={amount => show(amount)} axis={amount => `$${formatAud(gstMode === "inc" ? incGst(amount) : amount)}`} />
+        )}
       </Card>
-
-      <Card style={{ padding: 16, marginBottom: 16 }}>
-        <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>Budget burndown</h2>
-        <BurndownChart weeks={weeks} plannedKey="plannedSpend" actualKey="actualSpend" max={Math.max(job.contract, totals.cost, 1)} format={value => formatQuotedValue(value)} />
+      <Card style={{ padding: 0, marginBottom: 16, overflow: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760, fontSize: 14 }}>
+          <thead>
+            <tr>{["Week", "Labour", "Supplier", "Other", "Total", "Claims", "Invoices", "Remaining", "Variance"].map(heading => <th key={heading} style={{ textAlign: "left", padding: 10, background: C.ink, color: "#fff" }}>{heading}</th>)}</tr>
+          </thead>
+          <tbody>
+            {ledger.weeks.map(week => (
+              <React.Fragment key={week.start}>
+                <tr onClick={() => setOpenWeek(current => current === week.start ? null : week.start)} style={{ cursor: "pointer", background: week.ahead ? C.redSoft : undefined }}>
+                  <td style={cell}>{week.start}</td>
+                  <td style={cell}>{show(week.labour)}</td>
+                  <td style={cell}>{show(week.supplier)}</td>
+                  <td style={cell}>{show(week.other)}</td>
+                  <td style={cell}>{show(week.cost)}</td>
+                  <td style={cell}>{show(week.claims)}</td>
+                  <td style={cell}>{show(week.invoices)}</td>
+                  <td style={cell}>{show(week.remaining)}</td>
+                  <td style={cell}>{week.ahead ? "Ahead" : "On plan"} · {show(week.variance)}</td>
+                </tr>
+                {openWeek === week.start && (
+                  <tr key={`${week.start}-items`}>
+                    <td colSpan={9} style={{ padding: 12, color: C.textMuted }}>
+                      {week.items.length === 0 && week.claimItems.length === 0 && "Nothing booked this week."}
+                      {week.items.map(item => <div key={item.id}>{item.date} · {item.kind} · {item.roleName || item.supplier || item.note || "Cost"} · {show(item.amount)}{item.reference ? ` · ${item.reference}` : ""}</div>)}
+                      {week.claimItems.map(item => <div key={item.id}>{item.label} · {item.kind} · {item.status} · {show(item.amount)}</div>)}
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
+            ))}
+          </tbody>
+        </table>
       </Card>
-      <Card style={{ padding: 16, marginBottom: 16 }}>
-        <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>Hours</h2>
-        <p style={{ margin: "0 0 8px", color: C.textMuted, fontSize: 14 }}>
-          Planned hours are the labour hours on the quoted assemblies ({Math.round(job.hours * 10) / 10} h). Planned labour cost is {formatQuotedValue(job.labourDollars)} ex GST at the same rates. Actual hours come from the log.
-        </p>
-        <BurndownChart weeks={weeks} plannedKey="plannedHours" actualKey="actualHours" max={Math.max(job.hours, totals.hours, 1)} format={value => `${Math.round(value)} h`} />
-      </Card>
-
-      <Card style={{ padding: 16, marginBottom: 16 }}>
-        <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>Payment milestones</h2>
-        {milestones.map((milestone, index) => (
-          <div key={milestone.id} style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "space-between", padding: "12px 0", borderTop: `1px solid ${C.border}` }}>
-            <div>
-              <div style={{ fontWeight: 700 }}>{milestone.label}</div>
-              <div style={{ fontSize: 13, color: C.textMuted }}>
-                {milestone.description} · week {weeks.length ? milestoneWeekIndex(index, milestones.length, weeks.length) + 1 : "—"} · {statusLabel(milestone.status)}
-              </div>
-            </div>
-            <div style={{ fontFamily: FONT.mono, fontWeight: 700 }}>
-              {formatQuotedValue(milestone.amount)} · {milestone.pct}%
-              {milestone.invoiceId ? <> · <Link to="/projects">Draft invoice</Link></> : null}
-            </div>
+      {drawer && (
+        <form onSubmit={event => void addCost(event)} style={{ position: "fixed", right: 0, top: 0, bottom: 0, width: "min(420px, 100%)", background: "#fff", borderLeft: `1px solid ${C.border}`, padding: 20, zIndex: 30, overflow: "auto" }}>
+          <h2 style={{ marginTop: 0 }}>{drawer === "timesheet" ? "Timesheet" : drawer === "supplier" ? "Supplier invoice" : "Other cost"}</h2>
+          <label style={labelStyle}>Date<input aria-label="Cost date" type="date" value={costDraft.date} onChange={event => setCostDraft(current => ({ ...current, date: event.target.value }))} style={fieldStyle} /></label>
+          {drawer === "timesheet" && (
+            <>
+              <label style={labelStyle}>Role
+                <select aria-label="Timesheet role" value={costDraft.roleId} onChange={event => setCostDraft(current => ({ ...current, roleId: event.target.value }))} style={fieldStyle}>
+                  <option value="">Default hourly role</option>
+                  {(loadLabourCard() || []).filter(role => role.chargeType === "hourly").map(role => <option key={role.id} value={role.id}>{role.name}</option>)}
+                </select>
+              </label>
+              <label style={labelStyle}>Hours<input aria-label="Timesheet hours" inputMode="decimal" value={costDraft.hours} onChange={event => setCostDraft(current => ({ ...current, hours: event.target.value }))} style={fieldStyle} /></label>
+            </>
+          )}
+          {drawer === "supplier" && (
+            <>
+              <label style={labelStyle}>Supplier<input aria-label="Supplier name" value={costDraft.supplier} onChange={event => setCostDraft(current => ({ ...current, supplier: event.target.value }))} style={fieldStyle} /></label>
+              <label style={labelStyle}>Reference<input aria-label="Invoice reference" value={costDraft.reference} onChange={event => setCostDraft(current => ({ ...current, reference: event.target.value }))} style={fieldStyle} /></label>
+            </>
+          )}
+          {drawer !== "timesheet" && <label style={labelStyle}>Amount ex GST<input aria-label="Cost amount" inputMode="decimal" value={costDraft.amount} onChange={event => setCostDraft(current => ({ ...current, amount: event.target.value }))} style={fieldStyle} /></label>}
+          <label style={labelStyle}>Note<input aria-label="Cost note" value={costDraft.note} onChange={event => setCostDraft(current => ({ ...current, note: event.target.value }))} style={fieldStyle} /></label>
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <PrimaryButton type="submit">Save cost</PrimaryButton>
+            <button type="button" onClick={() => setDrawer(null)} style={quietBtn}>Cancel</button>
           </div>
-        ))}
-      </Card>
-
-      {job.approved ? <Card style={{ padding: 16, marginBottom: 16 }}>
-        <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>Log actuals</h2>
-        <p style={{ margin: "0 0 12px", color: C.textMuted, fontSize: 14 }}>
-          Each entry is dated. The totals above are the sum of this log, not a single overwritten figure.
-        </p>
-        <form onSubmit={event => void logActual(event)} style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          <input aria-label="Actual date" type="date" value={form.date} onChange={event => setForm(current => ({ ...current, date: event.target.value }))} style={fieldStyle} />
-          <input aria-label="Materials cost" inputMode="decimal" placeholder="Materials" value={form.materials} onChange={event => setForm(current => ({ ...current, materials: event.target.value }))} style={fieldStyle} />
-          <input aria-label="Labour hours" inputMode="decimal" placeholder="Hours" value={form.hours} onChange={event => setForm(current => ({ ...current, hours: event.target.value }))} style={fieldStyle} />
-          <input aria-label="Labour cost" inputMode="decimal" placeholder="Labour cost" value={form.cost} onChange={event => setForm(current => ({ ...current, cost: event.target.value }))} style={fieldStyle} />
-          <input aria-label="Actual note" placeholder="Note" value={form.note} onChange={event => setForm(current => ({ ...current, note: event.target.value }))} style={{ ...fieldStyle, minWidth: 180 }} />
-          <GhostButton type="submit" disabled={saving}>{saving ? "Saving…" : "Add entry"}</GhostButton>
         </form>
-        {entries.length === 0 && <p style={{ color: C.textMuted }}>No actuals logged yet.</p>}
-        {entries.map(entry => (
-          <div key={entry.id || `${entry.date}-${entry.note}`} style={{ padding: "8px 0", borderTop: `1px solid ${C.border}`, fontSize: 14 }}>
-            {entry.date} · materials {formatQuotedValue(entry.materials)} · {entry.labourHours} h · labour {formatQuotedValue(entry.labourCost)}
-            {entry.note ? ` · ${entry.note}` : ""}
-          </div>
-        ))}
-      </Card> : (
-        <p style={{ color: C.textMuted }}>Actual costs stay off this page until the estimate is approved.</p>
       )}
       <Footer />
     </div>
@@ -345,13 +376,6 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: str
       <div style={{ marginTop: 4, fontSize: 22, fontWeight: 800, color: tone || C.text }}>{value}</div>
     </div>
   );
-}
-
-function statusLabel(status: BurndownMilestone["status"]): string {
-  if (status === "not_due") return "Not due";
-  if (status === "due") return "Due";
-  if (status === "invoiced") return "Invoiced";
-  return "Paid";
 }
 
 function today(): string {
@@ -371,6 +395,21 @@ function writeJson(key: string, value: unknown) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* private mode */ }
 }
 
+function costFromRow(row: { id?: string; spent_on?: string; kind?: string; amount?: number; hours?: number; role_name?: string | null; supplier?: string | null; reference?: string | null; note?: string | null }): LedgerCost {
+  const kind = row.kind === "timesheet" || row.kind === "supplier" || row.kind === "other" ? row.kind : "other";
+  return {
+    id: row.id || `${row.spent_on}-cost`,
+    date: String(row.spent_on || "").slice(0, 10),
+    kind,
+    amount: Number(row.amount) || 0,
+    hours: Number(row.hours) || undefined,
+    roleName: row.role_name || undefined,
+    supplier: row.supplier || undefined,
+    reference: row.reference || undefined,
+    note: row.note || undefined,
+  };
+}
+
 function fromRow(row: { id?: string; job_id?: string; spent_on?: string; materials?: number; labour_hours?: number; labour_cost?: number; note?: string | null }): ActualEntry {
   return {
     id: row.id,
@@ -383,6 +422,19 @@ function fromRow(row: { id?: string; job_id?: string; spent_on?: string; materia
   };
 }
 
+const quietBtn: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  minHeight: 44,
+  padding: "0 14px",
+  borderRadius: 10,
+  border: `1px solid ${C.border}`,
+  background: "#fff",
+  color: C.text,
+  fontWeight: 700,
+  textDecoration: "none",
+};
+const cell: React.CSSProperties = { padding: 10, borderTop: `1px solid ${C.border}`, whiteSpace: "nowrap" };
 const burndownTab: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
