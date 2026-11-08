@@ -131,6 +131,7 @@ export function buildEstimateWorkbook(input: {
   estimateId: string;
   marginPct: number;
   lines: WorkbookLine[];
+  planLabel?: string;
   labourByRole?: Array<{ roleName: string; hours: number; rate: number; multiplier: number; amount: number; chargeType?: string }>;
 }): XLSX.WorkBook {
   const aoa: Array<Array<string | number>> = [HEADERS];
@@ -185,6 +186,7 @@ export function buildEstimateWorkbook(input: {
   summary.B5 = { t: "n", f: "B1+B3+B4" };
 
   const info = XLSX.utils.aoa_to_sheet([
+    ...(input.planLabel ? [["Plan", input.planLabel]] : []),
     ["Estimate ID", input.estimateId],
     ["Version", WORKBOOK_VERSION],
     ["Instructions", INSTRUCTIONS],

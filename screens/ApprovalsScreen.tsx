@@ -7,11 +7,12 @@ import { fetchEstimates, fetchScans } from "../services/supabaseData";
 import { estimateDisplayRef, formatQuotedValue } from "../lib/estimateMoney";
 import { linesFromDetected, materialsExGst } from "../lib/variationDiff";
 import { approvalsHref } from "../lib/approvalsLink";
+import { displayClient } from "../lib/jobLink";
+import { indexRows, readLocalDocumentLabels } from "../lib/documentLabel";
 import { readDetectedItems, type StoredDetectedItem } from "../lib/scanRecord";
 import { formatVerified, verifiedFromEstimate } from "../lib/takeoff";
 import { APPROVAL_LABEL, approvalFromRow, type ApprovalStatus } from "../lib/approvalStatus";
 import { marginForQuote } from "../lib/margin";
-import { jobKey } from "../lib/jobTracker";
 import { getActiveCompanyProfile } from "../services/companyProfile";
 import SignOrderStep from "../components/desktop/SignOrderStep";
 import { readScopeFromEstimate } from "../lib/scopeOfWorks";
@@ -47,6 +48,10 @@ export default function ApprovalsScreen() {
 
   const statusOf = (row: { approval_status?: string | null; status?: string | null; reference?: string | null; ref?: string | null }) =>
     approvalOverrides[estimateDisplayRef(row)] || approvalFromRow(row);
+  const labels = useMemo(
+    () => indexRows(estimates as Array<Record<string, unknown>>, scans as Array<Record<string, unknown>>, readLocalDocumentLabels()),
+    [estimates, scans],
+  );
   const awaiting = estimates;
   const takeoffs = scans.filter((scan: { estimate_ref?: string | null; detected_items?: unknown }) =>
     !scan.estimate_ref && linesFromDetected(scan.detected_items).length > 0);
@@ -69,7 +74,10 @@ export default function ApprovalsScreen() {
     ? readDetectedItems(selectedScan.detected_items)
     : itemsFromEstimate(selectedEstimate);
   const reference = selectedEstimate ? estimateDisplayRef(selectedEstimate) : (selectedScan?.estimate_ref ?? null);
-  const jobName = selectedScan?.file_name || selectedEstimate?.project_name || selectedEstimate?.client || selectedScan?.client || "Electrical estimate";
+  const jobName = (reference && labels.byReference[reference])
+    || (selectedEstimate?.id && labels.byEstimateId[selectedEstimate.id])
+    || (selectedScan?.id && labels.byScanId[selectedScan.id])
+    || "Electrical estimate";
   const verified = items.length ? formatVerified(items) : (
     selectedEstimate && verifiedFromEstimate(selectedEstimate) != null
       ? `Takeoff ${verifiedFromEstimate(selectedEstimate)}% verified`
@@ -102,8 +110,8 @@ export default function ApprovalsScreen() {
               empty="No saved quote is waiting. Save a priced takeoff and it will land here."
               rows={awaiting.map((row: { id: string; client?: string; value?: number; status?: string; approval_status?: string; reference?: string; ref?: string }) => ({
                 id: row.id,
-                label: `${estimateDisplayRef(row)} · ${row.client || "Client not set"}`,
-                detail: `${formatQuotedValue(Number(row.value) || 0)} · ${APPROVAL_LABEL[statusOf(row)]}`,
+                label: labels.byReference[estimateDisplayRef(row)] || estimateDisplayRef(row),
+                detail: `${estimateDisplayRef(row)} · ${formatQuotedValue(Number(row.value) || 0)} · ${APPROVAL_LABEL[statusOf(row)]}`,
                 href: approvalsHref(scans.find((scan: { estimate_ref?: string | null }) => scan.estimate_ref === estimateDisplayRef(row))?.id, estimateDisplayRef(row)),
                 active: estimateDisplayRef(row) === reference,
               }))}
@@ -127,7 +135,7 @@ export default function ApprovalsScreen() {
               empty=""
               rows={takeoffs.map((scan: { id: string; file_name?: string; client?: string | null; detected_items?: unknown }) => ({
                 id: scan.id,
-                label: scan.file_name || scan.client || "Scan",
+                label: labels.byScanId[scan.id] || scan.file_name || "Scan",
                 detail: `${linesFromDetected(scan.detected_items).length} items · ${formatQuotedValue(materialsExGst(linesFromDetected(scan.detected_items)))} materials · signature not sent`,
                 href: approvalsHref(scan.id, null),
                 active: scan.id === selectedScan?.id && !reference,
@@ -138,16 +146,19 @@ export default function ApprovalsScreen() {
           {(selectedScan || selectedEstimate) && (
             <div style={{ marginTop: 16 }}>
               {verified && <p style={{ marginTop: 0, color: C.orange, fontWeight: 600 }}>{verified}</p>}
-              {selectedEstimate && ["approved", "materials_sent"].includes(statusOf(selectedEstimate)) && (
-                <p style={{ marginTop: 0 }}>
-                  <Link to={`/jobs/${encodeURIComponent(jobKey(selectedEstimate.client, selectedEstimate.project_name))}/burndown`}>Open burndown</Link>
-                </p>
-              )}
+              <p style={{ marginTop: 0 }}>
+                <Link to={`/jobs/${encodeURIComponent(reference || selectedEstimate?.id || selectedScan?.id || jobName)}/burndown`}>Open burndown</Link>
+              </p>
               <SignOrderStep
                 items={items}
                 reference={reference}
                 jobName={jobName}
-                clientName={selectedScan?.client || selectedEstimate?.client || ""}
+                clientName={displayClient({
+                  client: selectedScan?.client || selectedEstimate?.client,
+                  projectName: selectedEstimate?.project_name,
+                  drawingFile: selectedScan?.file_name || selectedEstimate?.drawing_file,
+                  fileName: selectedScan?.file_name,
+                })}
                 drawingFile={selectedScan?.file_name || selectedEstimate?.drawing_file}
                 siteAddress={getActiveCompanyProfile().address || ""}
                 scanId={selectedScan?.id}

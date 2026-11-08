@@ -1,5 +1,6 @@
 import jsPDF from "jspdf";
 import type { MaterialsDraft } from "../lib/materialsRequest";
+import { canonicalSupplierName } from "../lib/supplierName";
 
 /** Supplier materials list. Quantities and brands only — no prices. */
 export function downloadMaterialsPdf(draft: MaterialsDraft) {
@@ -13,7 +14,7 @@ export function downloadMaterialsPdf(draft: MaterialsDraft) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(11);
   const details = [
-    `Supplier: ${draft.supplierName || "Supplier"}`,
+    `Supplier: ${canonicalSupplierName(draft.supplierName, "") || "Supplier"}`,
     `Job: ${draft.jobName || "—"}`,
     `Site address: ${draft.siteAddress || "—"}`,
     `Required by: ${draft.requiredBy || "—"}`,

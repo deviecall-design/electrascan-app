@@ -91,7 +91,7 @@ Who can see which jobs:
 
 - **Allowlist.** `tenant_invites` maps an email to one tenant and a role (`member` or `owner`). Only those emails join that tenant, and the role is the one on the row. It does not default to owner.
 - **Everyone else** gets a private showcase workspace. A fictional Harbour & Co / Northbridge scan and quote are copied into that workspace so a demo is not empty. Those rows are stamped with the new tenant id. Row-level security (`tenant_id = get_tenant_id()`) hides them from Vesh and from every other login.
-- A shared Demo tenant is not used. Every Lawrence & Hanson login would otherwise read every other visitor’s uploads.
+- A shared Demo tenant is not used. Every TLE login would otherwise read every other visitor’s uploads.
 
 Add a Vesh user in **Settings → Workspace access** while signed in as a Vesh owner, or in the SQL editor:
 
@@ -107,7 +107,7 @@ ON CONFLICT (email) DO UPDATE
       role = EXCLUDED.role;
 ```
 
-Use `'owner'` only for someone who should manage that list. Do not put a Lawrence & Hanson address in Vesh’s list.
+Use `'owner'` only for someone who should manage that list. Do not put a TLE address in Vesh’s list.
 
 If an older `ensure_beta_membership()` already attached people to Vesh, remove them before the showcase. They keep that membership until you do, because provisioning does not move an existing member.
 

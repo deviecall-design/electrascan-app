@@ -18,6 +18,7 @@ import { computeQuoteTotals, lineTotal as qtyRateTotal } from "../lib/quoteTotal
 import type { ScopeOfWorks } from "../lib/scopeOfWorks";
 import { estimateSubtotal, groupEstimateLines } from "../lib/groupEstimateLines";
 import { incGst, isHourlyCharge } from "../lib/labourRates";
+import { downloadStem } from "../lib/documentLabel";
 
 // ─── Types ──────────────────────────────────────────────────────────────
 export interface EstimateLineItem {
@@ -543,7 +544,7 @@ export async function downloadEstimatePDF(input: EstimatePDFInput): Promise<void
   const blob = await generateEstimatePDF(input);
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `${input.estimateNumber}.pdf`;
+  a.download = `${downloadStem(input.projectName, input.estimateNumber)}.pdf`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }

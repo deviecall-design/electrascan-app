@@ -14,7 +14,8 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { fetchScanById, insertScan, updateScan, ScanRow } from "../services/supabaseData";
+import useSupabaseQuery from "../hooks/useSupabaseQuery";
+import { fetchEstimates, fetchScanById, fetchScans, insertScan, updateScan, ScanRow } from "../services/supabaseData";
 import { buildScanWrite, readDetectedItems, recallScanFile, rememberScanFile, type StoredDetectedItem } from "../lib/scanRecord";
 import { publicScanFailure } from "../lib/scanFailure";
 import ScanFailure from "../components/ScanFailure";
@@ -82,6 +83,10 @@ import {
 } from "../lib/reviewClassification";
 import { peekNextReference } from "../services/estimateReferenceService";
 import { persistQuoteFromScan } from "../services/persistQuote";
+import { displayClient } from "../lib/jobLink";
+import { cleanDocumentName, downloadStem, indexRows, readLocalDocumentLabels } from "../lib/documentLabel";
+import { saveDocumentLabel } from "../services/documentLabel";
+import RenameLabel from "../components/desktop/RenameLabel";
 import { downloadEstimatePDF } from "../utils/estimatePdf";
 import SourcePlanPreview from "../components/SourcePlanPreview";
 import { ariesMarginSuggestion } from "../lib/ariesSuggestion";
@@ -186,6 +191,9 @@ export default function ScanDetailScreen() {
   const [scanLoading, setScanLoading] = useState(Boolean(id && id !== "new"));
   const skipStageRestore = useRef(false);
   const skipTakeoffSave = useRef(true);
+  const { data: labelEstimates } = useSupabaseQuery(fetchEstimates);
+  const { data: labelScans } = useSupabaseQuery(fetchScans);
+  const [labelTick, setLabelTick] = useState(0);
 
   useEffect(() => {
     if (!id || id === "new") {
@@ -242,6 +250,18 @@ export default function ScanDetailScreen() {
   const fileName =
     uploadedName || liveScan?.file_name || (isNew ? "New scan" : "Untitled scan");
   const clientLabel = liveScan?.client ?? "";
+  const estimateReference = savedRef || liveScan?.estimate_ref || "";
+  const planLabel = useMemo(() => {
+    const labels = indexRows(
+      labelEstimates as Array<Record<string, unknown>>,
+      labelScans as Array<Record<string, unknown>>,
+      readLocalDocumentLabels(),
+    );
+    return (id && labels.byScanId[id])
+      || (estimateReference && labels.byReference[estimateReference])
+      || cleanDocumentName(fileName)
+      || fileName;
+  }, [labelEstimates, labelScans, id, estimateReference, fileName, labelTick]);
 
   useEffect(() => {
     let cancelled = false;
@@ -318,14 +338,23 @@ export default function ScanDetailScreen() {
       <>
       <div className="es-scan-title" style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 6 }}>
         <h1 style={{ fontFamily: FONT.heading, fontSize: 26, fontWeight: 600, letterSpacing: "-0.02em", margin: 0, minWidth: 0, overflowWrap: "anywhere" }}>
-          {scanLoading ? "Loading takeoff" : fileName}
+          {scanLoading ? "Loading takeoff" : planLabel}
         </h1>
         {!scanLoading && (
           <span style={{ fontFamily: FONT.mono, fontSize: 13, color: C.textMuted, flexShrink: 0 }}>
-            {isNew ? "new" : (id ?? "")}
+            {estimateReference || (isNew ? "New scan" : "No estimate yet")}
           </span>
         )}
       </div>
+      {!scanLoading && (
+        <RenameLabel
+          label={planLabel}
+          onSave={async next => {
+            await saveDocumentLabel({ label: next, reference: estimateReference, scanId: id });
+            setLabelTick(tick => tick + 1);
+          }}
+        />
+      )}
       {!scanLoading && (
         <p style={{ color: C.textMuted, margin: "0 0 8px 0" }}>
           {step === 1 && "Drop a PDF floor plan. Detected symbols are priced from your rate library."}
@@ -423,6 +452,7 @@ export default function ScanDetailScreen() {
           }}
           clientName={clientLabel}
           sourceFileName={uploadedName || liveScan?.file_name}
+          planLabel={planLabel}
           scanId={id}
           minVerifiedPct={minVerifiedPct}
           onSaved={ref => {
@@ -1330,6 +1360,7 @@ function StepQuote({
   onChange,
   clientName,
   sourceFileName,
+  planLabel,
   scanId,
   minVerifiedPct = null,
   onSaved,
@@ -1339,6 +1370,7 @@ function StepQuote({
   onChange?: (items: DetectedItem[]) => void;
   clientName?: string;
   sourceFileName?: string;
+  planLabel?: string;
   scanId?: string;
   minVerifiedPct?: number | null;
   onSaved?: (reference: string) => void;
@@ -1516,7 +1548,7 @@ function StepQuote({
         estimateNumber: estimateRef || "EST-DRAFT",
         date: new Date().toLocaleDateString("en-AU"),
         drawingFile: sourceFileName,
-        projectName: clientName || sourceFileName || "Electrical estimate",
+        projectName: planLabel || cleanDocumentName(sourceFileName) || "Electrical estimate",
         clientName,
         items: source
           .filter(it => !isUnpriced(it))
@@ -1549,13 +1581,13 @@ function StepQuote({
     setExcelError(null);
     try {
       const lines = linesFromDetections(source, estimateId);
-      const book = buildEstimateWorkbook({ estimateId, marginPct, lines, labourByRole });
+      const book = buildEstimateWorkbook({ estimateId, marginPct, lines, planLabel, labourByRole });
       const blob = new Blob([workbookToArrayBuffer(book)], {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
-      link.download = `${estimateId}.xlsx`;
+      link.download = `${downloadStem(planLabel || estimateId, estimateId)}.xlsx`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(link.href), 2000);
     } catch (err) {
@@ -1599,7 +1631,8 @@ function StepQuote({
       companyName={company.name}
       licence={company.licence}
       estimateId={estimateId}
-      client={clientName || "Client not set"}
+      planLabel={planLabel || cleanDocumentName(sourceFileName)}
+      client={displayClient({ client: clientName, fileName: sourceFileName, drawingFile: sourceFileName })}
       site={sourceFileName || "Site not set"}
       status={saveMessage ? "Ready for approval" : "Draft"}
       date={new Date().toLocaleDateString("en-AU")}

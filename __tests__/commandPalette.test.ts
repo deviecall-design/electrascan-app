@@ -13,8 +13,8 @@ describe("buildPaletteItems", () => {
     );
     const labels = items.map(i => i.label);
     expect(labels).toContain("Upload plan");
-    expect(labels).toContain("Scans");
-    expect(labels).toContain("Sirius_L2.pdf");
+    expect(labels).toContain("Upload plans");
+    expect(labels).toContain("Sirius_L2");
     expect(labels).toContain("EST-2609-0001");
     expect(labels.join(" ").toLowerCase()).not.toContain("bondi");
   });
@@ -33,18 +33,30 @@ describe("filterPaletteItems", () => {
     const shown = filterPaletteItems(items, "");
     expect(shown.some(i => i.group === "Actions")).toBe(true);
     expect(shown.some(i => i.group === "Navigate")).toBe(true);
-    expect(shown.find(i => i.label === "Sirius_L2.pdf")).toBeTruthy();
+    expect(shown.find(i => i.label === "Sirius_L2")).toBeTruthy();
   });
 
   it("matches a plan filename", () => {
     const shown = filterPaletteItems(items, "sirius");
-    expect(shown.map(i => i.label)).toContain("Sirius_L2.pdf");
+    expect(shown.map(i => i.label)).toContain("Sirius_L2");
     expect(shown.map(i => i.label)).not.toContain("Switchboard_LV2.pdf");
   });
 
   it("matches an estimate reference", () => {
     const shown = filterPaletteItems(items, "EST-2609");
-    expect(shown.map(i => i.label)).toEqual(["EST-2609-0001"]);
+    expect(shown.map(i => i.label)).toContain("EST-2609-0001");
+  });
+
+  it("names a job from the drawing when the client is still a placeholder", () => {
+    const [job] = buildPaletteItems([], [{
+      id: "e3",
+      reference: "EST-2611-0003",
+      client: "Client not set",
+      drawing_file: "Mark Arnesen Quoted Plans 6.03.2026 copy.pdf",
+    }]).filter(item => item.group === "Jobs");
+    expect(job.label).toBe("Mark Arnesen Quoted Plans 6.03.2026");
+    expect(job.hint).toBe("EST-2611-0003");
+    expect(job.to).toBe("/jobs/EST-2611-0003/estimate");
   });
 
   it("matches upload-plan keywords", () => {

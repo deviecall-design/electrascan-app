@@ -11,6 +11,7 @@ import {
   sendResult,
   updateVesh,
 } from "../_lib/veshAdmin.js";
+import { canonicalSupplierName } from "../_lib/supplierName.js";
 
 function stripSupplierPrices(line) {
   return {
@@ -37,7 +38,7 @@ function payload(body) {
     job_name: String(body.job_name || "").slice(0, 200),
     site_address: String(body.site_address || "").slice(0, 300),
     required_by: body.required_by ? String(body.required_by).slice(0, 40) : null,
-    supplier_name: String(body.supplier_name || "Lawrence & Hanson").slice(0, 120),
+    supplier_name: canonicalSupplierName(body.supplier_name).slice(0, 120),
     supplier_email: String(body.supplier_email || "").slice(0, 200),
     notes: String(body.notes || "").slice(0, 2000),
     lines: cleanLines(body.lines),
@@ -64,7 +65,12 @@ export default async function handler(req, res) {
       res.status(200).json({ data: [] });
       return;
     }
-    sendResult(res, result, { data: Array.isArray(result.data) ? result.data : [] });
+    const rows = Array.isArray(result.data) ? result.data : [];
+    sendResult(res, result, {
+      data: rows.map(row => row && typeof row === "object"
+        ? { ...row, supplier_name: canonicalSupplierName(row.supplier_name) }
+        : row),
+    });
     return;
   }
 

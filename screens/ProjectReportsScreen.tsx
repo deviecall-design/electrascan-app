@@ -19,6 +19,7 @@ import { loadDefaultMargin } from "../lib/margin";
 import { milestoneAfterSave } from "../lib/progressClaim";
 import { formatQuotedValue } from "../lib/estimateMoney";
 import QueryBanner from "../components/QueryBanner";
+import { cleanDocumentName } from "../lib/documentLabel";
 import AccountingConnect from "../components/desktop/AccountingConnect";
 
 type ClaimStatus = "pending" | "invoiced_draft" | "received";
@@ -251,7 +252,7 @@ export default function ProjectReportsScreen() {
       <QueryBanner loading={pageLoading || claimsLoading} error={pageError} noun="projects" />
       <PageHeader
         crumb="Project reports"
-        title={selected?.project_name || selected?.client || "Project"}
+        title={cleanDocumentName(selected?.project_name) || selected?.client || "Project"}
         sub={[
           selected?.client,
           projectKey,

@@ -3,7 +3,9 @@
  * Prices stay on that request. Nothing here is a supplier catalogue.
  */
 
-export const SUPPLIERS = ["Lawrence & Hanson", "Middy's", "Rexel", "MMEM"] as const;
+import { TLE_SUPPLIER_NAME } from "./supplierName";
+
+export const SUPPLIERS = [TLE_SUPPLIER_NAME, "Middy's", "Rexel", "MMEM"] as const;
 
 export interface SupplierRequestLine {
   product: string;

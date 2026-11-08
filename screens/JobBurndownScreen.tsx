@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useOutletContext, useParams } from "react-router-dom";
 import { C, FONT } from "../components/desktop/tokens";
-import { PageHeader, Card, Footer, EmptyState } from "../components/ui/anthropic";
+import { PageHeader, Card, Footer } from "../components/ui/anthropic";
 import { GhostButton, PrimaryButton } from "../components/ui/anthropic/Button";
 import useSupabaseQuery from "../hooks/useSupabaseQuery";
 import { fetchEstimates, fetchMilestoneClaimsForProject, fetchScans } from "../services/supabaseData";
@@ -9,10 +9,12 @@ import { loadAssemblies, loadLabourRate } from "../lib/assemblies";
 import { priceItem } from "../lib/quoteSource";
 import { defaultHourlyRole, loadLabourCard } from "../lib/labourRates";
 import { readDetectedItems } from "../lib/scanRecord";
-import { jobKey } from "../lib/jobTracker";
+import { quotedSellExGst, resolveJobTarget } from "../lib/jobLink";
+import { indexRows, readLocalDocumentLabels } from "../lib/documentLabel";
 import { marginForQuote } from "../lib/margin";
 import { approvalFromRow } from "../lib/approvalStatus";
 import { formatQuotedValue } from "../lib/estimateMoney";
+import { formatAud } from "../lib/quoteTotals";
 import BurndownChart from "../components/desktop/BurndownChart";
 import QueryBanner from "../components/QueryBanner";
 import {
@@ -37,6 +39,7 @@ interface Schedule {
 export default function JobBurndownScreen() {
   const params = useParams();
   const jobId = decodeURIComponent(params.jobKey || "");
+  const embedded = Boolean(useOutletContext<{ embedded?: boolean } | undefined>()?.embedded);
   const { data: scans, loading, error } = useSupabaseQuery(fetchScans);
   const { data: estimates, loading: estimatesLoading } = useSupabaseQuery(fetchEstimates);
   const assemblies = loadAssemblies();
@@ -50,16 +53,19 @@ export default function JobBurndownScreen() {
   const [saving, setSaving] = useState(false);
 
   const job = useMemo(() => {
-    const matched = (scans as Array<{ id?: string; client?: string | null; file_name?: string; detected_items?: unknown }>).filter(scan => jobKey(scan.client, scan.file_name) === jobId);
-    const estimate = (estimates as Array<{ client?: string | null; project_name?: string | null; reference?: string | null; ref?: string | null; margin_pct?: number | null; status?: string | null; approval_status?: string | null; value?: number | null }>).find(row => jobKey(row.client, row.project_name) === jobId);
+    const scanRows = scans as Array<{ id?: string; client?: string | null; file_name?: string | null; estimate_ref?: string | null; detected_items?: unknown }>;
+    const estimateRows = estimates as Array<{ id?: string; client?: string | null; project_name?: string | null; drawing_file?: string | null; reference?: string | null; ref?: string | null; margin_pct?: number | null; status?: string | null; approval_status?: string | null }>;
+    const resolved = resolveJobTarget(jobId, scanRows, estimateRows);
+    const estimate = resolved.estimate;
     let sell = 0;
     let hours = 0;
     let labourDollars = 0;
-    for (const scan of matched) {
-      for (const item of readDetectedItems(scan.detected_items)) {
+    for (const scan of resolved.scans) {
+      const items = readDetectedItems(scan.detected_items);
+      sell += quotedSellExGst(items);
+      for (const item of items) {
         if (item.status === "rejected" || item.qty <= 0) continue;
         const quote = priceItem(item, [], assemblies, labourRate, [], loadLabourCard());
-        sell += item.qty * quote.sellUnit;
         hours += item.qty * quote.labourHours;
         labourDollars += item.qty * quote.labourUnit;
       }
@@ -67,16 +73,18 @@ export default function JobBurndownScreen() {
     const margin = marginForQuote(estimate?.margin_pct);
     const contract = quoteContract(sell, margin);
     const approved = estimate ? ["approved", "materials_sent"].includes(approvalFromRow(estimate)) : false;
+    const labels = indexRows(estimateRows as Array<Record<string, unknown>>, scanRows as Array<Record<string, unknown>>, readLocalDocumentLabels());
+    const reference = estimate?.reference || estimate?.ref || resolved.scans[0]?.estimate_ref || "";
     return {
-      name: estimate?.client || matched[0]?.client || matched[0]?.file_name || jobId,
-      reference: estimate?.reference || estimate?.ref || "",
+      name: (reference && labels.byReference[reference]) || (resolved.scans[0]?.id && labels.byScanId[resolved.scans[0].id]) || "Untitled plan",
+      reference,
       approved,
       sell,
       hours,
       labourDollars,
       margin,
       contract: contract.total,
-      scanId: matched[0]?.id,
+      scanId: resolved.scans[0]?.id,
     };
   }, [scans, estimates, assemblies, labourRate, jobId]);
 
@@ -219,42 +227,36 @@ export default function JobBurndownScreen() {
     setForm({ date: today(), materials: "", hours: "", cost: "", note: "" });
   }
 
-  if (!loading && !estimatesLoading && !job.approved) {
-    return (
-      <div className="anim-in">
-        <PageHeader crumb="Jobs" title="Burndown" sub="An approved quote is the budget for this view." />
-        <EmptyState
-          title="No approved quote for this job"
-          body="Approve the estimate first. The burndown uses that quote, not a sample budget."
-          ctaLabel="Back to jobs"
-          onCta={() => { window.location.assign("/jobs"); }}
-        />
-        <Footer />
-      </div>
-    );
-  }
+  const trackingNote = "This estimate is not approved yet. These figures are the planned budget and payment milestones. Cost tracking starts when it is approved.";
 
   return (
     <div className="anim-in">
       <QueryBanner loading={loading || estimatesLoading} error={error} noun="the job" />
-      <PageHeader
-        crumb="Jobs"
-        title={job.name || "Job burndown"}
-        sub={[job.reference, `${job.margin}% margin from the quote`].filter(Boolean).join(" · ")}
-        cta={<span className="es-approved-badge">Approved</span>}
-      />
-      <p style={{ marginTop: 0 }}>
-        <Link to="/jobs">All jobs</Link>
-        {job.reference ? <> · <Link to="/approvals">Approved quote {job.reference}</Link></> : null}
-        {job.scanId ? <> · <Link to={`/detection/${job.scanId}`}>Takeoff</Link></> : null}
-      </p>
+      {!embedded && (
+        <>
+          <PageHeader
+            crumb="Jobs"
+            title={job.name || "Job burndown"}
+            sub={[job.reference, `${job.margin}% margin from the quote`, job.approved ? "Approved" : "Planned until approval"].filter(Boolean).join(" · ")}
+            cta={job.approved ? <span className="es-approved-badge">Approved</span> : <Link to="/jobs" style={burndownTab}>Jobs</Link>}
+          />
+          <p style={{ marginTop: 0 }}>
+            <Link to="/jobs">All jobs</Link>
+            {job.reference ? <> · <Link to="/approvals">Quote {job.reference}</Link></> : null}
+            {job.scanId ? <> · <Link to={`/detection/${job.scanId}`}>Takeoff</Link></> : null}
+          </p>
+        </>
+      )}
+      {!job.approved && !loading && !estimatesLoading && (
+        <p role="status" style={{ color: C.ink, background: C.amberSoft, borderRadius: 12, padding: "12px 14px" }}>{trackingNote}</p>
+      )}
       {migrationNote && (
         <p style={{ color: C.amber, background: C.amberSoft, borderRadius: 12, padding: "10px 12px" }}>{migrationNote}</p>
       )}
 
       <div className="es-stat-grid" style={{ marginBottom: 16 }}>
-        <Stat label="Budget burn" value={`${burn}%`} tone={tone === "red" ? C.red : tone === "amber" ? C.amber : C.green} />
-        <Stat label="Quoted contract" value={formatQuotedValue(job.contract)} />
+        <Stat label={job.approved ? "Budget burn" : "Tracking"} value={job.approved ? `${burn}%` : "Starts on approval"} tone={job.approved ? (tone === "red" ? C.red : tone === "amber" ? C.amber : C.green) : C.text} />
+        <Stat label="Quoted contract" value={`$${formatAud(job.contract)}`} />
         <Stat label="Spent" value={formatQuotedValue(totals.cost)} />
         <Stat label="Remaining" value={formatQuotedValue(remaining)} />
       </div>
@@ -308,7 +310,7 @@ export default function JobBurndownScreen() {
         ))}
       </Card>
 
-      <Card style={{ padding: 16, marginBottom: 16 }}>
+      {job.approved ? <Card style={{ padding: 16, marginBottom: 16 }}>
         <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>Log actuals</h2>
         <p style={{ margin: "0 0 12px", color: C.textMuted, fontSize: 14 }}>
           Each entry is dated. The totals above are the sum of this log, not a single overwritten figure.
@@ -328,7 +330,9 @@ export default function JobBurndownScreen() {
             {entry.note ? ` · ${entry.note}` : ""}
           </div>
         ))}
-      </Card>
+      </Card> : (
+        <p style={{ color: C.textMuted }}>Actual costs stay off this page until the estimate is approved.</p>
+      )}
       <Footer />
     </div>
   );
@@ -379,6 +383,17 @@ function fromRow(row: { id?: string; job_id?: string; spent_on?: string; materia
   };
 }
 
+const burndownTab: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  minHeight: 44,
+  padding: "0 14px",
+  borderRadius: 10,
+  background: C.orange,
+  color: "#fff",
+  fontWeight: 700,
+  textDecoration: "none",
+};
 const labelStyle: React.CSSProperties = { fontSize: 13, color: C.textMuted };
 const fieldStyle: React.CSSProperties = {
   minHeight: 44,

@@ -38,6 +38,7 @@ import {
 } from "../lib/estimateMoney";
 import { ariesPipelineInsight } from "../lib/ariesSuggestion";
 import QueryBanner from "../components/QueryBanner";
+import { indexRows, readLocalDocumentLabels } from "../lib/documentLabel";
 import { timeGreeting } from "../lib/greeting";
 import { readDetectedItems, scanListStatus } from "../lib/scanRecord";
 import { attentionFromPipeline } from "../lib/pipelineAttention";
@@ -77,6 +78,10 @@ export default function DashboardScreen() {
   const loading = estimatesLoading || scansLoading;
   const loadError = estimatesError || scansError;
   const recentScans = liveScans.slice(0, 5);
+  const labels = useMemo(
+    () => indexRows(liveEstimates as Array<Record<string, unknown>>, liveScans as Array<Record<string, unknown>>, readLocalDocumentLabels()),
+    [liveEstimates, liveScans],
+  );
 
   const stats = useMemo(
     () => computeDashboardMoneyStats(liveEstimates, liveScans),
@@ -195,11 +200,11 @@ export default function DashboardScreen() {
                       </span>
                       <span style={{ minWidth: 0, flex: 1 }}>
                         <span style={{ display: "block", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {scan.file_name || "Untitled scan"}
+                          {(scan.id && labels.byScanId[scan.id]) || scan.file_name || "Untitled scan"}
                         </span>
                         <span style={{ fontSize: 13, color: C.textMuted }}>
                           {[
-                            scan.client,
+                            scan.estimate_ref || null,
                             scan.items_detected != null ? `${scan.items_detected} items` : null,
                             formatQuotedValue(readDetectedItems(scan.detected_items).filter((item: { status?: string; qty: number }) => item.status !== "rejected" && item.qty > 0).reduce((sum: number, item: { qty: number; rateCode?: string; desc: string; unitPrice?: number; symbol?: string }) => sum + item.qty * priceItem(item, rates, loadAssemblies(), loadLabourRate(), loadPriceList(), loadLabourCard()).sellUnit, 0)) + " sell",
                             when !== "—" ? when : null,

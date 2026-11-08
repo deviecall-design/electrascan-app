@@ -12,7 +12,8 @@ import { scanListStatus } from "../lib/scanRecord";
 import { publicScanFailure } from "../lib/scanFailure";
 import { PrimaryButton } from "../components/ui/anthropic/Button";
 import useSupabaseQuery from "../hooks/useSupabaseQuery";
-import { fetchScans } from "../services/supabaseData";
+import { fetchEstimates, fetchScans } from "../services/supabaseData";
+import { indexRows, readLocalDocumentLabels } from "../lib/documentLabel";
 import QueryBanner from "../components/QueryBanner";
 import ScanFailure from "../components/ScanFailure";
 import { formatAuShortDateTime } from "../lib/dates";
@@ -21,12 +22,14 @@ export default function DetectionScreen() {
   const navigate = useNavigate();
 
   const { data: liveScans, loading, error, errorMessage, reload } = useSupabaseQuery(fetchScans);
+  const { data: estimates } = useSupabaseQuery(fetchEstimates);
+  const labels = indexRows(estimates as Array<Record<string, unknown>>, liveScans as Array<Record<string, unknown>>, readLocalDocumentLabels());
 
   return (
     <div className="anim-in">
       {!error && <QueryBanner loading={loading} error={false} noun="scans" />}
       <PageHeader
-        title="Scans"
+        title="Upload plans"
         sub="Upload a floor plan and ElectraScan AI will turn it into a costed estimate."
         cta={
           <PrimaryButton
@@ -71,8 +74,8 @@ export default function DetectionScreen() {
                 <div style={{ padding: 18 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                     <div>
-                      <div style={{ fontFamily: FONT.heading, fontWeight: 600 }}>{s.file_name ?? "Untitled scan"}</div>
-                      <div style={{ fontSize: 13, color: C.textMuted }}>{s.client || "Client not set"}</div>
+                      <div style={{ fontFamily: FONT.heading, fontWeight: 600, overflowWrap: "anywhere" }}>{(s.id && labels.byScanId[s.id]) || s.file_name || "Untitled scan"}</div>
+                      <div style={{ fontSize: 13, color: C.textMuted }}>{s.estimate_ref || "No estimate yet"}</div>
                     </div>
                     <span style={{ fontSize: 12, fontWeight: 600, color: status === "Needs review" ? C.amber : C.green }}>{status}</span>
                   </div>

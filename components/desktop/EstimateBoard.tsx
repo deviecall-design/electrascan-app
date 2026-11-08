@@ -43,6 +43,7 @@ export default function EstimateBoard({
   companyName,
   licence,
   estimateId,
+  planLabel,
   client,
   site,
   status,
@@ -80,6 +81,7 @@ export default function EstimateBoard({
   companyName: string;
   licence: string;
   estimateId: string;
+  planLabel?: string;
   client: string;
   site: string;
   status: string;
@@ -129,8 +131,8 @@ export default function EstimateBoard({
         <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontFamily: FONT.heading, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted }}>ElectraScan estimate</div>
-            <h2 style={{ margin: "6px 0 0", fontFamily: FONT.heading, fontSize: 28, letterSpacing: "-0.03em" }}>{estimateId}</h2>
-            <div style={{ fontFamily: FONT.mono, fontSize: 13, color: C.textMuted }}>{estimateId}.pdf</div>
+            <h2 style={{ margin: "6px 0 0", fontFamily: FONT.heading, fontSize: 28, letterSpacing: "-0.03em", overflowWrap: "anywhere" }}>{planLabel || estimateId}</h2>
+            <div style={{ fontFamily: FONT.mono, fontSize: 13, color: C.textMuted }}>{planLabel ? estimateId : `${estimateId}.pdf`}</div>
             <div style={{ marginTop: 8, color: C.textMuted, fontSize: 14 }}>{companyName} · Lic. {licence}</div>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, flex: "1 1 280px" }}>
