@@ -14,6 +14,7 @@ import { loadLabourCard } from "../lib/labourRates";
 import { loadPriceList } from "../lib/contractorPrices";
 import type { StoredContractorPrice } from "../lib/priceFile";
 import { readDetectedItems } from "../lib/scanRecord";
+import { estimateTotal } from "../lib/estimateTotal";
 import { draftInvoice, toMyobCsv, toXeroCsv, type DraftInvoice } from "../lib/invoiceExport";
 import { loadDefaultMargin } from "../lib/margin";
 import { milestoneAfterSave } from "../lib/progressClaim";
@@ -83,11 +84,18 @@ interface ProjectRow {
 function projectsFrom(estimates: any[], scans: any[], rates: RateLike[] = [], priceList: StoredContractorPrice[] = []): ProjectRow[] {
   const fromEstimates: ProjectRow[] = estimates.map(row => {
     const lines = linesOf(row);
+    const scan = scans.find(item => item.estimate_ref && item.estimate_ref === (row.reference || row.ref));
+    const total = estimateTotal({
+      items: readDetectedItems(scan?.detected_items),
+      subtotal: row.subtotal,
+      marginPct: row.margin_pct,
+      value: row.value,
+    });
     return {
       id: row.id,
       client: row.client ?? null,
       project_name: row.project_name ?? null,
-      value: Number(row.value) || 0,
+      value: total.incGst,
       subtotal: Number(row.subtotal) || 0,
       margin_pct: typeof row.margin_pct === "number" ? row.margin_pct : null,
       status: row.status || "draft",
@@ -152,9 +160,10 @@ export default function ProjectReportsScreen() {
     }
     let cancelled = false;
     setClaimsLoading(true);
-    fetchMilestoneClaimsForProject(projectKey).then(({ data }) => {
+    fetchMilestoneClaimsForProject(projectKey).then(({ data, error: claimsError }) => {
       if (cancelled) return;
       setClaims((data as MilestoneClaimRow[] | null) ?? []);
+      setClaimError(claimsError?.message || null);
       setClaimsLoading(false);
     });
     return () => { cancelled = true; };

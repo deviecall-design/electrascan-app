@@ -6,6 +6,7 @@
 import { readDetectedItems, type StoredDetectedItem } from "./scanRecord";
 import { computeQuoteTotals, DEFAULT_MARGIN_PCT } from "./quoteTotals";
 import { costSplit, type RateLike } from "./takeoff";
+import { cleanDocumentName } from "./documentLabel";
 
 export interface TakeoffLine {
   description: string;
@@ -227,10 +228,15 @@ export function estimateRef(estimate: EstimateForDiff): string {
   return estimate.reference || estimate.ref || "Untitled";
 }
 
-/** Same job: explicit client, otherwise the one unassigned Vesh takeoff. */
-export function variationProjectKey(scan: { client?: string | null }): string {
+/** Revisions share a document name, or an explicit revision link. Different plans stay apart. */
+export function variationProjectKey(scan: { client?: string | null; file_name?: string | null; estimate_ref?: string | null; revision_of?: string | null }): string {
+  if (scan.revision_of) return scan.revision_of;
+  const file = cleanDocumentName(scan.file_name || "").replace(/\s*\(v\d+\)$/i, "").trim().toLowerCase();
+  if (file) return `doc:${file}`;
   const client = (scan.client || "").trim().toLowerCase();
-  return client || "unassigned";
+  if (client && client !== "client not set") return client;
+  if (scan.estimate_ref) return `est:${scan.estimate_ref}`;
+  return "unassigned";
 }
 
 export interface VariationVersion<T> {
@@ -247,7 +253,7 @@ function startedMs(value?: string | null) {
 }
 
 /** Oldest plan first. Each later plan is a variation against the one before it. */
-export function variationChain<T extends { client?: string | null; started_at?: string | null; detected_items?: unknown }>(
+export function variationChain<T extends { client?: string | null; file_name?: string | null; estimate_ref?: string | null; revision_of?: string | null; started_at?: string | null; detected_items?: unknown }>(
   scans: T[],
   project?: string,
   rates: RateLike[] = [],

@@ -127,11 +127,16 @@ export async function fetchEstimateByRef(ref: string) {
 }
 
 export async function fetchMilestoneClaimsForProject(projectId: string) {
-  return supabase
+  if (authIsDisabled()) return betaJson(`/api/beta/records?kind=claims&project=${encodeURIComponent(projectId)}`);
+  const result = await supabase
     .from("milestone_claims")
     .select("*")
     .eq("project_id", projectId)
     .order("created_at", { ascending: true });
+  if (result.error && /project_id/i.test(result.error.message || "")) {
+    return { data: [], error: { message: "Apply migration 20261108040000_milestone_claims_project_id.sql before reading claims." } };
+  }
+  return result;
 }
 
 export async function fetchRateLibrary() {

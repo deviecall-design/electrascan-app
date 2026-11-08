@@ -11,8 +11,8 @@
  *              = computeQuoteTotals(subtotal, margin_pct).total
  *
  * Read contract:
- *   Prefer stored `value` (what the client was quoted).
- *   If value is missing/zero, derive from subtotal + margin.
+ *   estimateTotal prefers priced takeoff lines, then the saved subtotal,
+ *   then a stored GST-inclusive value. Margin is the estimate's own margin.
  *
  * Pending pipeline = status in {sent, viewed} (Dashboard KPI label).
  * Win rate = approved / (approved + rejected|lost) over the lookback.
@@ -24,6 +24,8 @@ import {
   DEFAULT_MARGIN_PCT,
   roundCents,
 } from "./quoteTotals";
+import { estimateTotal } from "./estimateTotal";
+import { readDetectedItems } from "./scanRecord";
 
 export const PENDING_STATUSES = ["sent", "viewed"] as const;
 export const WON_STATUS = "approved";
@@ -45,18 +47,17 @@ export interface EstimateMoneyRow {
 export interface ScanQuoteLinkRow {
   estimate_ref?: string | null;
   started_at?: string | null;
+  detected_items?: unknown;
 }
 
-/** GST-inclusive quoted total shown on Dashboard / Estimates. */
-export function quotedTotalIncGst(row: EstimateMoneyRow): number {
-  const stored = Number(row.value ?? 0);
-  if (Number.isFinite(stored) && stored > 0) return roundCents(stored);
-  const sub = Number(row.subtotal ?? 0);
-  const margin = Number(row.margin_pct ?? DEFAULT_MARGIN_PCT);
-  if (Number.isFinite(sub) && sub > 0) {
-    return computeQuoteTotals(sub, margin).total;
-  }
-  return 0;
+/** GST-inclusive quoted total. Lines and subtotal beat a stale saved value. */
+export function quotedTotalIncGst(row: EstimateMoneyRow & { items?: Array<{ qty?: number; unitPrice?: number; status?: string }> | null }): number {
+  return estimateTotal({
+    items: row.items,
+    subtotal: row.subtotal,
+    marginPct: row.margin_pct,
+    value: row.value,
+  }).incGst;
 }
 
 export function isPendingStatus(status?: string | null): boolean {
@@ -212,16 +213,26 @@ export interface DashboardMoneyStats {
   wonValue: number;
 }
 
+function withTakeoffLines(estimates: EstimateMoneyRow[], scans: ScanQuoteLinkRow[]) {
+  return estimates.map(row => {
+    const ref = row.reference || row.ref || "";
+    const scan = scans.find(item => item.estimate_ref && item.estimate_ref === ref);
+    if (!scan?.detected_items) return row;
+    return { ...row, items: readDetectedItems(scan.detected_items) };
+  });
+}
+
 export function computeDashboardMoneyStats(
   estimates: EstimateMoneyRow[],
   scans: ScanQuoteLinkRow[] = [],
   now: Date = new Date(),
 ): DashboardMoneyStats {
+  const priced = withTakeoffLines(estimates, scans);
   return {
     estimatesThisMonth: countEstimatesThisMonth(estimates, now),
-    pendingValue: sumPendingQuotedValue(estimates),
+    pendingValue: sumPendingQuotedValue(priced),
     winRate: winRatePct(estimates, { now }),
     avgScanToQuoteMs: avgScanToQuoteMs(scans, estimates),
-    wonValue: sumWonQuotedValue(estimates),
+    wonValue: sumWonQuotedValue(priced),
   };
 }
