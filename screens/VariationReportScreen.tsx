@@ -17,6 +17,8 @@ import {
   type VariationLine,
 } from "../lib/variationDiff";
 import { formatQuotedValue } from "../lib/estimateMoney";
+import { formatGstMoney } from "../lib/estimateTotal";
+import { roundCents } from "../lib/quoteTotals";
 import { draftInvoice, toMyobCsv, toXeroCsv } from "../lib/invoiceExport";
 import QueryBanner from "../components/QueryBanner";
 
@@ -38,6 +40,10 @@ interface ChainScan {
 
 function signedMoney(amount: number) {
   return `${amount < 0 ? "−" : "+"}${formatQuotedValue(Math.abs(amount))}`;
+}
+
+function signedGst(amount: number) {
+  return `${amount < 0 ? "−" : "+"}${formatGstMoney(Math.abs(amount), "ex")}`;
 }
 
 export default function VariationReportScreen() {
@@ -208,12 +214,12 @@ export default function VariationReportScreen() {
           {latest && (
             <>
               <div style={{ display: "flex", alignItems: "stretch", gap: 12, flexWrap: "wrap", background: "#0D1B2A", color: "#fff", borderRadius: 14, padding: 16, marginBottom: 16 }}>
-                <VersionBadge code="V001" label="Base estimate" amount={formatQuotedValue(versions[0].materials + versions[0].labour)} />
+                <VersionBadge code="V001" label="Base estimate" amount={formatGstMoney(roundCents(versions[0].materials + versions[0].labour), "ex")} />
                 <div style={{ flex: 1, textAlign: "center", minWidth: 160 }}>
-                  <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#94A3B8" }}>Net variation</div>
-                  <div style={{ fontSize: 28, fontWeight: 800, color: materialNet + labourNet >= 0 ? "#FCA5A5" : "#6EE7B7" }}>{signedMoney(materialNet + labourNet)}</div>
+                  <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#94A3B8" }}>Net variation ex GST</div>
+                  <div style={{ fontSize: 28, fontWeight: 800, color: roundCents((latest.materials + latest.labour) - (versions[0].materials + versions[0].labour)) >= 0 ? "#FCA5A5" : "#6EE7B7" }}>{signedGst(roundCents((latest.materials + latest.labour) - (versions[0].materials + versions[0].labour)))}</div>
                 </div>
-                <VersionBadge code={`V${String(versions.length).padStart(3, "0")}`} label="Revised estimate" amount={formatQuotedValue(latest.materials + latest.labour)} />
+                <VersionBadge code={`V${String(versions.length).padStart(3, "0")}`} label="Revised estimate" amount={formatGstMoney(roundCents(latest.materials + latest.labour), "ex")} />
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16, alignItems: "center" }}>
                 <Chip color="#10B981" text={`${latest.changes.filter(line => line.change === "added").length} added`} />
@@ -234,7 +240,7 @@ export default function VariationReportScreen() {
                         <td style={{ padding: 10, borderTop: `1px solid ${C.border}` }}>{line.description}</td>
                         <td style={{ padding: 10, borderTop: `1px solid ${C.border}` }}>{line.prevQty || "—"}</td>
                         <td style={{ padding: 10, borderTop: `1px solid ${C.border}` }}>{line.newQty || "—"}</td>
-                        <td style={{ padding: 10, borderTop: `1px solid ${C.border}`, fontWeight: 700 }}>{signedMoney(line.materialDelta + line.labourDelta)}</td>
+                        <td style={{ padding: 10, borderTop: `1px solid ${C.border}`, fontWeight: 700 }}>{signedGst(line.delta)} ex GST</td>
                       </tr>
                     ))}
                   </tbody>

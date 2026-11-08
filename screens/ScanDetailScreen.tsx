@@ -13,7 +13,7 @@
  */
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import useSupabaseQuery from "../hooks/useSupabaseQuery";
 import { fetchEstimates, fetchScanById, fetchScans, insertScan, updateScan, ScanRow } from "../services/supabaseData";
 import { buildScanWrite, readDetectedItems, recallScanFile, rememberScanFile, type StoredDetectedItem } from "../lib/scanRecord";
@@ -90,7 +90,9 @@ import RenameLabel from "../components/desktop/RenameLabel";
 import { downloadEstimatePDF } from "../utils/estimatePdf";
 import SourcePlanPreview from "../components/SourcePlanPreview";
 import { ariesMarginSuggestion } from "../lib/ariesSuggestion";
-import { computeQuoteTotals, lineTotal as qtyRateTotal } from "../lib/quoteTotals";
+import { lineTotal as qtyRateTotal } from "../lib/quoteTotals";
+import { estimateTotal } from "../lib/estimateTotal";
+import { bindOpenedEstimate } from "../lib/quotePanel";
 import { clampMargin, loadDefaultMargin } from "../lib/margin";
 import { mapDetectionToQuoteItems, formatQtyRate, type ScanQuoteItem } from "../lib/scanQuote";
 import { rememberPlanContext, recallPlanContext } from "../lib/planContext";
@@ -178,6 +180,7 @@ function mapDetectionToItems(detection: DetectionResult | null | undefined): Det
 export default function ScanDetailScreen() {
   const navigate = useNavigate();
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
   const [liveScan, setLiveScan] = useState<ScanRow | null>(null);
   const [step, setStep] = useState(id === "new" ? 1 : 2);
   const [detectedItems, setDetectedItems] = useState<DetectedItem[]>([]);
@@ -454,6 +457,8 @@ export default function ScanDetailScreen() {
           sourceFileName={uploadedName || liveScan?.file_name}
           planLabel={planLabel}
           scanId={id}
+          boundReference={searchParams.get("estimate") || liveScan?.estimate_ref || null}
+          estimates={labelEstimates as Array<{ id?: string; reference?: string | null; ref?: string | null; margin_pct?: number | null; subtotal?: number | null; value?: number | null }>}
           minVerifiedPct={minVerifiedPct}
           onSaved={ref => {
             setSavedRef(ref);
@@ -1362,6 +1367,8 @@ function StepQuote({
   sourceFileName,
   planLabel,
   scanId,
+  boundReference = null,
+  estimates = [],
   minVerifiedPct = null,
   onSaved,
 }: {
@@ -1372,6 +1379,8 @@ function StepQuote({
   sourceFileName?: string;
   planLabel?: string;
   scanId?: string;
+  boundReference?: string | null;
+  estimates?: Array<{ id?: string; reference?: string | null; ref?: string | null; margin_pct?: number | null; subtotal?: number | null; value?: number | null }>;
   minVerifiedPct?: number | null;
   onSaved?: (reference: string) => void;
 }) {
@@ -1401,15 +1410,25 @@ function StepQuote({
   const [excelError, setExcelError] = useState<string | null>(null);
   const [excelPreview, setExcelPreview] = useState<WorkbookPreview | null>(null);
 
+  const bound = bindOpenedEstimate({
+    openedRef: boundReference,
+    estimates,
+    items: source.map(item => ({ qty: item.qty, unitPrice: unitPriceOf(item), status: item.status })),
+  });
+
   useEffect(() => {
+    if (bound?.estimateId) {
+      setEstimateRef(bound.estimateId);
+      return;
+    }
     let cancelled = false;
     peekNextReference().then(ref => {
       if (!cancelled) setEstimateRef(ref);
     });
     return () => { cancelled = true; };
-  }, []);
+  }, [bound?.estimateId]);
 
-  const [marginPct, setMarginPct] = useState(loadDefaultMargin);
+  const [marginPct, setMarginPct] = useState(bound?.marginPct ?? loadDefaultMargin);
   const [marginTouched, setMarginTouched] = useState(false);
   const labourCard = loadLabourCard();
   const pricedLines = useMemo(() => source.filter(item => !isUnpriced(item)).map(item => {
@@ -1436,20 +1455,36 @@ function StepQuote({
     return sumLabourByRole(rows);
   }, [source, labourCard]);
   const subtotal = useMemo(() => estimateSubtotal(pricedLines), [pricedLines]);
-  const totals = computeQuoteTotals(subtotal, marginPct);
+  const quoted = estimateTotal({
+    items: pricedLines.map(line => ({ qty: line.qty, unitPrice: line.unitPrice })),
+    marginPct,
+  });
+  const totals = {
+    subtotal: quoted.sellExGst,
+    marginAmount: quoted.marginExGst,
+    gst: quoted.gst,
+    total: quoted.incGst,
+    marginPct: quoted.marginPct,
+    gstRatePct: 10,
+  };
   const suggestion = ariesMarginSuggestion({
     clientName,
     marginPct,
   });
 
   useEffect(() => {
+    if (marginTouched) return;
+    if (bound) {
+      setMarginPct(bound.marginPct);
+      return;
+    }
     let cancelled = false;
     fetchWorkspaceSettings().then(settings => {
       if (cancelled || marginTouched) return;
       setMarginPct(clampMargin(settings.defaultMarginPct));
     });
     return () => { cancelled = true; };
-  }, [marginTouched]);
+  }, [marginTouched, bound?.estimateId, bound?.marginPct]);
 
   // Breakdown built by summing the detected lines in each category. This used
   // to be fixed percentages of the subtotal (12% power, 22% lighting, ...),

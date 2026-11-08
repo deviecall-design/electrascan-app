@@ -36,7 +36,7 @@ import EstimateScreen from "./screens/EstimateScreen";
 import PricingScheduleScreen from "./screens/PricingScheduleScreen";
 import VariationReportScreen from "./screens/VariationReportScreen";
 import ApprovalsScreen from "./screens/ApprovalsScreen";
-import ProjectReportsScreen from "./screens/ProjectReportsScreen";
+import ReportsHome from "./screens/ReportsHome";
 import SettingsScreen from "./screens/SettingsScreen";
 import JobsScreen from "./screens/JobsScreen";
 import JobFrame from "./components/desktop/JobFrame";
@@ -95,7 +95,8 @@ export default function DesktopApp() {
           <Route path="/pricing-schedule"  element={<PricingScheduleScreen />} />
           <Route path="/variation-report"  element={<VariationReportScreen />} />
           <Route path="/approvals"         element={<ApprovalsScreen />} />
-          <Route path="/projects"          element={<ProjectReportsScreen />} />
+          <Route path="/reports"           element={<ReportsHome />} />
+          <Route path="/projects"          element={<Navigate to="/reports" replace />} />
           <Route path="/jobs"              element={<JobsScreen />} />
           <Route path="/jobs/:jobKey" element={<JobFrame />}>
             <Route index element={<Navigate to="estimate" replace />} />

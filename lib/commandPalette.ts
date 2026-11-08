@@ -87,8 +87,8 @@ export const STATIC_PALETTE_ITEMS: PaletteItem[] = [
   {
     id: "nav-projects",
     group: "Navigate",
-    label: "Milestones",
-    to: "/projects",
+    label: "Reports",
+    to: "/reports",
     keywords: ["reports", "budget", "claims", "invoices"],
   },
 ];
