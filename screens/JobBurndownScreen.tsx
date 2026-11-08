@@ -16,6 +16,7 @@ import { resolveJobTarget } from "../lib/jobLink";
 import { estimateTotal, formatGstMoney } from "../lib/estimateTotal";
 import { indexRows, readLocalDocumentLabels } from "../lib/documentLabel";
 import { approvalFromRow } from "../lib/approvalStatus";
+import { getActiveCompanyProfile } from "../services/companyProfile";
 import QueryBanner from "../components/QueryBanner";
 import { burnPercent, milestoneWeekIndex, paymentSchedule, type ActualEntry } from "../lib/burndown";
 import { claimedMilestone, reportClaimStatus, REPORT_STATUS_LABEL, type ReportClaimStatus } from "../lib/reportMilestone";
@@ -231,6 +232,21 @@ export default function JobBurndownScreen() {
     weekIndex: Math.max(0, ledger.weeks.findIndex(week => week.start === row.date)),
   }));
 
+  function sendToFinance() {
+    const profile = getActiveCompanyProfile();
+    const subject = `Project report · ${job.name || job.reference || "Job"}`;
+    const body = [
+      job.name,
+      job.reference,
+      `Budget ${show(job.contractExGst)}`,
+      `Spent ${show(ledger.summary.costToDate)} (${pctBurnt}%)`,
+      `Remaining ${show(ledger.summary.remaining)}`,
+      `Claimed ${show(ledger.summary.claimedToDate)} (${claimedCount} of ${progressRows.length})`,
+      `Contingency remaining ${show(contingLeft)} of ${show(contingency)}`,
+    ].filter(Boolean).join("\n");
+    window.location.href = `mailto:${profile.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  }
+
   function exportLedger() {
     const book = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(ledgerRows(ledger.weeks)), "Ledger");
@@ -331,6 +347,16 @@ export default function JobBurndownScreen() {
           sub={[job.reference, job.approved ? "Approved contract" : "Projected from the latest estimate"].filter(Boolean).join(" · ")}
         />
       )}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>Project Reports</div>
+          <span style={{ background: "#0D1B2A", color: "#60A5FA", fontSize: 9, fontWeight: 700, padding: "2px 9px", borderRadius: 20, letterSpacing: "1.5px" }}>INTERNAL ONLY</span>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button type="button" onClick={() => window.print()} style={outlineBtn}>Export PDF</button>
+          <button type="button" onClick={sendToFinance} style={burndownTab}>Send to Finance</button>
+        </div>
+      </div>
       <p role="status" style={{ color: C.ink, background: job.approved ? C.greenSoft : C.amberSoft, borderRadius: 12, padding: "12px 14px" }}>
         {job.approved ? "Approved contract. Costs reduce what is left of that price." : "Projected. This estimate is not approved yet, so the baseline is the latest quote, not a signed contract."}
       </p>
@@ -352,38 +378,49 @@ export default function JobBurndownScreen() {
       </form>
       <div role="tablist" aria-label="Job reports" style={{ display: "flex", gap: 4, overflowX: "auto", borderBottom: `2px solid ${C.border}`, marginBottom: 16 }}>
         {([
-          ["overview", "Overview"],
-          ["burndown", "Burndown"],
-          ["hours", "Hours"],
-          ["milestones", "Milestones"],
-          ["overruns", "Overruns"],
-          ["accounting", "Accounting"],
+          ["overview", "📊 Overview"],
+          ["burndown", "📉 Burndown"],
+          ["hours", "⏱ Hours"],
+          ["milestones", "🚩 Milestones"],
+          ["overruns", "⚠️ Overruns"],
+          ["accounting", "🔗 Accounting"],
         ] as const).map(([id, label]) => (
-          <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)} style={{ ...tabBtn, color: tab === id ? C.orange : C.textMuted, borderBottomColor: tab === id ? C.orange : "transparent" }}>{label}</button>
+          <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)} style={{ ...tabBtn, color: tab === id ? "#1D6EFD" : "#64748B", borderBottomColor: tab === id ? "#1D6EFD" : "transparent", fontWeight: 600, fontSize: 12 }}>{label}</button>
         ))}
       </div>
-      <p role="status" style={{ color: C.ink, background: C.amberSoft, borderRadius: 12, padding: "12px 14px", borderLeft: `4px solid ${C.amber}` }}>
-        Budget is {pctBurnt}% burnt. {nextOpen ? `${nextOpen.label} is ${REPORT_STATUS_LABEL[nextOpen.status]}.` : "Every progress milestone has been received."}
-      </p>
-      <p role="status" style={{ color: C.ink, background: overrunAmount > 0 ? C.redSoft : C.greenSoft, borderRadius: 12, padding: "12px 14px", borderLeft: `4px solid ${overrunAmount > 0 ? C.red : C.green}` }}>
-        {overrunAmount > 0 ? `${show(overrunAmount)} in unplanned costs. ` : "No unplanned costs. "}
-        Contingency remaining {show(contingLeft)} of {show(contingency)}.
-      </p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
+        <div role="status" style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderLeft: "4px solid #F59E0B", borderRadius: 8, padding: "8px 14px", display: "flex", gap: 10, alignItems: "center", fontSize: 12 }}>
+          <span aria-hidden>⚠️</span>
+          <div><strong style={{ color: "#92400E" }}>Milestone warning — </strong><span style={{ color: "#78350F" }}>Budget is {pctBurnt}% burnt. {nextOpen ? `${nextOpen.label} is ${REPORT_STATUS_LABEL[nextOpen.status]}.` : "Every progress milestone has been received."}</span></div>
+        </div>
+        <div role="status" style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderLeft: "4px solid #EF4444", borderRadius: 8, padding: "8px 14px", display: "flex", gap: 10, alignItems: "center", fontSize: 12 }}>
+          <span aria-hidden>🔺</span>
+          <div><strong style={{ color: "#991B1B" }}>Overrun alert — </strong><span style={{ color: "#7F1D1D" }}>{overrunAmount > 0 ? `${show(overrunAmount)} in unplanned costs. ` : "No unplanned costs. "}{show(contingLeft)} contingency remaining.</span></div>
+        </div>
+      </div>
       {tab === "overview" && (
         <>
           <div className="es-stat-grid" style={{ marginBottom: 16 }}>
-            <Stat label="Total budget" value={show(job.contractExGst)} sub={job.approved ? "Approved price" : "Projected"} />
-            <Stat label="Spent to date" value={show(ledger.summary.costToDate)} sub={`${pctBurnt}% of budget`} />
-            <Stat label="Remaining" value={show(ledger.summary.remaining)} tone={ledger.summary.remaining < 0 ? C.red : C.text} sub={`${Math.max(0, Math.round((100 - pctBurnt) * 10) / 10)}% left`} />
-            <Stat label="Claimed" value={show(ledger.summary.claimedToDate)} sub={`${claimedCount} of ${progressRows.length} milestones`} />
+            <Stat label="Total Budget" value={show(job.contractExGst)} sub={job.approved ? `${job.reference || "Approved"} approved` : "Projected from the latest estimate"} accent="#1D6EFD" />
+            <Stat label="Spent to Date" value={show(ledger.summary.costToDate)} sub={`${pctBurnt}% of budget`} accent="#F59E0B" />
+            <Stat label="Remaining" value={show(ledger.summary.remaining)} sub={`${Math.max(0, Math.round((100 - pctBurnt) * 10) / 10)}% left`} accent="#10B981" />
+            <Stat label="Claimed" value={show(ledger.summary.claimedToDate)} sub={`${claimedCount} of ${progressRows.length} milestones`} accent="#8B5CF6" />
           </div>
           <Card style={{ padding: 16, marginBottom: 16 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: C.textMuted, letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: 12 }}>Budget breakdown</div>
-            <BudgetBar label="Labour" spent={labourSpent} budget={labourBudget} show={show} color={C.orange} />
-            <BudgetBar label="Materials" spent={materialsSpent} budget={materialsBudget} show={show} color="#0f172a" />
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.textMuted, letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: 12 }}>Budget Breakdown</div>
+            <BudgetBar label="Labour" spent={labourSpent} budget={labourBudget} show={show} color="#1D6EFD" />
+            <BudgetBar label="Materials" spent={materialsSpent} budget={materialsBudget} show={show} color="#8B5CF6" />
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 13, paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
               <span>Contingency: {show(contingency)}</span>
               <strong style={{ color: contingency > 0 && contingLeft < contingency * 0.2 ? C.red : C.green }}>Remaining: {show(contingLeft)}</strong>
+            </div>
+          </Card>
+          <Card style={{ padding: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.textMuted, letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: 12 }}>Hours Summary</div>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <Stat label="Planned total" value={`${plannedHours}h`} sub="Quoted hours, spread across the weeks" />
+              <Stat label="Logged so far" value={`${loggedHours}h`} sub={ledger.weeks.length ? `${ledger.weeks.filter(week => week.start <= asOf).length} weeks in` : "No weeks yet"} />
+              <Stat label="Variance" value={`${hoursGap > 0 ? "+" : ""}${hoursGap}h`} accent={hoursGap > 0 ? "#F59E0B" : "#10B981"} sub={hoursGap > 0 ? "Logged hours are over the quote" : "Logged hours are within the quote"} />
             </div>
           </Card>
         </>
@@ -391,7 +428,16 @@ export default function JobBurndownScreen() {
       {tab === "burndown" && (
         <>
           <Card style={{ padding: 16, marginBottom: 16 }}>
-            <div style={{ fontWeight: 700, marginBottom: 8 }}>Budget burndown</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>Budget Burndown — {job.name || "This job"}</div>
+              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 11, color: C.textMuted }}>
+                <LegendSwatch color="#1D6EFD" label="Planned" />
+                <LegendSwatch color="#10B981" label="Actual" />
+                <LegendSwatch color="#F59E0B" label="Forecast" dashed />
+                <LegendSwatch color="#0f172a" label="Claimed / paid" />
+                <span>Amber marks are milestones</span>
+              </div>
+            </div>
             {ledger.weeks.length === 0 ? (
               <p style={{ margin: 0, color: C.textMuted }}>No weeks yet. Set a start and end, or add a cost, and the ledger will open.</p>
             ) : (
@@ -399,7 +445,10 @@ export default function JobBurndownScreen() {
                 weeks={ledger.weeks}
                 milestones={milestoneMarks}
                 format={amount => show(amount)}
-                axis={amount => `$${formatAud(gstMode === "inc" ? incGst(amount) : amount)}`}
+                axis={amount => {
+                  const shown = gstMode === "inc" ? incGst(amount) : amount;
+                  return shown >= 1000 ? `$${Math.round(shown / 1000)}k` : `$${formatAud(shown)}`;
+                }}
                 baseline={job.contractExGst}
                 today={asOf}
                 forecastRemaining={forecastRemaining}
@@ -409,7 +458,7 @@ export default function JobBurndownScreen() {
           <Card style={{ padding: 0, marginBottom: 16, overflow: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 640, fontSize: 14 }}>
               <thead>
-                <tr>{["Week", "Period", "Planned remaining", "Actual remaining", "Variance"].map(heading => <th key={heading} style={headCell}>{heading}</th>)}</tr>
+                <tr>{["Week", "Period", "Planned Rem.", "Actual Rem.", "Variance"].map(heading => <th key={heading} style={lightHead}>{heading}</th>)}</tr>
               </thead>
               <tbody>
                 {ledger.weeks.map((week, index) => {
@@ -417,11 +466,11 @@ export default function JobBurndownScreen() {
                   const gap = point.actual == null ? null : roundCents(point.actual - point.planned);
                   return (
                     <tr key={week.start}>
-                      <td style={cell}>{index === 0 ? "Start" : `W${index}`} · {week.start}</td>
-                      <td style={cell}>{point.actual == null ? "Forecast" : "Logged"}</td>
+                      <td style={{ ...cell, color: "#1D6EFD", fontWeight: 700 }}>{index === 0 ? "Start" : `W${index}`}</td>
+                      <td style={cell}>{index === 0 ? "Project start" : point.actual == null ? "Forecast" : "Logged"}</td>
                       <td style={cell}>{show(point.planned)}</td>
-                      <td style={cell}>{point.actual == null ? "—" : show(point.actual)}</td>
-                      <td style={{ ...cell, color: gap == null ? C.textMuted : gap < 0 ? C.red : C.green, fontWeight: 700 }}>{gap == null ? "—" : `${gap < 0 ? "Ahead " : "Under "}${show(Math.abs(gap))}`}</td>
+                      <td style={{ ...cell, color: point.actual == null ? C.textMuted : "#10B981", fontWeight: 600 }}>{point.actual == null ? "—" : show(point.actual)}</td>
+                      <td style={{ ...cell, color: gap == null ? C.textMuted : gap < 0 ? "#EF4444" : "#10B981", fontWeight: 700 }}>{gap == null ? "—" : `${gap > 0 ? "+" : "−"}${show(Math.abs(gap))}`}</td>
                     </tr>
                   );
                 })}
@@ -649,13 +698,22 @@ function BudgetBar({ label, spent, budget, show, color }: { label: string; spent
   );
 }
 
-function Stat({ label, value, tone, sub }: { label: string; value: string; tone?: string; sub?: string }) {
+function Stat({ label, value, tone, sub, accent }: { label: string; value: string; tone?: string; sub?: string; accent?: string }) {
   return (
-    <div style={{ padding: 12, borderRadius: 12, border: `1px solid ${C.border}`, background: C.bgCard }}>
-      <div style={{ fontSize: 12, color: C.textMuted }}>{label}</div>
-      <div style={{ marginTop: 4, fontSize: 22, fontWeight: 800, color: tone || C.text }}>{value}</div>
-      {sub && <div style={{ marginTop: 4, fontSize: 12, color: C.textMuted }}>{sub}</div>}
+    <div style={{ padding: 16, borderRadius: 12, border: `1px solid ${C.border}`, background: "#fff", borderTop: accent ? `3px solid ${accent}` : undefined }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.5px" }}>{label}</div>
+      <div style={{ marginTop: 6, fontSize: 22, fontWeight: 800, color: accent || tone || C.text }}>{value}</div>
+      {sub && <div style={{ marginTop: 3, fontSize: 11, color: "#64748B" }}>{sub}</div>}
     </div>
+  );
+}
+
+function LegendSwatch({ color, label, dashed }: { color: string; label: string; dashed?: boolean }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+      <span style={{ width: 16, height: dashed ? 0 : 3, borderTop: dashed ? `2px dashed ${color}` : undefined, background: dashed ? undefined : color, borderRadius: 2 }} />
+      {label}
+    </span>
   );
 }
 
@@ -745,6 +803,19 @@ const quietBtn: React.CSSProperties = {
 };
 const cell: React.CSSProperties = { padding: 10, borderTop: `1px solid ${C.border}`, whiteSpace: "nowrap" };
 const headCell: React.CSSProperties = { textAlign: "left", padding: 10, background: C.ink, color: "#fff" };
+const lightHead: React.CSSProperties = { textAlign: "left", padding: "8px 14px", background: "#F8FAFC", color: "#94A3B8", fontSize: 10, fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" };
+const outlineBtn: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  minHeight: 36,
+  padding: "0 14px",
+  borderRadius: 8,
+  border: "1px solid #E2E8F0",
+  background: "#fff",
+  color: C.text,
+  fontWeight: 700,
+  fontSize: 12,
+};
 const tabBtn: React.CSSProperties = {
   flexShrink: 0,
   minHeight: 44,
