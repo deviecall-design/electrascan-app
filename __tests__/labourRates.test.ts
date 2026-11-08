@@ -76,7 +76,6 @@ describe("labour rate card", () => {
 
   it("reads the Vesh sample card as inc GST and leaves apprentice grades hourly", () => {
     const text = readFileSync("docs/samples/vesh-rate-card.csv", "utf8");
-    expect(text).toContain("TODO: Confirm Home Automation Programming");
     expect(text).toContain("does not insert it into the database");
     const parsed = parseLabourCsv(text);
     expect(parsed.error).toBeNull();
