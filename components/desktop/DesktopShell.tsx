@@ -48,27 +48,32 @@ interface NavEntry {
 
 const NAV: { grp: string; items: NavEntry[] }[] = [
   {
-    grp: "Workflow",
-    items: [
-      { path: "/detection", label: "Upload plans", icon: <Scan size={18} /> },
-      { path: "/estimate", label: "Estimates", icon: <FileText size={18} /> },
-      { path: "/approvals", label: "Approvals", icon: <CheckCircle2 size={18} /> },
-      { path: "/jobs", label: "Jobs", icon: <Briefcase size={18} /> },
-    ],
-  },
-  {
-    grp: "Job records",
+    grp: "Main",
     items: [
       { path: "/dashboard", label: "Dashboard", icon: <LayoutDashboard size={18} />, end: true },
+      { path: "/jobs", label: "Projects", icon: <Briefcase size={18} /> },
+      { path: "/estimate", label: "Estimate", icon: <FileText size={18} /> },
       { path: "/variation-report", label: "Variations", icon: <GitCompare size={18} /> },
-      { path: "/projects", label: "Milestones", icon: <FolderKanban size={18} /> },
     ],
   },
   {
-    grp: "Suppliers",
+    grp: "Workflow",
     items: [
-      { path: "/pricing-schedule", label: "Rates", icon: <BookOpen size={18} /> },
+      { path: "/approvals", label: "Approvals", icon: <CheckCircle2 size={18} /> },
+      { path: "/projects", label: "Reports", icon: <FolderKanban size={18} /> },
+    ],
+  },
+  {
+    grp: "Tools",
+    items: [
+      { path: "/pricing-schedule", label: "Rate Library", icon: <BookOpen size={18} /> },
       { path: "/settings", label: "Settings", icon: <SettingsIcon size={18} /> },
+    ],
+  },
+  {
+    grp: "Quick actions",
+    items: [
+      { path: "/detection/new", label: "Upload drawings", icon: <Scan size={18} /> },
     ],
   },
 ];
