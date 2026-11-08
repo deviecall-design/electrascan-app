@@ -21,7 +21,8 @@ import { publicScanFailure } from "../lib/scanFailure";
 import ScanFailure from "../components/ScanFailure";
 import { billableItems, canSendQuote, formatVerified, verifiedPercent } from "../lib/takeoff";
 import { generateScope, scopeLineItem, type ScopeOfWorks } from "../lib/scopeOfWorks";
-import { loadAssemblies } from "../lib/assemblies";
+import { loadAssemblies, loadLabourRate } from "../lib/assemblies";
+import { labourForItem, labourNote, loadLabourCard, sumLabourByRole, type LabourLine } from "../lib/labourRates";
 import ScopeOfWorksCard, { ScopePreview } from "../components/desktop/ScopeOfWorksCard";
 import { estimateSubtotal, groupEstimateLines, scaleMemberQtys } from "../lib/groupEstimateLines";
 import { buildEstimateWorkbook, checkWorkbookUpload, linesFromDetections, workbookToArrayBuffer, type WorkbookPreview } from "../lib/estimateWorkbook";
@@ -1410,14 +1411,30 @@ function StepQuote({
 
   const [marginPct, setMarginPct] = useState(loadDefaultMargin);
   const [marginTouched, setMarginTouched] = useState(false);
-  const pricedLines = useMemo(() => source.filter(item => !isUnpriced(item)).map(item => ({
-    description: item.desc,
-    qty: item.qty,
-    unitPrice: unitPriceOf(item),
-    category: item.category || "Other",
-    code: item.rateCode,
-    ids: [item.id],
-  })), [source]);
+  const labourCard = loadLabourCard();
+  const pricedLines = useMemo(() => source.filter(item => !isUnpriced(item)).map(item => {
+    const worked = labourCard ? labourForItem(item, loadAssemblies(), labourCard, loadLabourRate()) : null;
+    return {
+      description: item.desc,
+      qty: item.qty,
+      unitPrice: unitPriceOf(item),
+      category: item.category || "Other",
+      code: item.rateCode,
+      ids: [item.id],
+      labourNote: worked && worked.lines.length ? labourNote(worked.lines) : undefined,
+    };
+  }), [source, labourCard]);
+  const labourByRole = useMemo(() => {
+    if (!labourCard) return [] as LabourLine[];
+    const rows: LabourLine[] = [];
+    for (const item of source.filter(row => !isUnpriced(row))) {
+      const worked = labourForItem(item, loadAssemblies(), labourCard, loadLabourRate());
+      for (const line of worked.lines) {
+        rows.push({ ...line, hours: line.hours * item.qty, amount: Math.round(line.amount * item.qty * 100) / 100 });
+      }
+    }
+    return sumLabourByRole(rows);
+  }, [source, labourCard]);
   const subtotal = useMemo(() => estimateSubtotal(pricedLines), [pricedLines]);
   const totals = computeQuoteTotals(subtotal, marginPct);
   const suggestion = ariesMarginSuggestion({
@@ -1544,6 +1561,7 @@ function StepQuote({
           })),
         marginPercent: marginPct,
         scope,
+        labourByRole,
       });
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Could not generate the PDF.");
@@ -1563,7 +1581,7 @@ function StepQuote({
     setExcelError(null);
     try {
       const lines = linesFromDetections(source, estimateId);
-      const book = buildEstimateWorkbook({ estimateId, marginPct, lines, planLabel });
+      const book = buildEstimateWorkbook({ estimateId, marginPct, lines, planLabel, labourByRole });
       const blob = new Blob([workbookToArrayBuffer(book)], {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       });
@@ -1629,6 +1647,7 @@ function StepQuote({
       unpricedCount={unpricedCount}
       materials={materialShare}
       labour={labourShare}
+      labourByRole={labourByRole}
       sections={groups.map(group => ({
         category: group.category,
         total: group.total,
@@ -1640,6 +1659,7 @@ function StepQuote({
           rate: line.unitPrice,
           total: line.lineAmount ?? line.qty * line.unitPrice,
           ids: line.ids,
+          labourNote: line.labourNote,
         })),
       }))}
       onQty={(ids, qty) => editGroupedLine(ids, { qty })}

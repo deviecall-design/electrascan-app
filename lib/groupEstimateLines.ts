@@ -18,6 +18,7 @@ export interface GroupableEstimateLine {
   /** Sell split. Included in the key so two prices with the same total stay separate. */
   materialUnit?: number;
   labourUnit?: number;
+  labourNote?: string;
   /** Sum of member line totals. Keeps the grouped subtotal equal to the ungrouped one. */
   lineAmount?: number;
 }
@@ -44,6 +45,7 @@ export function estimateLineKey(line: GroupableEstimateLine): string {
     norm(line.room),
     moneyPart(line.materialUnit),
     moneyPart(line.labourUnit),
+    norm(line.labourNote),
   ].join("\u001f");
 }
 

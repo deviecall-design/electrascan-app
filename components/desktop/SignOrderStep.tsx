@@ -19,6 +19,7 @@ import {
   type RateLike,
 } from "../../lib/takeoff";
 import { loadAssemblies, loadLabourRate } from "../../lib/assemblies";
+import { labourNote, loadLabourCard, sumLabourByRole, type LabourLine } from "../../lib/labourRates";
 import { priceItem } from "../../lib/quoteSource";
 import { loadPriceList } from "../../lib/contractorPrices";
 import { generateScope, scopeLineItem, type ScopeOfWorks } from "../../lib/scopeOfWorks";
@@ -62,6 +63,7 @@ interface OrderLine {
   qty: number;
   materialUnit: number;
   labourUnit: number;
+  labourNote?: string;
 }
 
 function orderLines(items: StoredDetectedItem[], rates: RateLike[]): { lines: OrderLine[]; usingDetected: boolean } {
@@ -70,7 +72,7 @@ function orderLines(items: StoredDetectedItem[], rates: RateLike[]): { lines: Or
   return {
     usingDetected: confirmed.length === 0 && source.length > 0,
     lines: groupEstimateLines(source.map(item => {
-      const quote = priceItem(item, rates, loadAssemblies(), loadLabourRate(), loadPriceList());
+      const quote = priceItem(item, rates, loadAssemblies(), loadLabourRate(), loadPriceList(), loadLabourCard());
       return {
         description: item.desc || "Item",
         category: item.category || GROUP_LABEL[groupForItem(item)],
@@ -79,6 +81,7 @@ function orderLines(items: StoredDetectedItem[], rates: RateLike[]): { lines: Or
         code: item.rateCode,
         materialUnit: quote.materialUnit,
         labourUnit: quote.labourUnit,
+        labourNote: quote.labourLines.length ? labourNote(quote.labourLines) : undefined,
         ids: [item.id],
       };
     })).map(line => ({
@@ -87,8 +90,24 @@ function orderLines(items: StoredDetectedItem[], rates: RateLike[]): { lines: Or
       qty: line.qty,
       materialUnit: line.materialUnit,
       labourUnit: line.labourUnit,
+      labourNote: line.labourNote,
     })),
   };
+}
+
+function labourByRoleFor(items: StoredDetectedItem[], rates: RateLike[]): LabourLine[] {
+  const card = loadLabourCard();
+  if (!card) return [];
+  const confirmed = items.filter(item => (item.status === "confirmed" || item.status === "added") && item.qty > 0);
+  const source = confirmed.length > 0 ? confirmed : billableItems(items);
+  const rows: LabourLine[] = [];
+  for (const item of source) {
+    const quote = priceItem(item, rates, loadAssemblies(), loadLabourRate(), loadPriceList(), card);
+    for (const line of quote.labourLines) {
+      rows.push({ ...line, hours: line.hours * item.qty, amount: Math.round(line.amount * item.qty * 100) / 100 });
+    }
+  }
+  return sumLabourByRole(rows);
 }
 
 export default function SignOrderStep({
@@ -295,6 +314,7 @@ export default function SignOrderStep({
         })),
         marginPercent: quoteMargin,
         scope,
+        labourByRole: labourByRoleFor(items, rates),
       });
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Could not generate the PDF.");
@@ -384,7 +404,7 @@ export default function SignOrderStep({
               </div>
               {group.lines.map(line => (
                 <div key={`${line.description}-${line.materialUnit}-${line.labourUnit}`} className="es-sign-line" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.4fr) repeat(3, minmax(72px, auto))", gap: 8, padding: "10px 0", borderTop: `1px solid ${C.border}`, fontSize: 14 }}>
-                  <span>{line.description}</span>
+                  <span>{line.description}{line.labourNote ? <span style={{ display: "block", color: C.textMuted, fontSize: 12 }}>{line.labourNote}</span> : null}</span>
                   <span style={{ fontFamily: FONT.mono }}>{line.qty}</span>
                   <span style={{ fontFamily: FONT.mono }}>Labour {formatAud(line.qty * line.labourUnit, true)}</span>
                   <span style={{ fontFamily: FONT.mono }}>Materials {formatAud(line.qty * line.materialUnit, true)}</span>

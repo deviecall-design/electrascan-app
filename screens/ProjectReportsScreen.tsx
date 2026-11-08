@@ -10,6 +10,7 @@ import { labourExGst, linesOf, takeoffIncGst } from "../lib/variationDiff";
 import type { RateLike } from "../lib/takeoff";
 import { loadAssemblies, loadLabourRate } from "../lib/assemblies";
 import { priceItem } from "../lib/quoteSource";
+import { loadLabourCard } from "../lib/labourRates";
 import { loadPriceList } from "../lib/contractorPrices";
 import type { StoredContractorPrice } from "../lib/priceFile";
 import { readDetectedItems } from "../lib/scanRecord";
@@ -106,7 +107,7 @@ function projectsFrom(estimates: any[], scans: any[], rates: RateLike[] = [], pr
       const lines = readDetectedItems(scan.detected_items)
         .filter(item => item.status !== "rejected" && item.qty > 0 && item.desc.trim())
         .map(item => {
-          const quote = priceItem(item, rates, assemblies, labourRate, priceList);
+          const quote = priceItem(item, rates, assemblies, labourRate, priceList, loadLabourCard());
           return { description: item.desc.trim(), qty: item.qty, unitPrice: quote.sellUnit, labourUnit: quote.labourUnit };
         });
       const subtotal = lines.reduce((sum, line) => sum + line.qty * line.unitPrice, 0);

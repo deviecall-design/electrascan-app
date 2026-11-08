@@ -4,6 +4,8 @@
  * Seed values are Australian electrical defaults. Vesh should edit them.
  */
 
+import type { LabourShare } from "./labourRates";
+
 export interface AssemblyMaterial {
   name: string;
   qty: number;
@@ -18,6 +20,10 @@ export interface Assembly {
   keywords: string[];
   materials: AssemblyMaterial[];
   labourHours: number;
+  /** Role on the labour card. Empty uses the card's default role. */
+  labourRoleId?: string | null;
+  /** Hours split across roles. When set, these hours replace labourHours. */
+  labourMix?: LabourShare[];
   /** Customer sell price for one assembly, ex GST. */
   sellPrice: number;
   isDefault: boolean;

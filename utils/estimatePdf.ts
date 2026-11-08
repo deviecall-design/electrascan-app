@@ -17,6 +17,7 @@ import { CompanyProfile } from "../services/companyProfile";
 import { computeQuoteTotals, lineTotal as qtyRateTotal } from "../lib/quoteTotals";
 import type { ScopeOfWorks } from "../lib/scopeOfWorks";
 import { estimateSubtotal, groupEstimateLines } from "../lib/groupEstimateLines";
+import { incGst, isHourlyCharge } from "../lib/labourRates";
 import { downloadStem } from "../lib/documentLabel";
 
 // ─── Types ──────────────────────────────────────────────────────────────
@@ -43,6 +44,7 @@ export interface EstimatePDFInput {
   items: EstimateLineItem[];
   marginPercent: number;           // 15
   scope?: ScopeOfWorks | null;
+  labourByRole?: Array<{ roleName: string; hours: number; rate: number; multiplier: number; amount: number; chargeType?: "hourly" | "minimum" | "callout" }>;
 }
 
 export interface VariationPDFInput {
@@ -341,6 +343,37 @@ function drawEstimateTable(doc: jsPDF, startY: number, items: EstimateLineItem[]
   return y + 3;
 }
 
+function drawLabourByRole(
+  doc: jsPDF,
+  startY: number,
+  rows: NonNullable<EstimatePDFInput["labourByRole"]>,
+): number {
+  if (rows.length === 0) return startY;
+  let y = startY + 4;
+  if (y > 250) {
+    doc.addPage();
+    y = 18;
+  }
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.setTextColor(...hexToRgb(C.text));
+  doc.text("Labour by role", PAGE.marginX, y);
+  y += 6;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  for (const row of rows) {
+    const label = `${row.roleName}${row.multiplier !== 1 ? ` × ${row.multiplier}` : ""}`;
+    doc.text(label, PAGE.marginX, y);
+    const basis = isHourlyCharge(row.chargeType)
+      ? `${row.hours} h × $${row.rate.toFixed(2)} ex / $${incGst(row.rate).toFixed(2)} inc`
+      : `Fixed $${row.rate.toFixed(2)} ex / $${incGst(row.rate).toFixed(2)} inc`;
+    doc.text(basis, 90, y);
+    doc.text(money(row.amount), PAGE.width - PAGE.marginX, y, { align: "right" });
+    y += 5;
+  }
+  return y + 2;
+}
+
 // ─── Totals block (estimate) ────────────────────────────────────────────
 function drawTotals(
   doc: jsPDF,
@@ -497,7 +530,8 @@ export async function generateEstimatePDF(input: EstimatePDFInput): Promise<Blob
   const afterTableY = drawEstimateTable(doc, afterProjectY, groupedItems);
 
   const subtotal = estimateSubtotal(groupedItems);
-  drawTotals(doc, afterTableY, subtotal, input.marginPercent);
+  const afterLabourY = drawLabourByRole(doc, afterTableY, input.labourByRole || []);
+  drawTotals(doc, afterLabourY, subtotal, input.marginPercent);
 
   drawFooter(doc, input.company);
   if (input.scope) drawScopePages(doc, input.scope, input.company, input.estimateNumber);

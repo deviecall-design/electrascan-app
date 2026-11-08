@@ -25,6 +25,7 @@ import { loadDefaultMargin } from "../lib/margin";
 import { canonicalSupplierName, TLE_SUPPLIER_NAME } from "../lib/supplierName";
 import AssembliesCard from "../components/desktop/AssembliesCard";
 import PriceFileCard from "../components/desktop/PriceFileCard";
+import LabourRatesCard from "../components/desktop/LabourRatesCard";
 import { useToast } from "../contexts/ToastContext";
 
 const EMPTY_FORM: CompanyProfileInput = {
@@ -215,6 +216,8 @@ export default function SettingsScreen() {
       <TakeoffSettings />
 
       <PriceFileCard />
+
+      <LabourRatesCard />
 
       {!authIsDisabled() && <WorkspaceInvites />}
 
