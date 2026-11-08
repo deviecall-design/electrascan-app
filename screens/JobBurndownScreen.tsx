@@ -8,7 +8,7 @@ import { fetchEstimates, fetchMilestoneClaimsForProject, fetchScans } from "../s
 import { loadAssemblies, loadLabourRate } from "../lib/assemblies";
 import { priceItem } from "../lib/quoteSource";
 import { defaultHourlyRole, incGst, loadLabourCard } from "../lib/labourRates";
-import { buildLedger, ledgerRows, priceTimesheet, type CostKind, type LedgerCost } from "../lib/jobLedger";
+import { buildLedger, ledgerRows, priceTimesheet, remainingAt, weekHours, type CostKind, type LedgerCost } from "../lib/jobLedger";
 import LedgerChart from "../components/desktop/LedgerChart";
 import * as XLSX from "xlsx";
 import { readDetectedItems } from "../lib/scanRecord";
@@ -17,7 +17,7 @@ import { estimateTotal, formatGstMoney } from "../lib/estimateTotal";
 import { indexRows, readLocalDocumentLabels } from "../lib/documentLabel";
 import { approvalFromRow } from "../lib/approvalStatus";
 import QueryBanner from "../components/QueryBanner";
-import { milestoneWeekIndex, paymentSchedule, type ActualEntry } from "../lib/burndown";
+import { burnPercent, milestoneWeekIndex, paymentSchedule, spendAheadWarning, type ActualEntry } from "../lib/burndown";
 import { formatAud, roundCents } from "../lib/quoteTotals";
 
 interface Schedule {
@@ -42,6 +42,7 @@ export default function JobBurndownScreen() {
   const [drawer, setDrawer] = useState<CostKind | null>(null);
   const [gstMode, setGstMode] = useState<"ex" | "inc">("ex");
   const [openWeek, setOpenWeek] = useState<string | null>(null);
+  const [tab, setTab] = useState<"burn" | "burndown" | "hours" | "milestones">("burndown");
   const [costDraft, setCostDraft] = useState({ date: today(), roleId: "", hours: "", amount: "", supplier: "TLE", reference: "", note: "" });
 
   const job = useMemo(() => {
@@ -181,6 +182,19 @@ export default function JobBurndownScreen() {
     claims: claimEvents.filter(row => row.amount > 0 && row.date),
   });
   const show = (amountEx: number) => formatGstMoney(gstMode === "inc" ? incGst(amountEx) : amountEx, gstMode);
+  const asOf = today();
+  const forecastRemaining = roundCents(job.contractExGst - ledger.summary.forecastAtCompletion);
+  const labourSpent = roundCents(ledger.weeks.reduce((sum, week) => sum + week.labour, 0));
+  const supplierSpent = roundCents(ledger.weeks.reduce((sum, week) => sum + week.supplier + week.other, 0));
+  const labourBudget = job.labourDollars > 0 ? job.labourDollars : job.contractExGst;
+  const supplierBudget = job.labourDollars > 0 ? Math.max(0, roundCents(job.contractExGst - job.labourDollars)) : 0;
+  const plannedHours = Math.round(job.hours * 10) / 10;
+  const loggedHours = Math.round(ledger.weeks.reduce((sum, week) => sum + weekHours(week.items, plannedHours, ledger.weeks.length).actual, 0) * 10) / 10;
+  const hoursGap = Math.round((loggedHours - plannedHours) * 10) / 10;
+  const burnNote = spendAheadWarning(burnPercent(ledger.summary.costToDate, job.contractExGst), claimEvents.map(row => ({
+    pct: scheduled.find(item => item.id === row.id)?.pct || 0,
+    status: row.status === "paid" || row.status === "invoiced" ? "invoiced" as const : "not_due" as const,
+  })));
   const milestoneMarks = claimEvents.map(row => ({
     label: row.label,
     amount: gstMode === "inc" ? incGst(row.amount) : row.amount,
@@ -286,55 +300,190 @@ export default function JobBurndownScreen() {
         <label style={labelStyle}>End<input aria-label="Job end" type="date" value={schedule.end} onChange={event => setSchedule(current => ({ ...current, end: event.target.value }))} style={fieldStyle} /></label>
         <PrimaryButton type="submit">Save dates</PrimaryButton>
       </form>
-      <div className="es-stat-grid" style={{ marginBottom: 16 }}>
-        <Stat label={job.approved ? "Approved value" : "Projected value"} value={show(job.contractExGst)} />
-        <Stat label="Cost to date" value={show(ledger.summary.costToDate)} />
-        <Stat label="Remaining" value={show(ledger.summary.remaining)} tone={ledger.summary.remaining < 0 ? C.red : C.text} />
-        <Stat label="Claimed to date" value={show(ledger.summary.claimedToDate)} />
-        <Stat label="Paid to date" value={show(ledger.summary.paidToDate)} />
-        <Stat label="Margin to date" value={`${ledger.summary.marginToDatePct}%`} />
-        <Stat label="Forecast at completion" value={show(ledger.summary.forecastAtCompletion)} />
+      <div role="tablist" aria-label="Job reports" style={{ display: "flex", gap: 4, overflowX: "auto", borderBottom: `2px solid ${C.border}`, marginBottom: 16 }}>
+        {([
+          ["burn", "Budget burn"],
+          ["burndown", "Burndown"],
+          ["hours", "Hours"],
+          ["milestones", "Milestones"],
+        ] as const).map(([id, label]) => (
+          <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)} style={{ ...tabBtn, color: tab === id ? C.orange : C.textMuted, borderBottomColor: tab === id ? C.orange : "transparent" }}>{label}</button>
+        ))}
       </div>
-      <Card style={{ padding: 16, marginBottom: 16 }}>
-        {ledger.weeks.length === 0 ? (
-          <p style={{ margin: 0, color: C.textMuted }}>No weeks yet. Set a start and end, or add a cost, and the ledger will open.</p>
-        ) : (
-          <LedgerChart weeks={ledger.weeks} milestones={milestoneMarks} format={amount => show(amount)} axis={amount => `$${formatAud(gstMode === "inc" ? incGst(amount) : amount)}`} />
-        )}
-      </Card>
-      <Card style={{ padding: 0, marginBottom: 16, overflow: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760, fontSize: 14 }}>
-          <thead>
-            <tr>{["Week", "Labour", "Supplier", "Other", "Total", "Claims", "Invoices", "Remaining", "Variance"].map(heading => <th key={heading} style={{ textAlign: "left", padding: 10, background: C.ink, color: "#fff" }}>{heading}</th>)}</tr>
-          </thead>
-          <tbody>
-            {ledger.weeks.map(week => (
-              <React.Fragment key={week.start}>
-                <tr onClick={() => setOpenWeek(current => current === week.start ? null : week.start)} style={{ cursor: "pointer", background: week.ahead ? C.redSoft : undefined }}>
-                  <td style={cell}>{week.start}</td>
-                  <td style={cell}>{show(week.labour)}</td>
-                  <td style={cell}>{show(week.supplier)}</td>
-                  <td style={cell}>{show(week.other)}</td>
-                  <td style={cell}>{show(week.cost)}</td>
-                  <td style={cell}>{show(week.claims)}</td>
-                  <td style={cell}>{show(week.invoices)}</td>
-                  <td style={cell}>{show(week.remaining)}</td>
-                  <td style={cell}>{week.ahead ? "Ahead" : "On plan"} · {show(week.variance)}</td>
-                </tr>
-                {openWeek === week.start && (
-                  <tr key={`${week.start}-items`}>
-                    <td colSpan={9} style={{ padding: 12, color: C.textMuted }}>
-                      {week.items.length === 0 && week.claimItems.length === 0 && "Nothing booked this week."}
-                      {week.items.map(item => <div key={item.id}>{item.date} · {item.kind} · {item.roleName || item.supplier || item.note || "Cost"} · {show(item.amount)}{item.reference ? ` · ${item.reference}` : ""}</div>)}
-                      {week.claimItems.map(item => <div key={item.id}>{item.label} · {item.kind} · {item.status} · {show(item.amount)}</div>)}
-                    </td>
+      {burnNote && <p role="status" style={{ color: C.ink, background: C.amberSoft, borderRadius: 12, padding: "12px 14px" }}>{burnNote}</p>}
+      {tab === "burn" && (
+        <>
+          <div className="es-stat-grid" style={{ marginBottom: 16 }}>
+            <Stat label={job.approved ? "Approved value" : "Projected value"} value={show(job.contractExGst)} />
+            <Stat label="Cost to date" value={show(ledger.summary.costToDate)} />
+            <Stat label="Remaining" value={show(ledger.summary.remaining)} tone={ledger.summary.remaining < 0 ? C.red : C.text} />
+            <Stat label="Claimed to date" value={show(ledger.summary.claimedToDate)} />
+            <Stat label="Paid to date" value={show(ledger.summary.paidToDate)} />
+            <Stat label="Margin to date" value={`${ledger.summary.marginToDatePct}%`} />
+            <Stat label="Forecast at completion" value={show(ledger.summary.forecastAtCompletion)} />
+          </div>
+          <Card style={{ padding: 16, marginBottom: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.textMuted, letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: 12 }}>Budget breakdown</div>
+            <BudgetBar label="Labour" spent={labourSpent} budget={labourBudget} show={show} color={C.orange} />
+            {supplierBudget > 0 && <BudgetBar label="Supplier and other" spent={supplierSpent} budget={supplierBudget} show={show} color="#0f172a" />}
+          </Card>
+          <div className="es-stat-grid">
+            <Stat label="Planned hours" value={`${plannedHours}h`} />
+            <Stat label="Logged hours" value={`${loggedHours}h`} />
+            <Stat label="Hours variance" value={`${hoursGap > 0 ? "+" : ""}${hoursGap}h`} tone={hoursGap > 0 ? C.red : C.text} />
+          </div>
+        </>
+      )}
+      {tab === "burndown" && (
+        <>
+          <Card style={{ padding: 16, marginBottom: 16 }}>
+            <div style={{ fontWeight: 700, marginBottom: 8 }}>Budget burndown</div>
+            {ledger.weeks.length === 0 ? (
+              <p style={{ margin: 0, color: C.textMuted }}>No weeks yet. Set a start and end, or add a cost, and the ledger will open.</p>
+            ) : (
+              <LedgerChart
+                weeks={ledger.weeks}
+                milestones={milestoneMarks}
+                format={amount => show(amount)}
+                axis={amount => `$${formatAud(gstMode === "inc" ? incGst(amount) : amount)}`}
+                baseline={job.contractExGst}
+                today={asOf}
+                forecastRemaining={forecastRemaining}
+              />
+            )}
+          </Card>
+          <Card style={{ padding: 0, marginBottom: 16, overflow: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 640, fontSize: 14 }}>
+              <thead>
+                <tr>{["Week", "Period", "Planned remaining", "Actual remaining", "Variance"].map(heading => <th key={heading} style={headCell}>{heading}</th>)}</tr>
+              </thead>
+              <tbody>
+                {ledger.weeks.map((week, index) => {
+                  const point = remainingAt(week, job.contractExGst, asOf);
+                  const gap = point.actual == null ? null : roundCents(point.actual - point.planned);
+                  return (
+                    <tr key={week.start}>
+                      <td style={cell}>{index === 0 ? "Start" : `W${index}`} · {week.start}</td>
+                      <td style={cell}>{point.actual == null ? "Forecast" : "Logged"}</td>
+                      <td style={cell}>{show(point.planned)}</td>
+                      <td style={cell}>{point.actual == null ? "—" : show(point.actual)}</td>
+                      <td style={{ ...cell, color: gap == null ? C.textMuted : gap < 0 ? C.red : C.green, fontWeight: 700 }}>{gap == null ? "—" : `${gap < 0 ? "Ahead " : "Under "}${show(Math.abs(gap))}`}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </Card>
+          <Card style={{ padding: 0, marginBottom: 16, overflow: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760, fontSize: 14 }}>
+              <thead>
+                <tr>{["Week", "Labour", "Supplier", "Other", "Total", "Claims", "Invoices", "Remaining", "Variance"].map(heading => <th key={heading} style={headCell}>{heading}</th>)}</tr>
+              </thead>
+              <tbody>
+                {ledger.weeks.map(week => (
+                  <React.Fragment key={week.start}>
+                    <tr onClick={() => setOpenWeek(current => current === week.start ? null : week.start)} style={{ cursor: "pointer", background: week.ahead ? C.redSoft : undefined }}>
+                      <td style={cell}>{week.start}</td>
+                      <td style={cell}>{show(week.labour)}</td>
+                      <td style={cell}>{show(week.supplier)}</td>
+                      <td style={cell}>{show(week.other)}</td>
+                      <td style={cell}>{show(week.cost)}</td>
+                      <td style={cell}>{show(week.claims)}</td>
+                      <td style={cell}>{show(week.invoices)}</td>
+                      <td style={cell}>{show(week.remaining)}</td>
+                      <td style={cell}>{week.ahead ? "Ahead" : "On plan"} · {show(week.variance)}</td>
+                    </tr>
+                    {openWeek === week.start && (
+                      <tr>
+                        <td colSpan={9} style={{ padding: 12, color: C.textMuted }}>
+                          {week.items.length === 0 && week.claimItems.length === 0 && "Nothing booked this week."}
+                          {week.items.map(item => <div key={item.id}>{item.date} · {item.kind} · {item.roleName || item.supplier || item.note || "Cost"} · {show(item.amount)}{item.reference ? ` · ${item.reference}` : ""}</div>)}
+                          {week.claimItems.map(item => <div key={item.id}>{item.label} · {item.kind} · {item.status} · {show(item.amount)}</div>)}
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        </>
+      )}
+      {tab === "hours" && (
+        <>
+          <div className="es-stat-grid" style={{ marginBottom: 16 }}>
+            <Stat label="Planned hours" value={`${plannedHours}h`} />
+            <Stat label="Logged hours" value={`${loggedHours}h`} />
+            <Stat label="Hours left" value={`${Math.max(0, Math.round((plannedHours - loggedHours) * 10) / 10)}h`} />
+            <Stat label="Variance" value={`${hoursGap > 0 ? "+" : ""}${hoursGap}h`} tone={hoursGap > 0 ? C.red : C.text} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <div style={{ fontWeight: 700 }}>Weekly timesheet</div>
+            <button type="button" onClick={() => setDrawer("timesheet")} style={quietBtn}>Add timesheet</button>
+          </div>
+          <Card style={{ padding: 0, overflow: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 640, fontSize: 14 }}>
+              <thead>
+                <tr>{["Week", "Planned", "Actual", "Labour", "Supplier", "Variance"].map(heading => <th key={heading} style={headCell}>{heading}</th>)}</tr>
+              </thead>
+              <tbody>
+                {ledger.weeks.length === 0 && <tr><td colSpan={6} style={cell}>No weeks yet. Set the job dates, then log a timesheet.</td></tr>}
+                {ledger.weeks.map((week, index) => {
+                  const hours = weekHours(week.items, plannedHours, ledger.weeks.length, index);
+                  const gap = Math.round((hours.actual - hours.planned) * 10) / 10;
+                  return (
+                    <tr key={week.start}>
+                      <td style={cell}>{week.start}</td>
+                      <td style={cell}>{hours.planned}h</td>
+                      <td style={{ ...cell, color: gap > 0 ? C.red : C.green, fontWeight: 700 }}>{hours.actual}h</td>
+                      <td style={cell}>{show(week.labour)}</td>
+                      <td style={cell}>{show(week.supplier)}</td>
+                      <td style={{ ...cell, color: gap > 0 ? C.red : C.green, fontWeight: 700 }}>{gap > 0 ? "+" : ""}{gap}h</td>
+                    </tr>
+                  );
+                })}
+                {ledger.weeks.length > 0 && (
+                  <tr>
+                    <td style={{ ...cell, fontWeight: 800 }}>Total</td>
+                    <td style={{ ...cell, fontWeight: 800 }}>{plannedHours}h</td>
+                    <td style={{ ...cell, fontWeight: 800 }}>{loggedHours}h</td>
+                    <td style={{ ...cell, fontWeight: 800 }}>{show(labourSpent)}</td>
+                      <td style={{ ...cell, fontWeight: 800 }}>{show(roundCents(ledger.weeks.reduce((sum, week) => sum + week.supplier, 0)))}</td>
+                    <td style={{ ...cell, fontWeight: 800 }}>{hoursGap > 0 ? "+" : ""}{hoursGap}h</td>
                   </tr>
                 )}
-              </React.Fragment>
-            ))}
-          </tbody>
-        </table>
-      </Card>
+              </tbody>
+            </table>
+          </Card>
+        </>
+      )}
+      {tab === "milestones" && (
+        <>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+            <div style={{ fontWeight: 700 }}>Payment schedule</div>
+            <Link to="/projects" style={quietBtn}>Open milestones</Link>
+          </div>
+          {scheduled.map(row => {
+            const claim = claimEvents.find(item => item.id === row.id);
+            const status = claim?.status || "unpaid";
+            const tone = status === "paid" ? C.green : status === "invoiced" ? C.orange : C.textMuted;
+            return (
+              <Card key={row.id} style={{ padding: 14, marginBottom: 8, display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+                <div style={{ width: 52, height: 52, borderRadius: 26, border: `3px solid ${tone}`, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, color: tone }}>{row.pct}%</div>
+                <div style={{ flex: 1, minWidth: 180 }}>
+                  <div style={{ fontWeight: 700 }}>{row.label}</div>
+                  <div style={{ color: C.textMuted, fontSize: 13 }}>{row.description} · {show(row.amount)} · {status}{claim?.date ? ` · ${claim.date}` : ""}</div>
+                </div>
+              </Card>
+            );
+          })}
+          <Card style={{ padding: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0" }}><span>Contract</span><strong>{show(job.contractExGst)}</strong></div>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0" }}><span>Claimed</span><strong>{show(ledger.summary.claimedToDate)}</strong></div>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0" }}><span>Unclaimed</span><strong>{show(roundCents(job.contractExGst - ledger.summary.claimedToDate))}</strong></div>
+          </Card>
+        </>
+      )}
       {drawer && (
         <form onSubmit={event => void addCost(event)} style={{ position: "fixed", right: 0, top: 0, bottom: 0, width: "min(420px, 100%)", background: "#fff", borderLeft: `1px solid ${C.border}`, padding: 20, zIndex: 30, overflow: "auto" }}>
           <h2 style={{ marginTop: 0 }}>{drawer === "timesheet" ? "Timesheet" : drawer === "supplier" ? "Supplier invoice" : "Other cost"}</h2>
@@ -365,6 +514,21 @@ export default function JobBurndownScreen() {
         </form>
       )}
       <Footer />
+    </div>
+  );
+}
+
+function BudgetBar({ label, spent, budget, show, color }: { label: string; spent: number; budget: number; show: (amount: number) => string; color: string }) {
+  const pct = budget > 0 ? Math.min(100, Math.round((spent / budget) * 100)) : 0;
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 13, marginBottom: 6 }}>
+        <span style={{ fontWeight: 700 }}>{label}</span>
+        <span style={{ color: C.textMuted }}>{show(spent)} / {show(budget)} · {pct}%</span>
+      </div>
+      <div style={{ height: 10, background: C.bg, borderRadius: 5, overflow: "hidden" }}>
+        <div style={{ height: 10, width: `${pct}%`, background: spent > budget ? C.red : color, borderRadius: 5 }} />
+      </div>
     </div>
   );
 }
@@ -435,6 +599,18 @@ const quietBtn: React.CSSProperties = {
   textDecoration: "none",
 };
 const cell: React.CSSProperties = { padding: 10, borderTop: `1px solid ${C.border}`, whiteSpace: "nowrap" };
+const headCell: React.CSSProperties = { textAlign: "left", padding: 10, background: C.ink, color: "#fff" };
+const tabBtn: React.CSSProperties = {
+  flexShrink: 0,
+  minHeight: 44,
+  padding: "8px 14px",
+  border: "none",
+  borderBottom: "2px solid transparent",
+  background: "transparent",
+  fontWeight: 700,
+  marginBottom: -2,
+  cursor: "pointer",
+};
 const burndownTab: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",

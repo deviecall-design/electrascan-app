@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildLedger, priceTimesheet } from "../lib/jobLedger";
+import { buildLedger, priceTimesheet, remainingAt, weekHours } from "../lib/jobLedger";
 
 describe("job ledger", () => {
   it("deducts weekly costs from the contract and flags burn that runs ahead of plan", () => {
@@ -36,5 +36,23 @@ describe("job ledger", () => {
   it("prices a timesheet from the role rate", () => {
     expect(priceTimesheet(2, { id: "t", name: "Tradesman", rate: 140, chargeType: "hourly", overtimeMultiplier: null, isDefault: true }, 110)).toBe(280);
     expect(priceTimesheet(2, null, 110)).toBe(220);
+  });
+
+  it("keeps the remaining-budget view and leaves future weeks blank", () => {
+    const ledger = buildLedger({
+      baselineExGst: 1000,
+      start: "2026-11-02",
+      end: "2026-11-16",
+      today: "2026-11-10",
+      costs: [{ id: "1", date: "2026-11-03", kind: "timesheet", amount: 400, hours: 8 }],
+      claims: [],
+    });
+    const first = remainingAt(ledger.weeks[0], 1000, "2026-11-10");
+    const last = remainingAt(ledger.weeks[2], 1000, "2026-11-10");
+    expect(first.planned).toBeCloseTo(666.67, 1);
+    expect(first.actual).toBe(600);
+    expect(first.ahead).toBe(true);
+    expect(last.actual).toBeNull();
+    expect(weekHours(ledger.weeks[0].items, 30, 3)).toEqual({ planned: 10, actual: 8 });
   });
 });

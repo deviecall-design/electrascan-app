@@ -175,6 +175,28 @@ export function buildLedger(input: {
   };
 }
 
+/** Remaining budget at a week. Actual is blank for a week that has not started. */
+export function remainingAt(week: LedgerWeek, baseline: number, today: string): {
+  planned: number;
+  actual: number | null;
+  ahead: boolean;
+} {
+  const planned = roundCents(baseline - week.plannedCumulative);
+  const actual = week.start <= today ? week.remaining : null;
+  return { planned, actual, ahead: actual != null && actual + 0.01 < planned };
+}
+
+/** Quoted hours spread evenly. Logged hours are the timesheets in that week. */
+export function weekHours(items: LedgerCost[], plannedTotal: number, weekCount: number, index = 0): { planned: number; actual: number } {
+  const safeTotal = Math.round(Math.max(0, plannedTotal) * 10) / 10;
+  const base = weekCount > 0 ? Math.floor((safeTotal / weekCount) * 10) / 10 : 0;
+  const planned = weekCount > 0 && index === weekCount - 1
+    ? Math.round((safeTotal - base * (weekCount - 1)) * 10) / 10
+    : base;
+  const actual = Math.round(items.filter(row => row.kind === "timesheet").reduce((sum, row) => sum + (row.hours || 0), 0) * 10) / 10;
+  return { planned, actual };
+}
+
 export function ledgerRows(weeks: LedgerWeek[]): Array<Array<string | number>> {
   return [
     ["Week", "Labour", "Supplier", "Other", "Total cost", "Claims", "Invoices", "Remaining", "Variance vs plan"],
