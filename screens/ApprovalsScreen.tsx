@@ -163,7 +163,7 @@ export default function ApprovalsScreen() {
         </div>
       )}
       <ApprovalStepper status={heroStatus} />
-      <div role="tablist" style={{ display: "flex", gap: 4, borderBottom: `2px solid ${C.border}`, margin: "16px 0" }}>
+      <div role="tablist" aria-label="Approval sections" style={{ display: "flex", gap: 4, borderBottom: `2px solid ${C.border}`, margin: "16px 0" }}>
         {([["audit", "Audit trail"], ["estimates", "Estimates"], ["parties", "Parties"]] as const).map(([id, label]) => (
           <button key={id} type="button" role="tab" aria-selected={approvalTab === id} onClick={() => setApprovalTab(id)} style={{ minHeight: 44, padding: "8px 14px", border: "none", borderBottom: `2px solid ${approvalTab === id ? "#1D6EFD" : "transparent"}`, background: "transparent", color: approvalTab === id ? "#1D6EFD" : C.textMuted, fontWeight: 700, marginBottom: -2 }}>{label}</button>
         ))}

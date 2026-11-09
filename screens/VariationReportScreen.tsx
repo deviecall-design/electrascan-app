@@ -150,6 +150,7 @@ export default function VariationReportScreen() {
               <input
                 ref={fileRef}
                 type="file"
+                aria-label="Revised plan"
                 accept=".pdf,.png,application/pdf,image/png"
                 style={{ display: "none" }}
                 onChange={event => {
@@ -200,6 +201,7 @@ export default function VariationReportScreen() {
                 <button
                   key={key}
                   type="button"
+                  aria-pressed={activeKey === key}
                   onClick={() => setProject(key)}
                   style={{ minHeight: 44, borderRadius: 999, padding: "0 14px", border: `1px solid ${C.border}`, background: activeKey === key ? C.ink : C.bgCard, color: activeKey === key ? "#fff" : C.text, fontWeight: 600 }}
                 >

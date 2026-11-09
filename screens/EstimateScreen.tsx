@@ -73,7 +73,7 @@ export default function EstimateScreen() {
       )}
 
       {!loading && !empty && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+        <div role="group" aria-label="Filter estimates" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
           {([
             ["All", "All"],
             ["Draft", "draft"],
@@ -84,6 +84,7 @@ export default function EstimateScreen() {
             <button
               key={value}
               type="button"
+              aria-pressed={filter === value}
               onClick={() => setFilter(value)}
               style={{
                 minHeight: 40,
