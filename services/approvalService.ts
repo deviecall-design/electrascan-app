@@ -84,17 +84,23 @@ export async function fetchApprovalAudit(
   estimateId: string,
 ): Promise<{ ok: true; entries: ApprovalAuditEntry[] } | { ok: false; error: string }> {
   try {
+    // The live table stores created_at. There is no ts column, so ordering
+    // by ts was a 400. The trail still reads the time from ts.
     const { data, error } = await supabase
       .from('approval_audit')
       .select('*')
       .eq('estimate_id', estimateId)
-      .order('ts', { ascending: true });
+      .order('created_at', { ascending: true });
 
     if (error) {
       console.warn('[approvalService] Supabase fetch skipped:', error.message);
       return { ok: false, error: error.message };
     }
-    return { ok: true, entries: (data ?? []) as ApprovalAuditEntry[] };
+    const entries = ((data ?? []) as Array<ApprovalAuditEntry & { created_at?: string }>).map(row => ({
+      ...row,
+      ts: row.ts || row.created_at || '',
+    }));
+    return { ok: true, entries };
   } catch (e) {
     console.warn('[approvalService] Supabase unreachable:', e);
     return { ok: false, error: e instanceof Error ? e.message : 'unknown' };

@@ -1,6 +1,7 @@
 // Workspace rows for assemblies, corrections, invoices, and jobs.
 // Service role only. Missing tables return an empty list or a migration hint.
 
+import { orderForTable } from "../_lib/recordOrder.js";
 import { firstRow, insertVesh, readBody, readVesh, requireBeta, sendResult } from "../_lib/veshAdmin.js";
 
 const TABLES = {
@@ -22,7 +23,11 @@ function kindOf(req) {
 }
 
 function missingTable(result) {
-  return /does not exist|PGRST205|42P01/i.test(`${result.error || ""} ${result.bodyText || ""}`);
+  const text = `${result.error || ""} ${result.bodyText || ""}`;
+  // A missing column ("column draft_invoices.updated_at does not exist", 42703)
+  // is not a missing table. Treating it as one hid the 400 behind an empty list.
+  if (/42703|column\s+\S+\s+does not exist/i.test(text)) return false;
+  return /PGRST205|42P01|relation\s+\S+\s+does not exist|Could not find the table/i.test(text);
 }
 
 function migrationFor(kind) {
@@ -43,20 +48,26 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "GET") {
-    const result = await readVesh(table, { order: "updated_at.desc", limit: 100 });
-    const fallback = await (result.ok ? result : readVesh(table, { limit: 100 }));
-    if (!fallback.ok && missingTable(fallback)) {
-      res.status(200).json({ data: [], migration: migrationFor(kindOf(req)) });
+    const kind = kindOf(req);
+    const result = await readVesh(table, { order: orderForTable(table), limit: 100 });
+    if (!result.ok && missingTable(result)) {
+      res.status(200).json({ data: [], migration: migrationFor(kind) });
       return;
     }
-    const rows = Array.isArray((fallback.ok ? fallback : result).data) ? (fallback.ok ? fallback : result).data : [];
-    if (kindOf(req) === "claims" && rows.length > 0 && rows.every(row => row.project_id == null)) {
+    if (!result.ok) {
+      console.error("[ElectraScan] record list failed", { kind, table, status: result.status, error: result.error });
+      const safe = result.status === 503 ? result : { ...result, error: "Could not load this list." };
+      sendResult(res, safe);
+      return;
+    }
+    const rows = Array.isArray(result.data) ? result.data : [];
+    if (kind === "claims" && rows.length > 0 && rows.every(row => row.project_id == null)) {
       res.status(200).json({ data: [], migration: migrationFor("claims") });
       return;
     }
     const project = new URL(req.url || "/", "http://localhost").searchParams.get("project");
-    const filtered = kindOf(req) === "claims" && project ? rows.filter(row => row.project_id === project) : rows;
-    sendResult(res, fallback.ok ? fallback : result, { data: filtered });
+    const filtered = kind === "claims" && project ? rows.filter(row => row.project_id === project) : rows;
+    sendResult(res, result, { data: filtered });
     return;
   }
 
