@@ -240,6 +240,15 @@ input, textarea {
   background: none;
   color: inherit;
 }
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="tab"]:focus-visible {
+  outline: 2px solid var(--es-orange-dark);
+  outline-offset: 2px;
+}
 table {
   border-collapse: collapse;
 }

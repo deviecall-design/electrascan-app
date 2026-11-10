@@ -20,6 +20,7 @@ import { loadDefaultMargin } from "../lib/margin";
 import { milestoneAfterSave } from "../lib/progressClaim";
 import { formatQuotedValue } from "../lib/estimateMoney";
 import QueryBanner from "../components/QueryBanner";
+import ListQueryNotice, { type ListLoad } from "../components/ListQueryNotice";
 import { cleanDocumentName } from "../lib/documentLabel";
 import AccountingConnect from "../components/desktop/AccountingConnect";
 
@@ -152,22 +153,34 @@ export default function ProjectReportsScreen() {
   const projectKey = selected ? (selected.reference || selected.ref || selected.project_name || selected.id) : "";
   const [claims, setClaims] = useState<MilestoneClaimRow[]>([]);
   const [claimsLoading, setClaimsLoading] = useState(false);
+  const [claimsLoad, setClaimsLoad] = useState<ListLoad>("loading");
+  const [claimsAttempt, setClaimsAttempt] = useState(0);
 
   useEffect(() => {
     if (!projectKey) {
       setClaims([]);
+      setClaimsLoad("empty");
+      setClaimsLoading(false);
       return;
     }
     let cancelled = false;
     setClaimsLoading(true);
+    setClaimsLoad("loading");
     fetchMilestoneClaimsForProject(projectKey).then(({ data, error: claimsError }) => {
       if (cancelled) return;
-      setClaims((data as MilestoneClaimRow[] | null) ?? []);
-      setClaimError(claimsError?.message || null);
+      if (claimsError) {
+        console.error("[ElectraScan] milestone claims failed", claimsError);
+        setClaimsLoad("error");
+        setClaimsLoading(false);
+        return;
+      }
+      const rows = (data as MilestoneClaimRow[] | null) ?? [];
+      setClaims(rows);
+      setClaimsLoad(rows.length > 0 ? "ready" : "empty");
       setClaimsLoading(false);
     });
     return () => { cancelled = true; };
-  }, [projectKey]);
+  }, [projectKey, claimsAttempt]);
 
   const contract = Number(selected?.value) || 0;
   const [localClaims, setLocalClaims] = useState<Record<string, Milestone[]>>({});
@@ -195,7 +208,8 @@ export default function ProjectReportsScreen() {
       invRef: result.invRef,
     });
     if (next === milestone) {
-      setClaimError(result.error?.message || "The claim was not saved, so it stays ready to submit.");
+      console.error("[ElectraScan] claim was not saved", result.error);
+      setClaimError("The claim was not saved, so it stays ready to submit.");
       setSubmitting(null);
       return;
     }
@@ -308,8 +322,15 @@ export default function ProjectReportsScreen() {
         <Mini label="Status" value={selected?.status === "approved" ? "Won" : (selected?.status || "—")} hint="Estimate status" icon={<Clock size={16} />} />
       </div>
 
+      <ListQueryNotice
+        listKey="claims"
+        status={claimsLoad}
+        noun="milestone claims"
+        emptyText="No milestone claims saved yet."
+        onRetry={() => setClaimsAttempt(n => n + 1)}
+      />
       {claimError && (
-        <p style={{ color: C.red, fontSize: 14 }}>{claimError}</p>
+        <p role="alert" style={{ color: "#9F1239", fontSize: 14 }}>{claimError}</p>
       )}
 
       <Card style={{ padding: 22 }}>

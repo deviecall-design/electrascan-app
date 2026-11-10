@@ -18,6 +18,8 @@ import { indexRows, readLocalDocumentLabels } from "../lib/documentLabel";
 import { approvalFromRow } from "../lib/approvalStatus";
 import { getActiveCompanyProfile } from "../services/companyProfile";
 import QueryBanner from "../components/QueryBanner";
+import ListQueryNotice, { type ListLoad } from "../components/ListQueryNotice";
+import { fetchRecordList } from "../lib/recordList";
 import { burnPercent, milestoneWeekIndex, paymentSchedule, type ActualEntry } from "../lib/burndown";
 import { claimedMilestone, milestoneWarning, reportClaimStatus, REPORT_STATUS_LABEL, showOverrunAlert, type ReportClaimStatus } from "../lib/reportMilestone";
 import AccountingConnect from "../components/desktop/AccountingConnect";
@@ -52,6 +54,13 @@ export default function JobBurndownScreen() {
   );
   const [payTab, setPayTab] = useState<"schedule" | "claims" | "deposit">("schedule");
   const [costDraft, setCostDraft] = useState({ date: today(), roleId: "", hours: "", amount: "", supplier: "TLE", reference: "", note: "" });
+  const [listAttempt, setListAttempt] = useState(0);
+  const [listState, setListState] = useState<Record<"costs" | "actuals" | "invoices" | "claims", ListLoad>>({
+    costs: "loading",
+    actuals: "loading",
+    invoices: "loading",
+    claims: "loading",
+  });
 
   const job = useMemo(() => {
     const scanRows = scans as Array<{ id?: string; client?: string | null; file_name?: string | null; estimate_ref?: string | null; detected_items?: unknown }>;
@@ -100,57 +109,84 @@ export default function JobBurndownScreen() {
   useEffect(() => {
     const savedDates = readJson<Schedule>(`es-job-dates:${jobId}`);
     const savedActuals = readJson<ActualEntry[]>(`es-job-actuals:${jobId}`);
+    const savedCosts = readJson<LedgerCost[]>(`es-job-costs:${jobId}`);
     if (savedDates?.start && savedDates.end) setSchedule(savedDates);
     if (Array.isArray(savedActuals)) setEntries(savedActuals);
-    const savedCosts = readJson<LedgerCost[]>(`es-job-costs:${jobId}`);
     if (Array.isArray(savedCosts)) setCosts(savedCosts);
-    fetch("/api/beta/records?kind=costs")
-      .then(res => res.json())
-      .then(body => {
-        if (cancelled) return;
-        if (body.migration) setMigrationNote(`Job costs need ${body.migration}. New costs stay in this browser until then.`);
-        if (Array.isArray(body.data) && body.data.length > 0) {
-          const rows = body.data
-            .filter((row: { job_ref?: string }) => row.job_ref === jobId)
-            .map(costFromRow)
-            .filter((row: LedgerCost) => row.date);
-          if (rows.length) setCosts(rows);
-        }
-      })
-      .catch(() => undefined);
     let cancelled = false;
-    fetch("/api/beta/records?kind=actuals")
-      .then(res => res.json())
-      .then(body => {
+    setListState({ costs: "loading", actuals: "loading", invoices: "loading", claims: "loading" });
+
+    function noteMigration(line: string) {
+      setMigrationNote(current => (current && current.includes(line) ? current : [current, line].filter(Boolean).join(" ")));
+    }
+
+    void fetchRecordList("/api/beta/records?kind=costs").then(result => {
+      if (cancelled) return;
+      if (!result.ok) {
+        setListState(current => ({ ...current, costs: "error" }));
+        return;
+      }
+      if (result.migration) noteMigration(`Job costs need ${result.migration}. New costs stay in this browser until then.`);
+      const rows = result.rows
+        .filter((row): row is { job_ref?: string } => Boolean(row) && typeof row === "object")
+        .filter(row => row.job_ref === jobId)
+        .map(row => costFromRow(row as Parameters<typeof costFromRow>[0]))
+        .filter(row => row.date);
+      if (rows.length) setCosts(rows);
+      const shown = rows.length || (Array.isArray(savedCosts) ? savedCosts.length : 0);
+      setListState(current => ({ ...current, costs: shown > 0 ? "ready" : "empty" }));
+    });
+
+    void fetchRecordList("/api/beta/records?kind=actuals").then(result => {
+      if (cancelled) return;
+      if (!result.ok) {
+        setListState(current => ({ ...current, actuals: "error" }));
+        return;
+      }
+      if (result.migration) noteMigration(`The dated log needs ${result.migration}. Entries stay in this browser until then.`);
+      const rows = result.rows
+        .filter((row): row is { job_id?: string } => Boolean(row) && typeof row === "object")
+        .filter(row => row.job_id === jobId)
+        .map(row => fromRow(row as Parameters<typeof fromRow>[0]));
+      if (rows.length) setEntries(rows);
+      const shown = rows.length || (Array.isArray(savedActuals) ? savedActuals.length : 0);
+      setListState(current => ({ ...current, actuals: shown > 0 ? "ready" : "empty" }));
+    });
+
+    void fetchRecordList("/api/beta/records?kind=schedules").then(result => {
+      if (cancelled || !result.ok) return;
+      const row = result.rows.find((item): item is { job_id?: string; start_on?: string; end_on?: string } => Boolean(item) && typeof item === "object" && (item as { job_id?: string }).job_id === jobId);
+      if (row?.start_on && row?.end_on) setSchedule({ start: String(row.start_on).slice(0, 10), end: String(row.end_on).slice(0, 10) });
+    });
+
+    void fetchRecordList("/api/beta/records?kind=invoices").then(result => {
+      if (cancelled) return;
+      if (!result.ok) {
+        setListState(current => ({ ...current, invoices: "error" }));
+        return;
+      }
+      const rows = result.rows.filter((row): row is { id?: string; source_ref?: string | null; job_name?: string | null } => Boolean(row) && typeof row === "object");
+      setInvoices(rows);
+      setListState(current => ({ ...current, invoices: rows.length > 0 ? "ready" : "empty" }));
+    });
+
+    if (!job.reference) {
+      setListState(current => ({ ...current, claims: "empty" }));
+    } else {
+      fetchMilestoneClaimsForProject(job.reference).then(({ data, error: claimsError }) => {
         if (cancelled) return;
-        if (body.migration) setMigrationNote(`The dated log needs ${body.migration}. Entries stay in this browser until then.`);
-        if (Array.isArray(body.data) && body.data.length > 0) {
-          const rows = body.data
-            .filter((row: { job_id?: string }) => row.job_id === jobId)
-            .map(fromRow);
-          if (rows.length) setEntries(rows);
+        if (claimsError) {
+          console.error("[ElectraScan] milestone claims failed", claimsError);
+          setListState(current => ({ ...current, claims: "error" }));
+          return;
         }
-      })
-      .catch(() => undefined);
-    fetch("/api/beta/records?kind=schedules")
-      .then(res => res.json())
-      .then(body => {
-        if (cancelled || !Array.isArray(body.data)) return;
-        const row = body.data.find((item: { job_id?: string }) => item.job_id === jobId);
-        if (row?.start_on && row?.end_on) setSchedule({ start: String(row.start_on).slice(0, 10), end: String(row.end_on).slice(0, 10) });
-      })
-      .catch(() => undefined);
-    fetch("/api/beta/records?kind=invoices")
-      .then(res => res.json())
-      .then(body => { if (!cancelled && Array.isArray(body.data)) setInvoices(body.data); })
-      .catch(() => undefined);
-    if (job.reference) {
-      fetchMilestoneClaimsForProject(job.reference).then(({ data }) => {
-        if (!cancelled) setClaims((data as Array<{ milestone_id?: string; status?: string; inv_ref?: string | null }> | null) ?? []);
+        const rows = (data as Array<{ milestone_id?: string; status?: string; inv_ref?: string | null }> | null) ?? [];
+        setClaims(rows);
+        setListState(current => ({ ...current, claims: rows.length > 0 ? "ready" : "empty" }));
       });
     }
     return () => { cancelled = true; };
-  }, [jobId, job.reference]);
+  }, [jobId, job.reference, listAttempt]);
 
   const legacyCosts: LedgerCost[] = entries.flatMap(entry => {
     const rows: LedgerCost[] = [];
@@ -372,8 +408,12 @@ export default function JobBurndownScreen() {
         {job.approved ? "Approved contract. Costs reduce what is left of that price." : "Projected. This estimate is not approved yet, so the baseline is the latest quote, not a signed contract."}
       </p>
       {migrationNote && <p style={{ color: C.amber }}>{migrationNote}</p>}
+      <ListQueryNotice listKey="costs" status={listState.costs} noun="job costs" emptyText="No job costs recorded yet." showEmpty={tab === "overview" || tab === "burndown" || tab === "hours" || tab === "overruns"} onRetry={() => setListAttempt(n => n + 1)} />
+      <ListQueryNotice listKey="actuals" status={listState.actuals} noun="dated costs" emptyText="No dated costs recorded yet." showEmpty={tab === "overview" || tab === "burndown" || tab === "hours"} onRetry={() => setListAttempt(n => n + 1)} />
+      <ListQueryNotice listKey="invoices" status={listState.invoices} noun="draft invoices" emptyText="No draft invoices yet." showEmpty={tab === "overview" || tab === "milestones"} onRetry={() => setListAttempt(n => n + 1)} />
+      <ListQueryNotice listKey="claims" status={listState.claims} noun="milestone claims" emptyText="No milestone claims yet." showEmpty={tab === "overview" || tab === "milestones"} onRetry={() => setListAttempt(n => n + 1)} />
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "12px 0" }}>
-        <button type="button" onClick={() => setGstMode(current => current === "ex" ? "inc" : "ex")} style={burndownTab}>
+          <button type="button" aria-pressed={gstMode === "inc"} onClick={() => setGstMode(current => current === "ex" ? "inc" : "ex")} style={burndownTab}>
           {gstMode === "ex" ? "Show inc GST" : "Show ex GST"}
         </button>
         <button type="button" onClick={() => setDrawer("timesheet")} style={quietBtn}>Add timesheet</button>
@@ -579,9 +619,9 @@ export default function JobBurndownScreen() {
       )}
       {tab === "milestones" && (
         <>
-          <div style={{ display: "flex", gap: 8, overflowX: "auto", marginBottom: 12 }}>
+          <div role="tablist" aria-label="Milestone views" style={{ display: "flex", gap: 8, overflowX: "auto", marginBottom: 12 }}>
             {(["schedule", "claims", "deposit"] as const).map(id => (
-              <button key={id} type="button" onClick={() => setPayTab(id)} style={{ ...quietBtn, background: payTab === id ? C.orange : "#fff", color: payTab === id ? "#fff" : C.text }}>
+              <button key={id} type="button" role="tab" aria-selected={payTab === id} onClick={() => setPayTab(id)} style={{ ...quietBtn, background: payTab === id ? C.orange : "#fff", color: payTab === id ? "#fff" : C.text }}>
                 {id === "schedule" ? "Payment schedule" : id === "claims" ? "Claim status" : "Deposit + splits"}
               </button>
             ))}
@@ -718,7 +758,7 @@ function BudgetBar({ label, spent, budget, show, color }: { label: string; spent
 function Stat({ label, value, tone, sub, accent }: { label: string; value: string; tone?: string; sub?: string; accent?: string }) {
   return (
     <div style={{ padding: 16, borderRadius: 12, border: `1px solid ${C.border}`, background: "#fff", borderTop: accent ? `3px solid ${accent}` : undefined }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.5px" }}>{label}</div>
+      <div style={{ fontSize: 11, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.5px" }}>{label}</div>
       <div style={{ marginTop: 6, fontSize: 22, fontWeight: 800, color: accent || tone || C.text }}>{value}</div>
       {sub && <div style={{ marginTop: 3, fontSize: 11, color: "#64748B" }}>{sub}</div>}
     </div>
@@ -820,7 +860,7 @@ const quietBtn: React.CSSProperties = {
 };
 const cell: React.CSSProperties = { padding: 10, borderTop: `1px solid ${C.border}`, whiteSpace: "nowrap" };
 const headCell: React.CSSProperties = { textAlign: "left", padding: 10, background: C.ink, color: "#fff" };
-const lightHead: React.CSSProperties = { textAlign: "left", padding: "8px 14px", background: "#F8FAFC", color: "#94A3B8", fontSize: 10, fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" };
+const lightHead: React.CSSProperties = { textAlign: "left", padding: "8px 14px", background: "#F8FAFC", color: "#475569", fontSize: 10, fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" };
 const outlineBtn: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
