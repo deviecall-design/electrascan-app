@@ -20,6 +20,18 @@ describe("ledger migrations", () => {
     expect(text).not.toMatch(/tenant_id IS NULL/);
   });
 
+  it("gives milestone claims tenant update and delete, and drops owner policies", () => {
+    const text = sql("20261112010000_milestone_claims_drop_owner_policies.sql");
+    expect(text).toContain('DROP POLICY IF EXISTS "Tenant members can update own tenant milestone_claims"');
+    expect(text).toContain("FOR UPDATE TO authenticated");
+    expect(text).toContain("FOR DELETE TO authenticated");
+    expect(text).toContain("tenant_id IS NOT NULL AND tenant_id = public.get_tenant_id()");
+    for (const action of ["select", "insert", "update", "delete"]) {
+      expect(text).toContain(`DROP POLICY IF EXISTS "milestone_claims owner ${action}"`);
+    }
+    expect(text).not.toMatch(/CREATE POLICY "milestone_claims owner/i);
+  });
+
   it("stops authenticated reads of labour rates with a null tenant", () => {
     const text = sql("20261108060000_labour_rate_cards_tenant_rls.sql");
     expect(text).toContain("tenant_id IS NOT NULL AND tenant_id = public.get_tenant_id()");
