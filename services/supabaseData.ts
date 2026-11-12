@@ -6,6 +6,7 @@
 
 import { supabase } from "./supabaseClient";
 import { authIsDisabled } from "../lib/authMode";
+import { milestoneClaimPatch, progressClaimInsert } from "../lib/milestoneClaimWrite";
 import { getCurrentTenantId, rememberTenantId, VESH_TENANT_ID } from "../lib/tenants";
 import {
   quotedTotalIncGst,
@@ -181,6 +182,20 @@ export async function provisionWorkspace() {
   const tenantId = (data as string | null) ?? null;
   rememberTenantId(tenantId);
   return { ok: true as const, tenantId };
+}
+
+/** Workspace for a claim write, plus the signed-in user for the audit column. */
+export async function claimWriteContext(): Promise<{ tenantId: string; ownerId: string | null } | { tenantId: null; ownerId: null; error: string }> {
+  let ownerId: string | null = null;
+  try {
+    const { data } = await supabase.auth.getUser();
+    ownerId = data?.user?.id ?? null;
+  } catch {
+    ownerId = null;
+  }
+  const tenantId = await tenantForWrite();
+  if (!tenantId) return { tenantId: null, ownerId: null, error: NO_WORKSPACE.message };
+  return { tenantId, ownerId };
 }
 
 async function tenantForWrite(): Promise<string | null> {
@@ -450,37 +465,30 @@ export async function submitMilestoneClaim(
   milestoneLabel: string,
   amount: number,
 ): Promise<{ ok: boolean; invRef: string | null; error: { message: string } | null }> {
-  const { data: userResult } = await supabase.auth.getUser();
-  const ownerId = userResult?.user?.id ?? null;
-  if (!ownerId) {
-    return { ok: false, invRef: null, error: { message: "Sign in before submitting a claim." } };
+  const actor = await claimWriteContext();
+  if (!actor.tenantId) {
+    return { ok: false, invRef: null, error: { message: actor.error } };
   }
-
-  const tenantId = await tenantForWrite();
-  if (!tenantId) {
-    return { ok: false, invRef: null, error: { message: NO_WORKSPACE.message } };
+  if (!actor.ownerId) {
+    return { ok: false, invRef: null, error: { message: "Sign in before submitting a claim." } };
   }
 
   const year = new Date().getFullYear();
   const seq = String(Math.floor(Math.random() * 900) + 100);
   const invRef = `INV-${year}-${seq}`;
 
-  const row: MilestoneClaimRow = {
-    project_id: projectId,
-    milestone_id: milestoneId,
-    milestone_label: milestoneLabel,
-    amount,
-    inv_ref: invRef,
-    status: "draft",
-  };
-
   const { error } = await supabase
     .from("milestone_claims")
-    .insert([{
-      ...row,
-      owner_id: ownerId,
-      tenant_id: tenantId,
-    }]);
+    .insert([progressClaimInsert({
+      projectId,
+      milestoneId,
+      milestoneLabel,
+      amount,
+      invRef,
+      status: "draft",
+      tenantId: actor.tenantId,
+      ownerId: actor.ownerId,
+    })]);
 
   if (error) {
     console.warn("[ElectraScan] milestone_claims insert failed:", error.message);
@@ -488,6 +496,39 @@ export async function submitMilestoneClaim(
   }
 
   return { ok: true, invRef, error: null };
+}
+
+/** Status changes (invoiced, received, and the rest) stay inside the caller's tenant. */
+export async function updateMilestoneClaim(
+  id: string,
+  patch: { status: string; invRef?: string | null },
+): Promise<{ ok: boolean; error: { message: string } | null }> {
+  const actor = await claimWriteContext();
+  if (!actor.tenantId) return { ok: false, error: { message: actor.error } };
+  const { error } = await supabase
+    .from("milestone_claims")
+    .update(milestoneClaimPatch({
+      status: patch.status,
+      invRef: patch.invRef,
+      tenantId: actor.tenantId,
+      ownerId: actor.ownerId,
+    }))
+    .eq("id", id)
+    .eq("tenant_id", actor.tenantId);
+  if (error) return { ok: false, error: { message: error.message } };
+  return { ok: true, error: null };
+}
+
+export async function deleteMilestoneClaim(id: string): Promise<{ ok: boolean; error: { message: string } | null }> {
+  const actor = await claimWriteContext();
+  if (!actor.tenantId) return { ok: false, error: { message: actor.error } };
+  const { error } = await supabase
+    .from("milestone_claims")
+    .delete()
+    .eq("id", id)
+    .eq("tenant_id", actor.tenantId);
+  if (error) return { ok: false, error: { message: error.message } };
+  return { ok: true, error: null };
 }
 
 export interface TenantInvite {

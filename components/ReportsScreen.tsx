@@ -249,7 +249,12 @@ export default function ReportsScreen({
 
   const claimMilestone = async (idx: number) => {
     const m = milestones[idx];
-    const res = await submitMilestoneClaim({ projectName, milestone: m.label, amount: m.amount });
+    const res = await submitMilestoneClaim({
+      projectName,
+      milestone: m.label,
+      amount: m.amount,
+      status: "invoiced-draft",
+    });
     if (!res.ok) {
       setSyncMsg("local");
       window.setTimeout(() => setSyncMsg("idle"), 1800);

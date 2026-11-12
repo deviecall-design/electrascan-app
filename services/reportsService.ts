@@ -1,5 +1,7 @@
 import { supabase } from './supabaseClient';
 import { type Project, type Timesheet, type Milestone } from '../contexts/ProjectContext';
+import { reportsClaimInsert } from '../lib/milestoneClaimWrite';
+import { claimWriteContext } from './supabaseData';
 
 // Reports persistence — lightweight hooks for timesheet submissions and
 // milestone claim events. The bulk of the Reports screen is read-only
@@ -40,11 +42,23 @@ export async function submitMilestoneClaim(entry: {
   projectName: string;
   milestone: string;
   amount: number;
+  /** Claim status this save records. The Milestones tab submits a ready row as an invoiced draft. */
+  status?: string;
 }) {
   try {
-    const { error } = await supabase.from('milestone_claims').insert([{
-      ...entry, claimed_at: new Date().toISOString(), status: 'claimed',
-    }]);
+    const actor = await claimWriteContext();
+    if (!actor.tenantId) {
+      return { ok: false as const, error: actor.error };
+    }
+    const { error } = await supabase.from('milestone_claims').insert([reportsClaimInsert({
+      projectName: entry.projectName,
+      milestone: entry.milestone,
+      amount: entry.amount,
+      claimedAt: new Date().toISOString(),
+      status: entry.status || 'invoiced-draft',
+      tenantId: actor.tenantId,
+      ownerId: actor.ownerId,
+    })]);
     if (error) {
       console.warn('[reportsService] claim insert skipped:', error.message);
       return { ok: false as const, error: error.message };
