@@ -4,7 +4,8 @@ import { C } from "../components/desktop/tokens";
 import { PageHeader, Card, Footer } from "../components/ui/anthropic";
 import { PrimaryButton } from "../components/ui/anthropic/Button";
 import useSupabaseQuery from "../hooks/useSupabaseQuery";
-import { fetchEstimates, fetchMilestoneClaimsForProject, fetchScans } from "../services/supabaseData";
+import { claimWriteContext, fetchEstimates, fetchMilestoneClaimsForProject, fetchScans } from "../services/supabaseData";
+import { progressClaimInsert } from "../lib/milestoneClaimWrite";
 import { loadAssemblies, loadLabourRate } from "../lib/assemblies";
 import { priceItem } from "../lib/quoteSource";
 import { defaultHourlyRole, incGst, loadLabourCard } from "../lib/labourRates";
@@ -364,19 +365,26 @@ export default function JobBurndownScreen() {
   }
 
   async function submitClaim(row: { id: string; label: string; amount: number }) {
+    const actor = await claimWriteContext();
+    if (!actor.tenantId) {
+      setMigrationNote(actor.error);
+      return;
+    }
     const invRef = `INV-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
     setClaims(current => [...current.filter(item => item.milestone_id !== row.id), { milestone_id: row.id, status: "draft", inv_ref: invRef }]);
     const res = await fetch("/api/beta/records?kind=claims", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        project_id: job.reference || jobId,
-        milestone_id: row.id,
-        milestone_label: row.label,
+      body: JSON.stringify(progressClaimInsert({
+        projectId: job.reference || jobId,
+        milestoneId: row.id,
+        milestoneLabel: row.label,
         amount: row.amount,
-        inv_ref: invRef,
+        invRef,
         status: "draft",
-      }),
+        tenantId: actor.tenantId,
+        ownerId: actor.ownerId,
+      })),
     }).catch(() => null);
     if (res && !res.ok) {
       const body = await res.json().catch(() => ({}));
