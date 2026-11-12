@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import ListQueryNotice from "../components/ListQueryNotice";
+import ListQueryNotice, { noticeForLedger } from "../components/ListQueryNotice";
 import { fetchRecordList } from "../lib/recordList";
 
 describe("ListQueryNotice", () => {
@@ -23,6 +23,16 @@ describe("ListQueryNotice", () => {
     expect(screen.getByRole("alert").textContent).not.toMatch(/42703|updated_at|PGRST/);
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(onRetry).toHaveBeenCalledOnce();
+  });
+
+  it("hides the dated-cost empty state once the ledger has lines", () => {
+    expect(noticeForLedger("empty", 3)).toBe("ready");
+    expect(noticeForLedger("empty", 0)).toBe("empty");
+    expect(noticeForLedger("error", 3)).toBe("error");
+    render(
+      <ListQueryNotice status={noticeForLedger("empty", 2)} noun="dated costs" emptyText="No dated costs recorded yet." onRetry={() => undefined} />,
+    );
+    expect(screen.queryByText("No dated costs recorded yet.")).not.toBeInTheDocument();
   });
 
   it("renders nothing while loading or after a list with rows", () => {
