@@ -6,9 +6,9 @@ import { PrimaryButton } from "../components/ui/anthropic/Button";
 import useSupabaseQuery from "../hooks/useSupabaseQuery";
 import { fetchEstimates, fetchMilestoneClaimsForProject, fetchScans } from "../services/supabaseData";
 import { loadAssemblies, loadLabourRate } from "../lib/assemblies";
-import { priceItem } from "../lib/quoteSource";
-import { defaultHourlyRole, incGst, loadLabourCard } from "../lib/labourRates";
-import { buildLedger, ledgerRows, priceTimesheet, remainingAt, weekHours, type CostKind, type LedgerCost } from "../lib/jobLedger";
+import { takeoffLabourBudget } from "../lib/quoteSource";
+import { defaultHourlyRole, fetchLabourCard, incGst, loadLabourCard, type LabourRole } from "../lib/labourRates";
+import { buildLedger, categoryOverrun, claimCountsTowardTotal, ledgerRows, PACE_COLOR, PACE_LABEL, priceTimesheet, remainingAt, weekHours, type CostKind, type LedgerCost } from "../lib/jobLedger";
 import LedgerChart from "../components/desktop/LedgerChart";
 import * as XLSX from "xlsx";
 import { readDetectedItems } from "../lib/scanRecord";
@@ -18,7 +18,7 @@ import { indexRows, readLocalDocumentLabels } from "../lib/documentLabel";
 import { approvalFromRow } from "../lib/approvalStatus";
 import { getActiveCompanyProfile } from "../services/companyProfile";
 import QueryBanner from "../components/QueryBanner";
-import ListQueryNotice, { type ListLoad } from "../components/ListQueryNotice";
+import ListQueryNotice, { noticeForLedger, type ListLoad } from "../components/ListQueryNotice";
 import { fetchRecordList } from "../lib/recordList";
 import { burnPercent, milestoneWeekIndex, paymentSchedule, type ActualEntry } from "../lib/burndown";
 import { claimedMilestone, milestoneWarning, reportClaimStatus, REPORT_STATUS_LABEL, showOverrunAlert, type ReportClaimStatus } from "../lib/reportMilestone";
@@ -39,6 +39,7 @@ export default function JobBurndownScreen() {
   const { data: estimates, loading: estimatesLoading } = useSupabaseQuery(fetchEstimates);
   const assemblies = loadAssemblies();
   const labourRate = loadLabourRate();
+  const [labourCard, setLabourCard] = useState<LabourRole[] | null>(() => loadLabourCard());
   const [entries, setEntries] = useState<ActualEntry[]>([]);
   const [schedule, setSchedule] = useState<Schedule>({ start: "", end: "" });
   const [migrationNote, setMigrationNote] = useState<string | null>(null);
@@ -68,14 +69,9 @@ export default function JobBurndownScreen() {
     const resolved = resolveJobTarget(jobId, scanRows, estimateRows);
     const estimate = resolved.estimate;
     const items = resolved.scans.flatMap(scan => readDetectedItems(scan.detected_items));
-    let hours = 0;
-    let labourDollars = 0;
-    for (const item of items) {
-      if (item.status === "rejected" || item.qty <= 0) continue;
-      const quote = priceItem(item, [], assemblies, labourRate, [], loadLabourCard());
-      hours += item.qty * quote.labourHours;
-      labourDollars += item.qty * quote.labourUnit;
-    }
+    const labour = takeoffLabourBudget(items, assemblies, labourRate, labourCard);
+    const hours = labour.hours;
+    const labourDollars = labour.dollars;
     const total = estimateTotal({
       items,
       subtotal: (estimate as { subtotal?: number | null } | null)?.subtotal,
@@ -97,7 +93,15 @@ export default function JobBurndownScreen() {
       contractExGst: total.contractExGst,
       scanId: resolved.scans[0]?.id,
     };
-  }, [scans, estimates, assemblies, labourRate, jobId]);
+  }, [scans, estimates, assemblies, labourRate, labourCard, jobId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchLabourCard().then(result => {
+      if (!cancelled && result.roles.length) setLabourCard(result.roles);
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     const main = document.querySelector(".es-main");
@@ -234,7 +238,14 @@ export default function JobBurndownScreen() {
   const labourBudget = roundCents(Math.max(0, job.labourDollars));
   const materialsBudget = roundCents(Math.max(0, (job.sell > 0 ? job.sell : job.contractExGst) - labourBudget));
   const contingency = job.sell > 0 ? roundCents(Math.max(0, job.contractExGst - job.sell)) : 0;
-  const overrunAmount = roundCents(otherSpent + Math.max(0, labourSpent - labourBudget) + Math.max(0, materialsSpent - materialsBudget));
+  const overrunAmount = categoryOverrun({
+    labourSpent,
+    labourBudget,
+    materialsSpent,
+    materialsBudget,
+    otherSpent,
+  });
+  const ledgerCostLines = ledger.weeks.reduce((sum, week) => sum + week.items.length, 0);
   const contingLeft = roundCents(Math.max(0, contingency - overrunAmount));
   const plannedHours = Math.round(job.hours * 10) / 10;
   const loggedHours = Math.round(ledger.weeks.reduce((sum, week) => sum + weekHours(week.items, plannedHours, ledger.weeks.length).actual, 0) * 10) / 10;
@@ -408,8 +419,8 @@ export default function JobBurndownScreen() {
         {job.approved ? "Approved contract. Costs reduce what is left of that price." : "Projected. This estimate is not approved yet, so the baseline is the latest quote, not a signed contract."}
       </p>
       {migrationNote && <p style={{ color: C.amber }}>{migrationNote}</p>}
-      <ListQueryNotice listKey="costs" status={listState.costs} noun="job costs" emptyText="No job costs recorded yet." showEmpty={tab === "overview" || tab === "burndown" || tab === "hours" || tab === "overruns"} onRetry={() => setListAttempt(n => n + 1)} />
-      <ListQueryNotice listKey="actuals" status={listState.actuals} noun="dated costs" emptyText="No dated costs recorded yet." showEmpty={tab === "overview" || tab === "burndown" || tab === "hours"} onRetry={() => setListAttempt(n => n + 1)} />
+      <ListQueryNotice listKey="costs" status={noticeForLedger(listState.costs, ledgerCostLines)} noun="job costs" emptyText="No job costs recorded yet." showEmpty={tab === "overview" || tab === "burndown" || tab === "hours" || tab === "overruns"} onRetry={() => setListAttempt(n => n + 1)} />
+      <ListQueryNotice listKey="actuals" status={noticeForLedger(listState.actuals, ledgerCostLines)} noun="dated costs" emptyText="No dated costs recorded yet." showEmpty={tab === "overview" || tab === "burndown" || tab === "hours"} onRetry={() => setListAttempt(n => n + 1)} />
       <ListQueryNotice listKey="invoices" status={listState.invoices} noun="draft invoices" emptyText="No draft invoices yet." showEmpty={tab === "overview" || tab === "milestones"} onRetry={() => setListAttempt(n => n + 1)} />
       <ListQueryNotice listKey="claims" status={listState.claims} noun="milestone claims" emptyText="No milestone claims yet." showEmpty={tab === "overview" || tab === "milestones"} onRetry={() => setListAttempt(n => n + 1)} />
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "12px 0" }}>
@@ -462,6 +473,9 @@ export default function JobBurndownScreen() {
             <Stat label="Spent to Date" value={show(ledger.summary.costToDate)} sub={`${pctBurnt}% of budget`} accent="#F59E0B" />
             <Stat label="Remaining" value={show(ledger.summary.remaining)} sub={`${Math.max(0, Math.round((100 - pctBurnt) * 10) / 10)}% left`} accent="#10B981" />
             <Stat label="Claimed" value={show(ledger.summary.claimedToDate)} sub={`${claimedCount} of ${progressRows.length} milestones`} accent="#8B5CF6" />
+            <Stat label="Paid to date" value={show(ledger.summary.paidToDate)} sub="Received claims" accent="#10B981" />
+            <Stat label="Margin to date" value={`${ledger.summary.marginToDatePct}%`} sub="Contract left after cost to date" accent="#1D6EFD" />
+            <Stat label="Forecast at completion" value={show(ledger.summary.forecastAtCompletion)} sub="Cost run-rate to the last week" accent="#F59E0B" />
           </div>
           <Card style={{ padding: 16, marginBottom: 16 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: C.textMuted, letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: 12 }}>Budget Breakdown</div>
@@ -540,10 +554,24 @@ export default function JobBurndownScreen() {
                 <tr>{["Week", "Labour", "Supplier", "Other", "Total", "Claims", "Invoices", "Remaining", "Variance"].map(heading => <th key={heading} style={headCell}>{heading}</th>)}</tr>
               </thead>
               <tbody>
-                {ledger.weeks.map(week => (
+                {ledger.weeks.map(week => {
+                  const point = remainingAt(week, job.contractExGst, asOf);
+                  const open = openWeek === week.start;
+                  const countedClaims = week.claimItems.filter(item => claimCountsTowardTotal(item.status));
+                  return (
                   <React.Fragment key={week.start}>
-                    <tr onClick={() => setOpenWeek(current => current === week.start ? null : week.start)} style={{ cursor: "pointer", background: week.ahead ? C.redSoft : undefined }}>
-                      <td style={cell}>{week.start}</td>
+                    <tr style={{ background: point.ahead ? C.redSoft : undefined }}>
+                      <td style={cell}>
+                        <button
+                          type="button"
+                          aria-expanded={open}
+                          aria-label={`${week.start} lines`}
+                          onClick={() => setOpenWeek(current => current === week.start ? null : week.start)}
+                          style={{ background: "none", border: "none", padding: 0, color: "#1D6EFD", fontWeight: 700, cursor: "pointer" }}
+                        >
+                          {week.start}
+                        </button>
+                      </td>
                       <td style={cell}>{show(week.labour)}</td>
                       <td style={cell}>{show(week.supplier)}</td>
                       <td style={cell}>{show(week.other)}</td>
@@ -551,19 +579,29 @@ export default function JobBurndownScreen() {
                       <td style={cell}>{show(week.claims)}</td>
                       <td style={cell}>{show(week.invoices)}</td>
                       <td style={cell}>{show(week.remaining)}</td>
-                      <td style={cell}>{week.ahead ? "Ahead" : "On plan"} · {show(week.variance)}</td>
+                      <td style={{ ...cell, color: PACE_COLOR[point.pace], fontWeight: 700 }}>{PACE_LABEL[point.pace]} · {show(week.variance)}</td>
                     </tr>
-                    {openWeek === week.start && (
+                    {open && (
                       <tr>
-                        <td colSpan={9} style={{ padding: 12, color: C.textMuted }}>
-                          {week.items.length === 0 && week.claimItems.length === 0 && "Nothing booked this week."}
-                          {week.items.map(item => <div key={item.id}>{item.date} · {item.kind} · {item.roleName || item.supplier || item.note || "Cost"} · {show(item.amount)}{item.reference ? ` · ${item.reference}` : ""}</div>)}
-                          {week.claimItems.map(item => <div key={item.id}>{item.label} · {item.kind} · {item.status} · {show(item.amount)}</div>)}
+                        <td colSpan={9} style={{ padding: 12, color: C.text }}>
+                          <div style={{ fontWeight: 700, marginBottom: 6 }}>Costs</div>
+                          {week.items.length === 0 && <div style={{ color: C.textMuted }}>No cost lines this week.</div>}
+                          {week.items.map(item => (
+                            <div key={item.id}>
+                              {item.date} · {item.kind} · {[item.roleName, item.supplier, item.note].filter(Boolean).join(" · ") || "Cost"} · {show(item.amount)}
+                              {item.hours ? ` · ${item.hours}h` : ""}
+                              {item.reference ? ` · ${item.reference}` : ""}
+                            </div>
+                          ))}
+                          <div style={{ fontWeight: 700, margin: "10px 0 6px" }}>Claims</div>
+                          {countedClaims.length === 0 && <div style={{ color: C.textMuted }}>No invoiced or received claims this week.</div>}
+                          {countedClaims.map(item => <div key={item.id}>{item.label} · {item.status} · {show(item.amount)}</div>)}
                         </td>
                       </tr>
                     )}
                   </React.Fragment>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </Card>

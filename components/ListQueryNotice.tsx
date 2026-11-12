@@ -4,6 +4,15 @@ import { C, FONT } from "./desktop/tokens";
 export type ListLoad = "loading" | "ready" | "empty" | "error";
 
 /**
+ * An empty remote list is not an empty ledger. Job costs already on the
+ * weeks mean the dated-cost banner should stay hidden.
+ */
+export function noticeForLedger(status: ListLoad, ledgerLines: number): ListLoad {
+  if (status === "empty" && ledgerLines > 0) return "ready";
+  return status;
+}
+
+/**
  * Distinguishes a failed list from a list that loaded with no rows.
  * The message is fixed. Callers log the raw error themselves.
  */

@@ -154,6 +154,38 @@ export function priceItem(
   return storedPrice(item);
 }
 
+/** Quoted labour hours and dollars for a takeoff. A saved rate card replaces the $110 fallback. */
+export function takeoffLabourBudget(
+  items: Array<{
+    status?: string;
+    qty?: number;
+    symbol?: string;
+    desc?: string;
+    detectedType?: string;
+    group?: string;
+    category?: string;
+    rateCode?: string;
+    unitPrice?: number;
+    materialUnit?: number;
+    labourUnit?: number;
+    manualPrice?: boolean;
+  }>,
+  assemblies: Assembly[],
+  labourRate: number,
+  card: LabourRole[] | null,
+): { hours: number; dollars: number } {
+  let hours = 0;
+  let dollars = 0;
+  for (const item of items) {
+    const qty = Number(item.qty) || 0;
+    if (item.status === "rejected" || !(qty > 0)) continue;
+    const quote = priceItem(item, [], assemblies, labourRate, [], card);
+    hours += qty * quote.labourHours;
+    dollars += qty * quote.labourUnit;
+  }
+  return { hours: round(hours), dollars: round(dollars) };
+}
+
 function storedPrice(item: {
   unitPrice?: number;
   materialUnit?: number;

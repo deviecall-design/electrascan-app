@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_ASSEMBLIES } from "../lib/assemblies";
-import { priceItem } from "../lib/quoteSource";
+import { priceItem, takeoffLabourBudget } from "../lib/quoteSource";
 import { legendFlags } from "../lib/legendMatch";
 import { confidenceQueue, correctionFrom, scanRecap } from "../lib/reviewQueue";
 import { applySupplierPrices, parseSupplierCsv } from "../lib/supplierLink";
@@ -145,6 +145,24 @@ describe("draft invoices", () => {
       xero: "missing_keys",
       myob: "missing_keys",
     });
+  });
+});
+
+describe("takeoff labour budget", () => {
+  it("uses the tenant tradesman rate instead of $110/h", () => {
+    const assembly = {
+      ...DEFAULT_ASSEMBLIES[0],
+      id: "est-2611-0003",
+      symbols: ["JOB"],
+      keywords: ["arnesen"],
+      labourHours: 36.55,
+      sellPrice: 40000,
+      materials: [],
+    };
+    const item = { symbol: "JOB", desc: "Arnesen", qty: 1, status: "confirmed" };
+    const card = [{ id: "tradesman", name: "Tradesman", rate: 140, chargeType: "hourly" as const, overtimeMultiplier: null, isDefault: true }];
+    expect(takeoffLabourBudget([item], [assembly], 110, null)).toEqual({ hours: 36.55, dollars: 4020.5 });
+    expect(takeoffLabourBudget([item], [assembly], 110, card)).toEqual({ hours: 36.55, dollars: 5117 });
   });
 });
 
