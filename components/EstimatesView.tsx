@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { TakeoffItem, ToolType, Unit } from '../types';
 import { evaluateFormula, convertValue, toVariableName } from '../utils/math';
 import { FileSpreadsheet, ArrowLeft, Trash2, GripVertical, Plus, ChevronDown, ChevronRight, Edit2, CornerDownRight, FileText, Tag, Loader2 } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import { useToast } from '../contexts/ToastContext';
 import PromptModal from './PromptModal';
 import TemplateManager from './TemplateManager';
@@ -89,7 +88,7 @@ const EstimatesView: React.FC<EstimatesViewProps> = ({ items, onBack, onDeleteIt
         return () => document.removeEventListener('click', handleClickOutside);
     }, []);
 
-    const handleExport = () => {
+    const handleExport = async () => {
         try {
             const allData: any[] = [];
 
@@ -176,6 +175,7 @@ const EstimatesView: React.FC<EstimatesViewProps> = ({ items, onBack, onDeleteIt
               }
             });
 
+            const XLSX = await import("xlsx");
             const ws = XLSX.utils.json_to_sheet(allData);
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, "Estimates");

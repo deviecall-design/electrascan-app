@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useOutletContext, useParams, useSearchParams } from "react-router-dom";
 import { C } from "../components/desktop/tokens";
 import { PageHeader, Card, Footer } from "../components/ui/anthropic";
@@ -9,9 +9,9 @@ import { progressClaimInsert } from "../lib/milestoneClaimWrite";
 import { loadAssemblies, loadLabourRate } from "../lib/assemblies";
 import { takeoffLabourBudget } from "../lib/quoteSource";
 import { defaultHourlyRole, fetchLabourCard, incGst, loadLabourCard, type LabourRole } from "../lib/labourRates";
-import { buildLedger, categoryOverrun, claimCountsTowardTotal, ledgerRows, PACE_COLOR, PACE_LABEL, priceTimesheet, remainingAt, weekHours, type CostKind, type LedgerCost } from "../lib/jobLedger";
-import LedgerChart from "../components/desktop/LedgerChart";
-import * as XLSX from "xlsx";
+import { buildLedger, categoryOverrun, claimCountsTowardTotal, ledgerRows, PACE_BAD, PACE_COLOR, PACE_GOOD, PACE_LABEL, priceTimesheet, remainingAt, weekHours, type CostKind, type LedgerCost } from "../lib/jobLedger";
+
+const LedgerChart = lazy(() => import("../components/desktop/LedgerChart"));
 import { readDetectedItems } from "../lib/scanRecord";
 import { resolveJobTarget } from "../lib/jobLink";
 import { estimateTotal, formatGstMoney } from "../lib/estimateTotal";
@@ -306,7 +306,8 @@ export default function JobBurndownScreen() {
     window.location.href = `mailto:${profile.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   }
 
-  function exportLedger() {
+  async function exportLedger() {
+    const XLSX = await import("xlsx");
     const book = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(ledgerRows(ledger.weeks)), "Ledger");
     const buffer = XLSX.write(book, { bookType: "xlsx", type: "array" });
@@ -439,7 +440,7 @@ export default function JobBurndownScreen() {
         <button type="button" onClick={() => setDrawer("supplier")} style={quietBtn}>Add TLE invoice</button>
         <button type="button" onClick={() => setDrawer("other")} style={quietBtn}>Add other cost</button>
         <button type="button" onClick={() => setTab("milestones")} style={quietBtn}>Milestones</button>
-        <button type="button" onClick={exportLedger} style={quietBtn}>Export Excel</button>
+        <button type="button" onClick={() => void exportLedger()} style={quietBtn}>Export Excel</button>
       </div>
       <form onSubmit={saveDates} style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
         <label style={labelStyle}>Start<input aria-label="Job start" type="date" value={schedule.start} onChange={event => setSchedule(current => ({ ...current, start: event.target.value }))} style={fieldStyle} /></label>
@@ -491,7 +492,7 @@ export default function JobBurndownScreen() {
             <BudgetBar label="Materials" spent={materialsSpent} budget={materialsBudget} show={show} color="#8B5CF6" />
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 13, paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
               <span>Contingency: {show(contingency)}</span>
-              <strong style={{ color: contingency > 0 && contingLeft < contingency * 0.2 ? C.red : C.green }}>Remaining: {show(contingLeft)}</strong>
+              <strong style={{ color: contingency > 0 && contingLeft < contingency * 0.2 ? PACE_BAD : PACE_GOOD }}>Remaining: {show(contingLeft)}</strong>
             </div>
           </Card>
           <Card style={{ padding: 16 }}>
@@ -511,7 +512,7 @@ export default function JobBurndownScreen() {
               <div style={{ fontSize: 13, fontWeight: 700 }}>Budget Burndown — {job.name || "This job"}</div>
               <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 11, color: C.textMuted }}>
                 <LegendSwatch color="#1D6EFD" label="Planned" />
-                <LegendSwatch color="#10B981" label="Actual" />
+                <LegendSwatch color={PACE_GOOD} label="Actual" />
                 <LegendSwatch color="#F59E0B" label="Forecast" dashed />
                 <LegendSwatch color="#0f172a" label="Claimed / paid" />
                 <span>Amber marks are milestones</span>
@@ -520,6 +521,7 @@ export default function JobBurndownScreen() {
             {ledger.weeks.length === 0 ? (
               <p style={{ margin: 0, color: C.textMuted }}>No weeks yet. Set a start and end, or add a cost, and the ledger will open.</p>
             ) : (
+              <Suspense fallback={<p role="status" style={{ margin: 0, color: C.textMuted }}>Loading chart</p>}>
               <LedgerChart
                 weeks={ledger.weeks}
                 milestones={milestoneMarks}
@@ -532,9 +534,11 @@ export default function JobBurndownScreen() {
                 today={asOf}
                 forecastRemaining={forecastRemaining}
               />
+              </Suspense>
             )}
           </Card>
-          <Card style={{ padding: 0, marginBottom: 16, overflow: "auto" }}>
+          <Card style={{ padding: 0, marginBottom: 16, maxWidth: "100%", overflow: "hidden" }}>
+            <div className="es-scroll-x" tabIndex={0} aria-label="Weekly remaining budget">
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 640, fontSize: 14 }}>
               <thead>
                 <tr>{["Week", "Period", "Planned Rem.", "Actual Rem.", "Variance"].map(heading => <th key={heading} style={lightHead}>{heading}</th>)}</tr>
@@ -548,15 +552,17 @@ export default function JobBurndownScreen() {
                       <td style={{ ...cell, color: "#1D6EFD", fontWeight: 700 }}>{index === 0 ? "Start" : `W${index}`}</td>
                       <td style={cell}>{index === 0 ? "Project start" : point.actual == null ? "Forecast" : "Logged"}</td>
                       <td style={cell}>{show(point.planned)}</td>
-                      <td style={{ ...cell, color: point.actual == null ? C.textMuted : "#10B981", fontWeight: 600 }}>{point.actual == null ? "—" : show(point.actual)}</td>
-                      <td style={{ ...cell, color: gap == null ? C.textMuted : gap < 0 ? "#EF4444" : "#10B981", fontWeight: 700 }}>{gap == null ? "—" : `${gap > 0 ? "+" : "−"}${show(Math.abs(gap))}`}</td>
+                      <td style={{ ...cell, color: point.actual == null ? C.textMuted : PACE_GOOD, fontWeight: 600 }}>{point.actual == null ? "—" : show(point.actual)}</td>
+                      <td style={{ ...cell, color: gap == null ? C.textMuted : gap < 0 ? PACE_BAD : PACE_GOOD, fontWeight: 700 }}>{gap == null ? "—" : `${gap > 0 ? "+" : "−"}${show(Math.abs(gap))}`}</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
+            </div>
           </Card>
-          <Card style={{ padding: 0, marginBottom: 16, overflow: "auto" }}>
+          <Card style={{ padding: 0, marginBottom: 16, maxWidth: "100%", overflow: "hidden" }}>
+            <div className="es-scroll-x" tabIndex={0} aria-label="Weekly cost ledger">
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760, fontSize: 14 }}>
               <thead>
                 <tr>{["Week", "Labour", "Supplier", "Other", "Total", "Claims", "Invoices", "Remaining", "Variance"].map(heading => <th key={heading} style={headCell}>{heading}</th>)}</tr>
@@ -573,9 +579,9 @@ export default function JobBurndownScreen() {
                         <button
                           type="button"
                           aria-expanded={open}
-                          aria-label={`${week.start} lines`}
+                          aria-label={`${open ? "Hide" : "Show"} cost lines for ${week.start}`}
                           onClick={() => setOpenWeek(current => current === week.start ? null : week.start)}
-                          style={{ background: "none", border: "none", padding: 0, color: "#1D6EFD", fontWeight: 700, cursor: "pointer" }}
+                          style={{ background: "none", border: "none", padding: "8px 2px", minHeight: 44, color: "#1D6EFD", fontWeight: 700, cursor: "pointer" }}
                         >
                           {week.start}
                         </button>
@@ -612,6 +618,7 @@ export default function JobBurndownScreen() {
                 })}
               </tbody>
             </table>
+            </div>
           </Card>
         </>
       )}
@@ -621,13 +628,14 @@ export default function JobBurndownScreen() {
             <Stat label="Planned hours" value={`${plannedHours}h`} />
             <Stat label="Logged hours" value={`${loggedHours}h`} />
             <Stat label="Hours left" value={`${Math.max(0, Math.round((plannedHours - loggedHours) * 10) / 10)}h`} />
-            <Stat label="Variance" value={`${hoursGap > 0 ? "+" : ""}${hoursGap}h`} tone={hoursGap > 0 ? C.red : C.text} />
+            <Stat label="Variance" value={`${hoursGap > 0 ? "+" : ""}${hoursGap}h`} tone={hoursGap > 0 ? PACE_BAD : C.text} />
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <div style={{ fontWeight: 700 }}>Weekly timesheet</div>
             <button type="button" onClick={() => setDrawer("timesheet")} style={quietBtn}>Submit timesheet</button>
           </div>
-          <Card style={{ padding: 0, overflow: "auto" }}>
+          <Card style={{ padding: 0, maxWidth: "100%", overflow: "hidden" }}>
+            <div className="es-scroll-x" tabIndex={0} aria-label="Weekly timesheet">
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 640, fontSize: 14 }}>
               <thead>
                 <tr>{["Week", "Planned", "Actual", "Labour", "Supplier", "Variance"].map(heading => <th key={heading} style={headCell}>{heading}</th>)}</tr>
@@ -641,10 +649,10 @@ export default function JobBurndownScreen() {
                     <tr key={week.start}>
                       <td style={cell}>{week.start}</td>
                       <td style={cell}>{hours.planned}h</td>
-                      <td style={{ ...cell, color: gap > 0 ? C.red : C.green, fontWeight: 700 }}>{hours.actual}h</td>
+                      <td style={{ ...cell, color: gap > 0 ? PACE_BAD : PACE_GOOD, fontWeight: 700 }}>{hours.actual}h</td>
                       <td style={cell}>{show(week.labour)}</td>
                       <td style={cell}>{show(week.supplier)}</td>
-                      <td style={{ ...cell, color: gap > 0 ? C.red : C.green, fontWeight: 700 }}>{gap > 0 ? "+" : ""}{gap}h</td>
+                      <td style={{ ...cell, color: gap > 0 ? PACE_BAD : PACE_GOOD, fontWeight: 700 }}>{gap > 0 ? "+" : ""}{gap}h</td>
                     </tr>
                   );
                 })}
@@ -660,6 +668,7 @@ export default function JobBurndownScreen() {
                 )}
               </tbody>
             </table>
+            </div>
           </Card>
         </>
       )}
@@ -836,13 +845,13 @@ function OverrunRow({ label, note, amount }: { label: string; note: string; amou
         <div style={{ fontWeight: 700 }}>{label}</div>
         <div style={{ color: C.textMuted, fontSize: 13 }}>{note}</div>
       </div>
-      <strong style={{ color: C.red }}>{amount}</strong>
+      <strong style={{ color: PACE_BAD }}>{amount}</strong>
     </Card>
   );
 }
 
 function statusTone(status: ReportClaimStatus): string {
-  if (status === "received") return C.green;
+  if (status === "received") return PACE_GOOD;
   if (status === "ready") return C.amber;
   if (status === "invoiced" || status === "invoiced-draft") return C.orange;
   return C.textMuted;

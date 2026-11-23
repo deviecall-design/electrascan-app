@@ -15,7 +15,6 @@ import { getPageImage, savePageImage } from '../utils/pdfCache';
 import { mupdfController } from '../utils/mupdfController';
 import { useRamCache } from '../contexts/RamCacheContext';
 import { SearchHit } from '../utils/mupdfController';
-import { PDFDocument } from 'pdf-lib';
 
 // Removed html2canvas import as we now use pdf-lib for vector export
 
@@ -175,6 +174,7 @@ const isShapeIntersectingRect = (shape: Shape, rectStart: Point, rectEnd: Point)
 // Vector extraction functions
 const extractVectorPaths = async (file: File): Promise<CachedVectorData[]> => {
     const arrayBuffer = await file.arrayBuffer();
+    const { PDFDocument } = await import("pdf-lib");
     const pdfDoc = await PDFDocument.load(arrayBuffer);
     const vectorData: CachedVectorData[] = [];
     

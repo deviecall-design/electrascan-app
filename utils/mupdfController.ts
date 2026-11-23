@@ -1,4 +1,14 @@
-import * as mupdf from 'mupdf';
+type MupdfModule = typeof import("mupdf");
+
+let mupdfModule: MupdfModule | null = null;
+
+function loadMupdf(): Promise<MupdfModule> {
+    if (mupdfModule) return Promise.resolve(mupdfModule);
+    return import("mupdf").then(mod => {
+        mupdfModule = mod;
+        return mod;
+    });
+}
 
 // Define simplified types based on MuPDF API
 export interface MuPDFPage {
@@ -50,6 +60,7 @@ class MuPDFController {
         this.destroy();
 
         try {
+            const mupdf = await loadMupdf();
             this.currentDoc = mupdf.Document.openDocument(data, "application/pdf");
             const pageCount = this.currentDoc.countPages();
             console.log(`MuPDF: Loaded document with ${pageCount} pages`);
@@ -66,6 +77,7 @@ class MuPDFController {
     async countPagesTransient(data: Uint8Array): Promise<number> {
         let doc: any = null;
         try {
+            const mupdf = await loadMupdf();
             doc = mupdf.Document.openDocument(data, "application/pdf");
             return doc.countPages();
         } catch (error) {
@@ -151,6 +163,7 @@ class MuPDFController {
 
         // Get cached DisplayList (or create if not cached)
         const displayList = this.getDisplayList(pageIndex);
+        const mupdf = await loadMupdf();
 
         // Calculate Matrix for scaling
         const ctm = mupdf.Matrix.scale(scale, scale);
@@ -196,9 +209,10 @@ class MuPDFController {
     } {
         if (!this.currentDoc) throw new Error("No document loaded");
 
+        if (!mupdfModule) throw new Error("PDF engine is not loaded");
         const displayList = this.getDisplayList(pageIndex);
-        const ctm = mupdf.Matrix.scale(scale, scale);
-        const pixmap = displayList.toPixmap(ctm, mupdf.ColorSpace.DeviceRGB, true);
+        const ctm = mupdfModule.Matrix.scale(scale, scale);
+        const pixmap = displayList.toPixmap(ctm, mupdfModule.ColorSpace.DeviceRGB, true);
 
         const pixels = pixmap.getPixels();
         const width = pixmap.getWidth();
