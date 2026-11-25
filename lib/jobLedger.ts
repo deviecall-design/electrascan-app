@@ -75,13 +75,17 @@ export const PACE_LABEL: Record<PlanPace, string> = {
   "over-budget": "Over budget",
 };
 
+/** Text on white. #047857 is 5.48:1 and #B91C1C is 6.47:1, both WCAG AA. */
+export const PACE_GOOD = "#047857";
+export const PACE_BAD = "#B91C1C";
+
 /** Green when more budget is left than planned, red when the week has fallen behind. */
 export const PACE_COLOR: Record<PlanPace, string> = {
   future: "#64748B",
   "on-plan": "#64748B",
-  ahead: "#10B981",
-  behind: "#EF4444",
-  "over-budget": "#e11d48",
+  ahead: PACE_GOOD,
+  behind: PACE_BAD,
+  "over-budget": PACE_BAD,
 };
 
 /** Within 2% of the planned remaining, or $100, whichever is wider. */

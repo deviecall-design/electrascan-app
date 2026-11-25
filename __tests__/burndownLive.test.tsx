@@ -105,7 +105,7 @@ describe("burndown with a saved rate card and job costs", () => {
     expect(screen.queryByText("No dated costs recorded yet.")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: /Burndown/ }));
-    await user.click(await screen.findByRole("button", { name: "2026-11-02 lines" }));
+    await user.click(await screen.findByRole("button", { name: "Show cost lines for 2026-11-02" }));
     expect(screen.getByText(/Cable/)).toBeInTheDocument();
     expect(screen.getByText(/TLE-44/)).toBeInTheDocument();
     expect(screen.getAllByText(/Ahead/).length).toBeGreaterThan(0);

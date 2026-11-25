@@ -1,9 +1,9 @@
-import jsPDF from "jspdf";
 import type { MaterialsDraft } from "../lib/materialsRequest";
 import { canonicalSupplierName } from "../lib/supplierName";
 
 /** Supplier materials list. Quantities and brands only — no prices. */
 export function downloadMaterialsPdf(draft: MaterialsDraft) {
+  void import("jspdf").then(({ default: jsPDF }) => {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const left = 16;
   let y = 18;
@@ -57,4 +57,7 @@ export function downloadMaterialsPdf(draft: MaterialsDraft) {
   doc.text("Price this list on the contractor's trade terms. This file does not include supplier pricing.", left, Math.min(y, 285));
   const safe = (draft.jobName || "materials").replace(/[^\w.-]+/g, "-").slice(0, 40);
   doc.save(`materials-${safe}.pdf`);
+  }).catch(error => {
+    console.error("Could not load the PDF library", error);
+  });
 }

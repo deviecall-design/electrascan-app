@@ -245,9 +245,17 @@ a:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
-[role="tab"]:focus-visible {
-  outline: 2px solid var(--es-orange-dark);
-  outline-offset: 2px;
+summary:focus-visible,
+[role="tab"]:focus-visible,
+[role="button"]:focus-visible,
+.es-scroll-x:focus-visible {
+  outline: 3px solid #1a45b8 !important;
+  outline-offset: 2px !important;
+}
+.es-scroll-x {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 table {
   border-collapse: collapse;

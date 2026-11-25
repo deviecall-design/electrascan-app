@@ -1,6 +1,13 @@
 
-import { PDFDocument, rgb, StandardFonts, PDFFont, PDFPage, degrees, pushGraphicsState, popGraphicsState, moveTo, lineTo, closePath, fill, stroke, setFillingColor, setStrokingColor, setLineWidth, fillAndStroke, setGraphicsState } from 'pdf-lib';
-import type { Color } from 'pdf-lib';
+import type { Color, PDFFont, PDFPage } from "pdf-lib";
+
+type PdfLib = typeof import("pdf-lib");
+let pdfLib: PdfLib | null = null;
+
+function pdf(): PdfLib {
+    if (!pdfLib) throw new Error("PDF library is not loaded");
+    return pdfLib;
+}
 import { PlanSet, ProjectData, TakeoffItem, ToolType, Shape, Unit, LegendSettings } from '../types';
 import { evaluateFormula } from './math';
 import { isPointInPolygon } from './geometry';
@@ -122,42 +129,42 @@ const drawPolygonWithHoles = (
     const graphicsStateKey = page.node.newExtGState('AreaFillGS', graphicsState);
 
     // Save graphics state and set opacity
-    page.pushOperators(pushGraphicsState());
-    page.pushOperators(setGraphicsState(graphicsStateKey));
+    page.pushOperators(pdf().pushGraphicsState());
+    page.pushOperators(pdf().setGraphicsState(graphicsStateKey));
 
     // Set colors
-    page.pushOperators(setFillingColor(fillColor));
+    page.pushOperators(pdf().setFillingColor(fillColor));
     if (strokeWidth > 0) {
-        page.pushOperators(setStrokingColor(strokeColor));
-        page.pushOperators(setLineWidth(strokeWidth));
+        page.pushOperators(pdf().setStrokingColor(strokeColor));
+        page.pushOperators(pdf().setLineWidth(strokeWidth));
     }
 
     // Begin path: outer shape
     const first = outerPoints[0];
-    page.pushOperators(moveTo(first.x, first.y));
+    page.pushOperators(pdf().moveTo(first.x, first.y));
     for (let i = 1; i < outerPoints.length; i++) {
         const p = outerPoints[i];
-        page.pushOperators(lineTo(p.x, p.y));
+        page.pushOperators(pdf().lineTo(p.x, p.y));
     }
-    page.pushOperators(closePath());
+    page.pushOperators(pdf().closePath());
 
     // Holes
     for (const hole of holes) {
         if (hole.length < 3) continue;
         const hFirst = hole[0];
-        page.pushOperators(moveTo(hFirst.x, hFirst.y));
+        page.pushOperators(pdf().moveTo(hFirst.x, hFirst.y));
         for (let i = 1; i < hole.length; i++) {
             const p = hole[i];
-            page.pushOperators(lineTo(p.x, p.y));
+            page.pushOperators(pdf().lineTo(p.x, p.y));
         }
-        page.pushOperators(closePath());
+        page.pushOperators(pdf().closePath());
     }
 
     // Fill and stroke (non-zero winding rule)
-    page.pushOperators(fillAndStroke());
+    page.pushOperators(pdf().fillAndStroke());
 
     // Restore graphics state
-    page.pushOperators(popGraphicsState());
+    page.pushOperators(pdf().popGraphicsState());
 
     logger?.log(`  Low-level polygon drawn: outer points=${outerPoints.length}, holes=${holes.length}, fillOpacity=${fillOpacity}, strokeOpacity=${strokeOpacity}`);
 };
@@ -230,7 +237,7 @@ class CoordinateMapper {
     }
 
     getTextRotation() {
-        return degrees(this.rotation);
+        return pdf().degrees(this.rotation);
     }
 
     getRotationAngle() {
@@ -267,15 +274,16 @@ export const generateMarkupPDF = async (
     includeNotes: boolean
 ): Promise<{ pdfBytes: Uint8Array, logContent: string }> => {
 
+    pdfLib = await import("pdf-lib");
     const logger = new ExportLogger();
     logger.section("Starting PDF Export");
     logger.log("Items Count", items.length);
     logger.log("Pages to Export", pageIndices);
 
     // Create new PDF
-    const outPdf = await PDFDocument.create();
-    const font = await outPdf.embedFont(StandardFonts.Helvetica);
-    const fontBold = await outPdf.embedFont(StandardFonts.HelveticaBold);
+    const outPdf = await pdf().PDFDocument.create();
+    const font = await outPdf.embedFont(pdf().StandardFonts.Helvetica);
+    const fontBold = await outPdf.embedFont(pdf().StandardFonts.HelveticaBold);
 
     const pagesByPlan: Record<string, number[]> = {};
     const planSetMap: Record<string, PlanSet> = {};
@@ -297,7 +305,7 @@ export const generateMarkupPDF = async (
         let sourcePdf;
         try {
             const existingPdfBytes = await plan.file.arrayBuffer();
-            sourcePdf = await PDFDocument.load(existingPdfBytes);
+            sourcePdf = await pdf().PDFDocument.load(existingPdfBytes);
             logger.log("Source PDF Loaded", { pageCount: sourcePdf.getPageCount() });
         } catch (e) {
             logger.log("Error Loading Source PDF", e);
@@ -332,7 +340,7 @@ export const generateMarkupPDF = async (
 
             for (const item of pageItems) {
                 const c = hexToRgb(item.color);
-                const pdfColor = rgb(c.r, c.g, c.b);
+                const pdfColor = pdf().rgb(c.r, c.g, c.b);
                 const shapes = item.shapes.filter(s => s.pageIndex === globalIdx);
 
                 if (item.type === ToolType.AREA) {
@@ -444,7 +452,7 @@ export const generateMarkupPDF = async (
                             points.forEach(p => {
                                 page.drawCircle({
                                     x: p.x, y: p.y, size: 10, // 2x for print
-                                    color: pdfColor, borderColor: rgb(1, 1, 1), borderWidth: 4, opacity: 0.8 // 2x for print
+                                    color: pdfColor, borderColor: pdf().rgb(1, 1, 1), borderWidth: 4, opacity: 0.8 // 2x for print
                                 });
                             });
                         }
@@ -484,9 +492,9 @@ export const generateMarkupPDF = async (
                                 page.drawRectangle({
                                     x: p2.x, y: p2.y - boxHeight,
                                     width: boxWidth, height: boxHeight,
-                                    color: rgb(1, 1, 1), opacity: 0.8,
+                                    color: pdf().rgb(1, 1, 1), opacity: 0.8,
                                     borderColor: pdfColor, borderWidth: 1,
-                                    rotate: degrees(textRot)
+                                    rotate: pdf().degrees(textRot)
                                 });
 
                                 lines.forEach((line, i) => {
@@ -494,7 +502,7 @@ export const generateMarkupPDF = async (
                                         x: p2.x + 4,
                                         y: p2.y - (i + 1) * lineHeight,
                                         size: fontSize, font, color: pdfColor,
-                                        rotate: degrees(textRot)
+                                        rotate: pdf().degrees(textRot)
                                     });
                                 });
                             }
@@ -572,7 +580,7 @@ const drawDimension = (
         y: my,
         size: textSize,
         font: font,
-        color: rgb(0.2, 0.2, 0.2),
+        color: pdf().rgb(0.2, 0.2, 0.2),
         rotate: mapper.getTextRotation()
     });
 };
@@ -638,9 +646,9 @@ const drawNativeLegend = (
         y: rectParams.y,
         width: rectParams.w,
         height: rectParams.h,
-        color: rgb(1, 1, 1),
+        color: pdf().rgb(1, 1, 1),
         opacity: 0.98,
-        borderColor: rgb(0.85, 0.85, 0.85),
+        borderColor: pdf().rgb(0.85, 0.85, 0.85),
         borderWidth: 0.75,
     });
 
@@ -657,8 +665,8 @@ const drawNativeLegend = (
         y: hy,
         size: headerFontSize,
         font: fontBold,
-        color: rgb(0.1, 0.1, 0.1),
-        rotate: degrees(rotation)
+        color: pdf().rgb(0.1, 0.1, 0.1),
+        rotate: pdf().degrees(rotation)
     });
 
     const drawRow = (label: string, qty: string, rowIdx: number, colorHex: string) => {
@@ -673,10 +681,10 @@ const drawNativeLegend = (
 
         page.drawRectangle({
             x: sx, y: sy, width: swatchSize, height: swatchSize,
-            color: rgb(c.r, c.g, c.b),
-            borderColor: rgb(c.r * 0.8, c.g * 0.8, c.b * 0.8),
+            color: pdf().rgb(c.r, c.g, c.b),
+            borderColor: pdf().rgb(c.r * 0.8, c.g * 0.8, c.b * 0.8),
             borderWidth: 0.5,
-            rotate: degrees(rotation)
+            rotate: pdf().degrees(rotation)
         });
 
         const labelXOffset = swatchSize + (5 * pdfScale);
@@ -684,7 +692,7 @@ const drawNativeLegend = (
         const ly = textOrigin.y + (textRightVec.y * labelXOffset) + (textDownVec.y * rowYOffset);
 
         page.drawText(label, {
-            x: lx, y: ly, size: fontSize, font: font, color: rgb(0.2, 0.2, 0.2), rotate: degrees(rotation)
+            x: lx, y: ly, size: fontSize, font: font, color: pdf().rgb(0.2, 0.2, 0.2), rotate: pdf().degrees(rotation)
         });
 
         const qtyW = fontBold.widthOfTextAtSize(qty, fontSize);
@@ -694,7 +702,7 @@ const drawNativeLegend = (
         const qy = textOrigin.y + (textRightVec.y * qtyXOffset) + (textDownVec.y * rowYOffset);
 
         page.drawText(qty, {
-            x: qx, y: qy, size: fontSize, font: fontBold, color: rgb(0.1, 0.1, 0.1), rotate: degrees(rotation)
+            x: qx, y: qy, size: fontSize, font: fontBold, color: pdf().rgb(0.1, 0.1, 0.1), rotate: pdf().degrees(rotation)
         });
     };
 

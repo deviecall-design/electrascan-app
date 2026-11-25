@@ -453,14 +453,19 @@ export default function PricingScheduleScreen() {
                 <Td>
                   <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
                     <button
+                      type="button"
                       title="Edit rate"
+                      aria-label={`Edit ${r.code}`}
                       onClick={() => openEdit(r)}
                       style={{ minWidth: 44, minHeight: 44, borderRadius: 10, color: C.textSubtle }}
                     >
                       <Pencil size={13} />
                     </button>
                     <button
+                      type="button"
                       title="Delete rate"
+                      aria-label={deletingId === r.id ? `Deleting ${r.code}` : `Delete ${r.code}`}
+                      aria-busy={deletingId === r.id}
                       onClick={() => handleDelete(r)}
                       disabled={deletingId === r.id}
                       style={{
@@ -510,6 +515,8 @@ export default function PricingScheduleScreen() {
             alignItems: "center",
             justifyContent: "center",
             zIndex: 200,
+            overflow: "auto",
+            padding: 16,
           }}
           onClick={e => {
             if (e.target === e.currentTarget) closeModal();
@@ -520,8 +527,10 @@ export default function PricingScheduleScreen() {
               backgroundColor: C.bgCard,
               border: `1px solid ${C.border}`,
               borderRadius: RADIUS.xl,
-              padding: "28px 32px",
-              width: 480,
+              padding: "28px 20px",
+              width: "min(480px, 100%)",
+              maxHeight: "calc(100vh - 32px)",
+              overflow: "auto",
               boxShadow: "0 8px 32px rgba(0,0,0,0.12)",
             }}
           >
@@ -545,8 +554,10 @@ export default function PricingScheduleScreen() {
                 {modalMode === "add" ? "Add custom rate" : "Edit rate"}
               </h2>
               <button
+                type="button"
+                aria-label="Close"
                 onClick={closeModal}
-                style={{ color: C.textSubtle, padding: 4, borderRadius: 4 }}
+                style={{ color: C.textSubtle, minWidth: 44, minHeight: 44, borderRadius: 4 }}
               >
                 <X size={16} />
               </button>
@@ -556,7 +567,7 @@ export default function PricingScheduleScreen() {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "1fr 1fr",
+                gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
                 gap: 14,
                 marginBottom: 20,
               }}

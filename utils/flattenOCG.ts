@@ -1,5 +1,3 @@
-import { PDFDocument, PDFName, PDFDict, PDFRef } from 'pdf-lib';
-
 /**
  * Flattens Optional Content Groups (OCGs) in a PDF by merging all layers into a single layer.
  * This helps improve rendering performance for PDFs with excessive OCGs.
@@ -9,6 +7,7 @@ import { PDFDocument, PDFName, PDFDict, PDFRef } from 'pdf-lib';
  */
 export async function flattenOCG(pdfBytes: Uint8Array): Promise<Uint8Array> {
     try {
+        const { PDFDocument, PDFName } = await import("pdf-lib");
         // Load the existing PDF
         const pdfDoc = await PDFDocument.load(pdfBytes);
 

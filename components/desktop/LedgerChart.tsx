@@ -56,7 +56,7 @@ export default function LedgerChart({
     : "";
   const label = (value: number) => (axis || (amount => `$${formatAud(amount)}`))(value);
   return (
-    <div style={{ overflowX: "auto" }}>
+    <div className="es-scroll-x" tabIndex={0} aria-label="Budget burndown chart">
       <svg width="100%" viewBox={`0 0 ${width} ${height}`} style={{ minWidth: 520 }} role="img" aria-label="Budget burndown">
         {[0, 0.25, 0.5, 0.75, 1].map(frac => {
           const y = yAt(frac * max);
@@ -71,12 +71,12 @@ export default function LedgerChart({
           <rect key={weeks[index].start} x={xAt(index) - 8} y={top} width="16" height={height - top - bottom} fill="#e11d48" opacity="0.12" />
         ) : null)}
         <path d={planArea} fill="#1D6EFD" fillOpacity="0.08" />
-        {actualArea && <path d={actualArea} fill="#10B981" fillOpacity="0.12" />}
+        {actualArea && <path d={actualArea} fill="#047857" fillOpacity="0.12" />}
         <polyline points={planLine} fill="none" stroke="#1D6EFD" strokeDasharray="5 3" strokeWidth="2" />
-        {actualLine && <polyline points={actualLine} fill="none" stroke="#10B981" strokeWidth="2.5" />}
+        {actualLine && <polyline points={actualLine} fill="none" stroke="#047857" strokeWidth="2.5" />}
         <polyline points={weeks.map((week, index) => `${xAt(index)},${yAt(week.cumulativeClaimed)}`).join(" ")} fill="none" stroke="#0f172a" strokeWidth="2" />
         {actuals.map(index => (
-          <circle key={weeks[index].start} cx={xAt(index)} cy={yAt(points[index].actual ?? 0)} r="4" fill="#10B981" stroke="#fff" strokeWidth="1.5" />
+          <circle key={weeks[index].start} cx={xAt(index)} cy={yAt(points[index].actual ?? 0)} r="4" fill="#047857" stroke="#fff" strokeWidth="1.5" />
         ))}
         {lastActual >= 0 && lastActual < weeks.length - 1 && (
           <line

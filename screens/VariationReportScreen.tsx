@@ -5,7 +5,6 @@ import { PageHeader, Card, Footer, EmptyState } from "../components/ui/anthropic
 import { PrimaryButton } from "../components/ui/anthropic/Button";
 import useSupabaseQuery from "../hooks/useSupabaseQuery";
 import { fetchRateLibrary, fetchScans, insertScan } from "../services/supabaseData";
-import { detectElectricalComponents } from "../analyze_pdf";
 import { mapDetectionToQuoteItems } from "../lib/scanQuote";
 import { buildScanWrite, type StoredDetectedItem } from "../lib/scanRecord";
 import { publicDetectionFailure } from "../lib/detectionCopy";
@@ -78,6 +77,7 @@ export default function VariationReportScreen() {
     setBusy(true);
     setUploadError(null);
     try {
+      const { detectElectricalComponents } = await import("../analyze_pdf");
       const detected = await detectElectricalComponents(file, "001");
       const items: StoredDetectedItem[] = mapDetectionToQuoteItems(detected.components).map(item => {
         const draft: StoredDetectedItem = {
